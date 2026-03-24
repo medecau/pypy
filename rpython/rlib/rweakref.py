@@ -51,6 +51,10 @@ class RWeakValueDictionary(object):
             assert isinstance(value, self._valueclass)
             self._dict[key] = value
 
+    def length(self):
+        """Mostly for debugging.  Slow, don't use in real code."""
+        return len(self._dict)
+
 
 class RWeakKeyDictionary(object):
     """A dictionary containing weak keys.
@@ -129,6 +133,9 @@ class SomeWeakValueDict(annmodel.SomeObject):
     def method_set(self, s_key, s_value):
         s_oldvalue = self.method_get(s_key)
         assert s_oldvalue.contains(s_value)
+
+    def method_length(self):
+        return annmodel.SomeInteger(nonneg=True)
 
 class __extend__(pairtype(SomeWeakValueDict, SomeWeakValueDict)):
     def union((s_wvd1, s_wvd2)):

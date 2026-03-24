@@ -105,6 +105,10 @@ class WeakValueDictRepr(Repr):
         else:
             hop.gendirectcall(self.ll_set, v_d, v_key, v_value)
 
+    def rtype_method_length(self, hop):
+        v_d, = hop.inputargs(self)
+        hop.exception_cannot_occur()
+        return hop.gendirectcall(self.ll_length, v_d)
 
     # ____________________________________________________________
 
@@ -188,6 +192,17 @@ class WeakValueDictRepr(Repr):
             self.ll_keyhash(entries[i].key)
         self.ll_weakdict_resize(d)
         assert d.resize_counter >= 0
+
+    @jit.dont_look_inside
+    def ll_length(self, d):
+        # xxx slow, but it's only for debugging
+        entries = d.entries
+        num_items = 0
+        for i in range(len(entries)):
+            if entries.valid(i):
+                num_items += 1
+        d.num_items = num_items
+        return d.num_items
 
 def specialize_make_weakdict(hop):
     hop.exception_cannot_occur()
