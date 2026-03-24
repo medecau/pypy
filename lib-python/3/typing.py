@@ -32,10 +32,19 @@ import types
 import warnings
 from types import WrapperDescriptorType, MethodWrapperType, MethodDescriptorType, GenericAlias
 
-
 try:
-    from _typing import _idfunc
+    from _typing import (
+        _idfunc,
+        TypeVar,
+        ParamSpec,
+        TypeVarTuple,
+        ParamSpecArgs,
+        ParamSpecKwargs,
+        TypeAliasType,
+        Generic,
+    )
 except ImportError:
+    # PyPy: _pypy_typing (imported below) provides all of these except _idfunc
     def _idfunc(_, x):
         return x
 

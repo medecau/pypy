@@ -34,6 +34,11 @@ import re
 import sys
 from token import *
 from token import EXACT_TOKEN_TYPES
+try:
+    import _tokenize
+    _HAS_C_TOKENIZER = True
+except ImportError:
+    _HAS_C_TOKENIZER = False
 
 cookie_re = re.compile(r'^[ \t\f]*#.*?coding[:=][ \t]*([-\w.]+)', re.ASCII)
 blank_re = re.compile(br'^[ \t\f]*(?:[#\r\n]|$)', re.ASCII)
@@ -682,12 +687,166 @@ def main():
         perror("unexpected error: %s" % err)
         raise
 
-def _generate_tokens_from_c_tokenizer(source):
-    """Tokenize a source reading Python code as unicode strings using the internal C tokenizer"""
-    import _tokenize as c_tokenizer
-    for info in c_tokenizer.TokenizerIter(source):
-        tok, type, lineno, end_lineno, col_off, end_col_off, line = info
-        yield TokenInfo(type, tok, (lineno, col_off), (end_lineno, end_col_off), line)
+def _transform_msg(msg):
+    """Transform error messages from the C tokenizer into the Python tokenize
+
+    The C tokenizer is more picky than the Python one, so we need to massage
+    the error messages a bit for backwards compatibility.
+    """
+    if "unterminated triple-quoted string literal" in msg:
+        return "EOF in multi-line string"
+    return msg
+
+def _generate_tokens_from_c_tokenizer(source, encoding=None, extra_tokens=False):
+    """Tokenize a source; uses C extension when available, pure-Python fallback otherwise."""
+    if _HAS_C_TOKENIZER:
+        if encoding is None:
+            it = _tokenize.TokenizerIter(source, extra_tokens=extra_tokens)
+        else:
+            it = _tokenize.TokenizerIter(source, encoding=encoding, extra_tokens=extra_tokens)
+        try:
+            for info in it:
+                yield TokenInfo._make(info)
+        except SyntaxError as e:
+            if type(e) != SyntaxError:
+                raise e from None
+            msg = _transform_msg(e.msg)
+            raise TokenError(msg, (e.lineno, e.offset)) from None
+    else:
+        yield from _py_tokenize(source, encoding=encoding, extra_tokens=extra_tokens)
+
+
+def _py_tokenize(source, encoding=None, extra_tokens=False):
+    """Pure-Python tokenizer used on PyPy when the _tokenize C extension is unavailable.
+    Implements the CPython 3.11 generate_tokens() algorithm using the regex patterns
+    already defined in this module.
+    """
+    lnum = parenlev = continued = bs_continued = 0
+    contstr = ''
+    needcont = 0
+    contline = None
+    indents = [0]
+    strstart = endprog = None
+
+    while True:
+        try:
+            line = source()
+        except StopIteration:
+            line = b'' if encoding else ''
+        if encoding is not None and isinstance(line, bytes):
+            line = line.decode(encoding, 'replace')
+        lnum += 1
+        pos, max_ = 0, len(line)
+
+        if continued:                               # inside multi-line string
+            if not line:
+                raise TokenError("EOF in multi-line statement", (lnum, 0))
+            endmatch = endprog.match(line, pos)
+            if endmatch:
+                pos = end = endmatch.end(0)
+                yield TokenInfo(STRING, contstr + line[:end],
+                       strstart, (lnum, end), contline + line)
+                contstr = ''; needcont = 0; contline = None; continued = 0
+            elif needcont and line[-2:] != '\\\n' and line[-3:] != '\\\r\n':
+                yield TokenInfo(ERRORTOKEN, contstr + line,
+                           strstart, (lnum, len(line)), contline)
+                contstr = ''; contline = None; continued = 0
+                continue
+            else:
+                contstr += line; contline += line
+                continue
+        elif parenlev == 0 and not bs_continued:    # new logical statement
+            if not line:
+                break
+            column = 0
+            while pos < max_:
+                c = line[pos]
+                if c == ' ':      column += 1
+                elif c == '\t':   column = (column // tabsize + 1) * tabsize
+                elif c == '\f':   column = 0
+                else:             break
+                pos += 1
+            if pos == max_:
+                break
+            if line[pos] in '#\r\n':
+                if line[pos] == '#':
+                    comment = line[pos:].rstrip('\r\n')
+                    if extra_tokens:
+                        yield TokenInfo(COMMENT, comment,
+                               (lnum, pos), (lnum, pos + len(comment)), line)
+                    pos += len(comment)
+                yield TokenInfo(NL, line[pos:], (lnum, pos), (lnum, len(line)), line)
+                continue
+            if column > indents[-1]:
+                indents.append(column)
+                yield TokenInfo(INDENT, line[:pos], (lnum, 0), (lnum, pos), line)
+            while column < indents[-1]:
+                if column not in indents:
+                    raise IndentationError(
+                        "unindent does not match any outer indentation level",
+                        ("<tokenize>", lnum, pos, line))
+                indents.pop()
+                yield TokenInfo(DEDENT, '', (lnum, pos), (lnum, pos), line)
+        else:
+            if not line:
+                raise TokenError("EOF in multi-line statement", (lnum, 0))
+
+        bs_continued = 0
+        while pos < max_:
+            pseudomatch = _compile(PseudoToken).match(line, pos)
+            if not pseudomatch:
+                yield TokenInfo(ERRORTOKEN, line[pos], (lnum, pos), (lnum, pos+1), line)
+                pos += 1
+                continue
+            start, end = pseudomatch.span(1)
+            spos, epos, pos = (lnum, start), (lnum, end), end
+            if start == end:
+                continue
+            token, initial = line[start:end], line[start]
+
+            if initial in '0123456789' or (initial == '.' and token not in ('.', '...')):
+                yield TokenInfo(NUMBER, token, spos, epos, line)
+            elif initial in '\r\n':
+                if parenlev > 0:
+                    if extra_tokens:
+                        yield TokenInfo(NL, token, spos, epos, line)
+                else:
+                    yield TokenInfo(NEWLINE, token, spos, epos, line)
+            elif initial == '#':
+                if extra_tokens:
+                    yield TokenInfo(COMMENT, token, spos, epos, line)
+            elif token in triple_quoted:
+                endprog = _compile(endpats[token])
+                endmatch = endprog.match(line, pos)
+                if endmatch:
+                    pos = endmatch.end(0)
+                    yield TokenInfo(STRING, line[start:pos], spos, (lnum, pos), line)
+                else:
+                    strstart = (lnum, start); contstr = line[start:]
+                    contline = line; continued = 1; break
+            elif (initial in single_quoted or token[:2] in single_quoted
+                  or token[:3] in single_quoted):
+                if token[-1] == '\n':
+                    strstart = (lnum, start)
+                    endprog = _compile(endpats.get(initial) or
+                                       endpats.get(token[1]) or
+                                       endpats.get(token[2]))
+                    contstr = line[start:]; needcont = 1
+                    contline = line; continued = 1; break
+                else:
+                    yield TokenInfo(STRING, token, spos, epos, line)
+            elif initial.isidentifier():
+                yield TokenInfo(NAME, token, spos, epos, line)
+            elif initial == '\\':
+                bs_continued = 1; break
+            else:
+                if initial in '([{':   parenlev += 1
+                elif initial in ')]}': parenlev -= 1
+                yield TokenInfo(OP, token, spos, epos, line)
+
+    for _ in indents[1:]:
+        yield TokenInfo(DEDENT, '', (lnum, 0), (lnum, 0), '')
+    yield TokenInfo(ENDMARKER, '', (lnum, 0), (lnum, 0), '')
 
 
 if __name__ == "__main__":

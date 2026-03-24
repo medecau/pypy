@@ -32,6 +32,12 @@ __all__ = ['get_ident', 'active_count', 'Condition', 'current_thread',
 
 # Rename some stuff so "from threading import *" is safe
 _start_new_thread = _thread.start_new_thread
+try:
+    _daemon_threads_allowed = _thread.daemon_threads_allowed
+except AttributeError:
+    # PyPy: _thread.daemon_threads_allowed was added in CPython 3.9.
+    # Fall back to always allowing daemon threads (pre-3.9 behaviour).
+    _daemon_threads_allowed = lambda: True
 _allocate_lock = _thread.allocate_lock
 _set_sentinel = _thread._set_sentinel
 get_ident = _thread.get_ident
