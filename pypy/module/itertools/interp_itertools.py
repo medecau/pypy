@@ -1780,6 +1780,72 @@ W_Accumulate.typedef = TypeDef("itertools.accumulate",
 Return series of accumulated sums.""")
 
 
+class W_Batched(W_Root):
+    """Batch data into tuples of length n. The last batch may be shorter than n."""
+
+    def __init__(self, space, w_iterator, n, strict):
+        self.space = space
+        self.w_iterator = w_iterator
+        self.n = n
+        self.strict = strict
+        self.done = False
+
+    def iter_w(self):
+        return self
+
+    def next_w(self):
+        space = self.space
+        if self.done:
+            raise OperationError(space.w_StopIteration, space.w_None)
+        items_w = []
+        for i in range(self.n):
+            try:
+                w_item = space.next(self.w_iterator)
+            except OperationError as e:
+                if not e.match(space, space.w_StopIteration):
+                    raise
+                self.done = True
+                break
+            items_w.append(w_item)
+        if not items_w:
+            raise OperationError(space.w_StopIteration, space.w_None)
+        if self.strict and len(items_w) < self.n:
+            raise oefmt(space.w_ValueError,
+                        "batched(): incomplete batch")
+        return space.newtuple(items_w)
+
+
+@unwrap_spec(n=int, strict=bool)
+def W_Batched__new__(space, w_subtype, w_iterable, n, strict=False):
+    if n < 1:
+        raise oefmt(space.w_ValueError,
+                    "batched(): n must be at least one")
+    r = space.allocate_instance(W_Batched, w_subtype)
+    r.__init__(space, space.iter(w_iterable), n, strict)
+    return r
+
+W_Batched.typedef = TypeDef("itertools.batched",
+    __new__  = interp2app(W_Batched__new__),
+    __iter__ = interp2app(W_Batched.iter_w),
+    __next__ = interp2app(W_Batched.next_w),
+    __class_getitem__ = interp2app(
+        generic_alias_class_getitem, as_classmethod=True),
+    __doc__ = """\
+Batch data into tuples of length n. The last batch may be shorter than n.
+
+Loops over the input iterable and accumulates data into tuples up to
+size n. The input is consumed lazily, just enough to fill a batch.
+The result is yielded as soon as the batch is full or the input
+iterable is exhausted.
+
+    >>> from itertools import batched
+    >>> flattened_data = ['roses', 'red', 'violets', 'blue', 'sugar', 'sweet']
+    >>> unflattened = list(batched(flattened_data, 2))
+    >>> unflattened
+    [('roses', 'red'), ('violets', 'blue'), ('sugar', 'sweet')]
+""")
+
+
 class W_Pairwise(W_Root):
     'Return series of accumulated sums (or other binary function results).'
 
