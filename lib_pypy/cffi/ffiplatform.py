@@ -5,60 +5,98 @@ from .error import VerificationError
 LIST_OF_FILE_NAMES = ['sources', 'include_dirs', 'library_dirs',
                       'extra_objects', 'depends']
 
+class _Extension:
+    """Minimal C extension descriptor (no distutils/setuptools required)."""
+    def __init__(self, name, sources, **kwds):
+        self.name = name
+        self.sources = list(sources)
+        self.include_dirs = list(kwds.get('include_dirs') or [])
+        self.library_dirs = list(kwds.get('library_dirs') or [])
+        self.libraries = list(kwds.get('libraries') or [])
+        self.extra_compile_args = list(kwds.get('extra_compile_args') or [])
+        self.extra_link_args = list(kwds.get('extra_link_args') or [])
+        self.extra_objects = list(kwds.get('extra_objects') or [])
+        self.define_macros = list(kwds.get('define_macros') or [])
+        self.depends = list(kwds.get('depends') or [])
+
+
 def get_extension(srcfilename, modname, sources=(), **kwds):
-    from cffi._shimmed_dist_utils import Extension
     allsources = [srcfilename]
     for src in sources:
         allsources.append(os.path.normpath(src))
-    return Extension(name=modname, sources=allsources, **kwds)
+    return _Extension(name=modname, sources=allsources, **kwds)
 
 def compile(tmpdir, ext, compiler_verbose=0, debug=None):
-    """Compile a C extension module using distutils."""
+    """Compile a C extension module using subprocess and sysconfig."""
 
     saved_environ = os.environ.copy()
     try:
         outputfilename = _build(tmpdir, ext, compiler_verbose, debug)
         outputfilename = os.path.abspath(outputfilename)
     finally:
-        # workaround for a distutils bugs where some env vars can
-        # become longer and longer every time it is used
         for key, value in saved_environ.items():
             if os.environ.get(key) != value:
                 os.environ[key] = value
     return outputfilename
 
 def _build(tmpdir, ext, compiler_verbose=0, debug=None):
-    # XXX compact but horrible :-(
-    from cffi._shimmed_dist_utils import Distribution, CompileError, LinkError, set_threshold, set_verbosity
+    import subprocess
+    import sysconfig as _sc
 
-    dist = Distribution({'ext_modules': [ext]})
-    dist.parse_config_files()
-    options = dist.get_option_dict('build_ext')
+    cc = (_sc.get_config_var('CC') or 'gcc').split()
+    cflags = (_sc.get_config_var('CFLAGS') or '').split()
+    ldshared = (_sc.get_config_var('LDSHARED') or 'gcc -shared').split()
+    ext_suffix = _sc.get_config_var('EXT_SUFFIX')
+    include_dir = _sc.get_path('include')
+
     if debug is None:
         debug = sys.flags.debug
+
     oldir = os.getcwd()
-    # Shorten the names of the sources for msvc's long file names
     os.chdir(tmpdir)
     ext.sources = [os.path.relpath(os.path.join(oldir, x)) for x in ext.sources]
     try:
-        options['debug'] = ('ffiplatform', debug)
-        options['force'] = ('ffiplatform', True)
-        options['build_lib'] = ('ffiplatform', ".")
-        options['build_temp'] = ('ffiplatform', ".")
-        old_level = set_threshold(0) or 0
-        try:
-            set_verbosity(compiler_verbose)
-            dist.run_command('build_ext')
-            cmd_obj = dist.get_command_obj('build_ext')
-            [soname] = cmd_obj.get_outputs()
-        finally:
-            set_threshold(old_level)
-    except (CompileError, LinkError) as e:
-        raise VerificationError('%s: %s' % (e.__class__.__name__, e))
+        obj_files = []
+        for i, src in enumerate(ext.sources):
+            obj = 'tmp_%d_%s.o' % (i, ext.name.replace('.', '_'))
+            compile_cmd = (
+                cc + cflags +
+                ['-fPIC', '-I', include_dir] +
+                ['-I' + d for d in ext.include_dirs] +
+                ext.extra_compile_args +
+                (['-g'] if debug else []) +
+                ['-D' + (n if v is None else '%s=%s' % (n, v))
+                 for n, v in ext.define_macros] +
+                ['-c', src, '-o', obj]
+            )
+            if compiler_verbose:
+                print(' '.join(compile_cmd))
+            ret = subprocess.call(compile_cmd)
+            if ret != 0:
+                raise VerificationError(
+                    'Compilation failed: %s (exit status %d)' % (src, ret))
+            obj_files.append(obj)
+
+        soname = ext.name.split('.')[-1] + ext_suffix
+        link_cmd = (
+            ldshared +
+            obj_files +
+            ext.extra_objects +
+            ['-L' + d for d in ext.library_dirs] +
+            ['-l' + l for l in ext.libraries] +
+            ext.extra_link_args +
+            ['-o', soname]
+        )
+        if compiler_verbose:
+            print(' '.join(link_cmd))
+        ret = subprocess.call(link_cmd)
+        if ret != 0:
+            raise VerificationError(
+                'Linking failed: %s (exit status %d)' % (soname, ret))
+
+        return os.path.join(tmpdir, soname)
     finally:
         os.chdir(oldir)
-    # Since we shortened the file names, make sure the soname is correct
-    return os.path.join(tmpdir, soname)
 
 
 try:

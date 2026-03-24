@@ -94,19 +94,15 @@ def extra_link_args(compiler_type):
 
 def compiler_type():
     """
-    Gets the compiler type from distutils. On Windows with MSVC it will be
+    Gets the compiler type. On Windows with MSVC it will be
     "msvc". On macOS and linux it is "unix".
     """
+    import sys
+    if sys.platform != 'win32':
+        return 'unix'
+    # On Windows, check if MSVC is available
     try:
-        from distutils.ccompiler import new_compiler
-        from distutils.dist import Distribution
+        import winreg  # noqa: F401
+        return 'msvc'
     except ImportError:
-        # Python 3.12+ removed distutils; use setuptools' bundled copy
-        from setuptools._distutils.ccompiler import new_compiler
-        from setuptools._distutils.dist import Distribution
-    dist = Distribution()
-    dist.parse_config_files()
-    cmd = dist.get_command_obj('build')
-    cmd.ensure_finalized()
-    compiler = new_compiler(compiler=cmd.compiler)
-    return compiler.compiler_type
+        return 'mingw32'
