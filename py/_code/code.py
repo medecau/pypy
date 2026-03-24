@@ -475,6 +475,9 @@ class FormattedExcinfo(object):
             line_index = 0
         if line_index < 0:
             line_index += len(source)
+        if not (0 <= line_index < len(source.lines)):
+            source = py.code.Source("???")
+            line_index = 0
         space_prefix = "    "
         if short:
             lines.append(space_prefix + source.lines[line_index].strip())

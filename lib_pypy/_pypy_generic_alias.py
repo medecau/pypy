@@ -122,13 +122,16 @@ def _make_starred(ga):
 
 
 def _repr_item(it):
-    import typing
     if it == Ellipsis:
         return "..."
     if isinstance(it, GenericAlias):
         return repr(it)
-    if isinstance(it, typing._GenericAlias):
-        return repr(it)
+    try:
+        import typing as _typing
+        if isinstance(it, _typing._GenericAlias):
+            return repr(it)
+    except (ImportError, AttributeError):
+        pass
     try:
         qualname = getattr(it, "__qualname__")
         module = getattr(it, "__module__")
