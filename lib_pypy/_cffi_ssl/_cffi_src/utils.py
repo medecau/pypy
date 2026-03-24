@@ -6,8 +6,6 @@ from __future__ import absolute_import, division, print_function
 
 import os
 import sys
-from distutils.ccompiler import new_compiler
-from distutils.dist import Distribution
 
 from cffi import FFI
 
@@ -99,6 +97,13 @@ def compiler_type():
     Gets the compiler type from distutils. On Windows with MSVC it will be
     "msvc". On macOS and linux it is "unix".
     """
+    try:
+        from distutils.ccompiler import new_compiler
+        from distutils.dist import Distribution
+    except ImportError:
+        # Python 3.12+ removed distutils; use setuptools' bundled copy
+        from setuptools._distutils.ccompiler import new_compiler
+        from setuptools._distutils.dist import Distribution
     dist = Distribution()
     dist.parse_config_files()
     cmd = dist.get_command_obj('build')

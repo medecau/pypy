@@ -13,7 +13,16 @@ from pathlib import Path
 # But this file needs to be importable also in py27 (for pypy tests), and we
 # don't care about setuptools version in that case.
 import setuptools
-import distutils
+try:
+    import distutils
+    from distutils import log
+    from distutils.errors import DistutilsError
+except ImportError:
+    # Python 3.12+ removed distutils; use setuptools' bundled copy
+    import setuptools._distutils as distutils
+    sys.modules['distutils'] = distutils
+    from setuptools._distutils import log
+    from setuptools._distutils.errors import DistutilsError
 if (sys.version_info.major > 2 and
     distutils is not getattr(setuptools, '_distutils', None)):
     raise Exception(
@@ -22,8 +31,6 @@ if (sys.version_info.major > 2 and
         "  - a too old setuptools. Try installing setuptools>=60.2\n"
         "  - the env variable SETUPTOOLS_USE_DISTUTILS=stdlib. Try to unset it."
         )
-from distutils import log
-from distutils.errors import DistutilsError
 import setuptools.command as cmd
 try:
     import setuptools.command.build

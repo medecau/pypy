@@ -59,61 +59,51 @@ def compile_shared(csource, modulename, output_dir):
     """Compile '_testcapi.c' or '_ctypes_test.c' into an extension module,
     and import it.
     """
+    import sysconfig as _sysconfig
+    import subprocess
+
     thisdir = os.path.dirname(__file__)
     assert output_dir is not None
 
-    from distutils.ccompiler import new_compiler
-    from distutils import log, sysconfig
-    log.set_verbosity(3)
+    include_dir = _sysconfig.get_path('include')
+    ext_suffix = _get_c_extension_suffix()
+    src_file = os.path.join(thisdir, csource)
+    obj_file = os.path.join(output_dir, csource[:-2] + '.o')
+    output_filename = modulename + ext_suffix
+    output_path = os.path.join(output_dir, output_filename)
 
-    compiler = new_compiler()
-    compiler.output_dir = output_dir
-    # Compile .c file
-    include_dir = sysconfig.get_config_var('INCLUDEPY')
+    # Compile .c → .o
     if sys.platform == 'win32':
         ccflags = ['-D_CRT_SECURE_NO_WARNINGS']
     else:
         ccflags = ['-fPIC', '-Wimplicit-function-declaration', '-O0', '-g3']
-    sysconfig.customize_compiler(compiler)
-    res = compiler.compile([os.path.join(thisdir, csource)],
-                           include_dirs=[include_dir],
-                           extra_preargs=ccflags,
-                          )
-    object_filename = res[0]
+    cc = (_sysconfig.get_config_var('CC') or 'gcc').split()
+    cflags = (_sysconfig.get_config_var('CFLAGS') or '').split()
+    compile_cmd = cc + cflags + ['-I', include_dir] + ccflags + ['-c', src_file, '-o', obj_file]
+    subprocess.check_call(compile_cmd)
 
-    # set link options
-    output_filename = modulename + _get_c_extension_suffix()
+    # Link .o → .so / .pyd
     if sys.platform == 'win32':
         libname = 'python{0[0]}{0[1]}'.format(sys.version_info)
         library = os.path.join(thisdir, '..', 'libs', libname)
         if not os.path.exists(library + '.lib'):
-            # For a local translation or nightly build
             library = os.path.join(thisdir, '..', 'pypy', 'goal', libname)
-        assert os.path.exists(library + '.lib'), 'Could not find import library "%s"' % library
-        libraries = [library, 'oleaut32']
-        extra_ldargs = ['/MANIFEST',  # needed for VC10
-                        '/EXPORT:PyInit_' + modulename]
+        assert os.path.exists(library + '.lib'), \
+            'Could not find import library "%s"' % library
+        link_cmd = ['link', '/DLL', '/MANIFEST',
+                    '/EXPORT:PyInit_' + modulename,
+                    '/OUT:' + output_path,
+                    obj_file, library + '.lib', 'oleaut32.lib']
     else:
-        libraries = []
-        extra_ldargs = []
+        ldshared = (_sysconfig.get_config_var('LDSHARED') or 'gcc -shared').split()
+        link_cmd = ldshared + [obj_file, '-o', output_path]
+    subprocess.check_call(link_cmd)
 
-    # link the dynamic library
-    compiler.link_shared_object(
-        [object_filename],
-        output_filename,
-        libraries=libraries,
-        extra_preargs=extra_ldargs)
-
-    # Now import the newly created library, it will replace the original
-    # module in sys.modules
-    spec = spec_from_file_location(modulename,
-                                   os.path.join(output_dir, output_filename))
+    # Import the newly created library
+    spec = spec_from_file_location(modulename, output_path)
     mod = module_from_spec(spec)
 
-    # If everything went fine up to now, write the name of this new
-    # directory to 'hashed_fn', for future processes (and to avoid a
-    # growing number of temporary directories that are not completely
-    # obvious to clean up on Windows)
+    # Write the directory name so future runs reuse the same output_dir
     hashed_fn = _get_hashed_filename(os.path.join(thisdir, csource))
     try:
         with open(hashed_fn, 'w') as f:

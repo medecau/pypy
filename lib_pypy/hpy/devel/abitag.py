@@ -1,5 +1,5 @@
 import sys
-from distutils import sysconfig
+import sysconfig
 
 # NOTE: these must be kept on sync with the equivalent defines in hpy.h
 HPY_ABI_VERSION = 0
