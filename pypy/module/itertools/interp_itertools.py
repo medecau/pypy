@@ -593,8 +593,17 @@ class W_Chain(W_Root):
                         "function takes at least 1 argument (%d given)",
                         num_args)
         elif num_args == 1:
+            if space.findattr(state[0], space.newtext('__next__')) is None:
+                raise oefmt(space.w_TypeError,
+                            "Arguments to chain.__setstate__ must be iterators")
             self.w_iterables = state[0]
         elif num_args == 2:
+            if space.findattr(state[0], space.newtext('__next__')) is None:
+                raise oefmt(space.w_TypeError,
+                            "Arguments to chain.__setstate__ must be iterators")
+            if space.findattr(state[1], space.newtext('__next__')) is None:
+                raise oefmt(space.w_TypeError,
+                            "Arguments to chain.__setstate__ must be iterators")
             self.w_iterables, self.w_it = state
         else:
             raise oefmt(space.w_TypeError,
@@ -761,6 +770,7 @@ class W_Cycle(W_Root):
         self.saved_w = []
         self.w_iterable = space.iter(w_iterable)
         self.index = 0    # 0 during the first iteration; > 0 afterwards
+        self.firstpass = False  # when True, don't append to saved_w (CPython mode 1)
 
     def iter_w(self):
         return self
@@ -788,23 +798,20 @@ class W_Cycle(W_Root):
                 else:
                     raise
             else:
-                self.saved_w.append(w_obj)
+                if not self.firstpass:
+                    self.saved_w.append(w_obj)
         return w_obj
 
     def descr_reduce(self, space):
         space.warn(space.newtext(
             "Pickling itertools objects is deprecated and will be removed "
             "in a future release."), space.w_DeprecationWarning)
-        # reduces differently than CPython 3.5.  Unsure if it is a
-        # problem.  To be on the safe side, keep three arguments for
-        # __setstate__; CPython takes two.
         return space.newtuple([
             space.type(self),
             space.newtuple([self.w_iterable]),
             space.newtuple([
                 space.newlist(self.saved_w),
-                space.newint(self.index),
-                # space.newbool(self.index > 0),
+                space.newint(1 if self.firstpass else 0),
             ]),
         ])
 
@@ -812,13 +819,20 @@ class W_Cycle(W_Root):
         space.warn(space.newtext(
             "Pickling itertools objects is deprecated and will be removed "
             "in a future release."), space.w_DeprecationWarning)
-        state_w = space.unpackiterable(w_state, 2)
+        if not space.isinstance_w(w_state, space.w_tuple):
+            raise oefmt(space.w_TypeError,
+                        "state is not a tuple")
+        state_w = space.unpackiterable(w_state)
+        if len(state_w) != 2:
+            raise oefmt(space.w_TypeError,
+                        "state is not a 2-tuple")
         w_saved = state_w[0]
+        if not space.isinstance_w(w_saved, space.w_list):
+            raise oefmt(space.w_TypeError,
+                        "state[0] must be a list")
+        firstpass = space.int_w(state_w[1])
         self.saved_w = space.unpackiterable(w_saved)
-        w_index = state_w[1]
-        self.index = space.int_w(w_index)
-        # w_exhausted ignored
-        # w_exhausted = state_w[2]
+        self.firstpass = bool(firstpass)
 
 
 def W_Cycle___new__(space, w_subtype, w_iterable, __posonly__, __args__):
@@ -940,8 +954,8 @@ def tee(space, w_iterable, n=2):
         # We just rely on doing repeated __copy__().  This case
         # includes the situation where w_iterable is already
         # a W_TeeIterable itself.
-        iterators_w = [w_iterator] * n
-        for i in range(1, n):
+        iterators_w = [None] * n
+        for i in range(n):
             iterators_w[i] = space.call_method(w_iterator, "__copy__")
     else:
         w_chained_list = W_TeeChainedListNode(space)
