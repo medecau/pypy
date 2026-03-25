@@ -1816,7 +1816,7 @@ class W_Batched(W_Root):
 
 
 @unwrap_spec(n=int, strict=bool)
-def W_Batched__new__(space, w_subtype, w_iterable, n, strict=False):
+def W_Batched__new__(space, w_subtype, w_iterable, n, __kwonly__=None, strict=False):
     if n < 1:
         raise oefmt(space.w_ValueError,
                     "batched(): n must be at least one")
