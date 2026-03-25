@@ -77,7 +77,15 @@ def _build(tmpdir, ext, compiler_verbose=0, debug=None):
                     'Compilation failed: %s (exit status %d)' % (src, ret))
             obj_files.append(obj)
 
-        soname = ext.name.split('.')[-1] + ext_suffix
+        # Handle dotted names like "_tkinter.tklib_cffi" → "_tkinter/tklib_cffi.so"
+        name_parts = ext.name.split('.')
+        if len(name_parts) > 1:
+            pkg_dir = os.path.join(*name_parts[:-1])
+            if not os.path.isdir(pkg_dir):
+                os.makedirs(pkg_dir)
+            soname = os.path.join(pkg_dir, name_parts[-1] + ext_suffix)
+        else:
+            soname = ext.name + ext_suffix
         link_cmd = (
             ldshared +
             obj_files +
