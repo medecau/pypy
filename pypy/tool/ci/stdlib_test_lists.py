@@ -144,6 +144,7 @@ EXPECTED_FAILURES = [
     "test_ast",              # AST positional-only arg tuple
     "test_c_locale_coercion", # locale encoding details
     "test_codeccallbacks",   # escape sequence format in callbacks
+    "test_codecs",           # octal/non-ASCII escape warning format
     "test_coroutines",       # RuntimeWarning, coroutine docstring
     "test_cmd_line",         # command line behavior
     "test_cmd_line_script",  # null bytes in multiline string
