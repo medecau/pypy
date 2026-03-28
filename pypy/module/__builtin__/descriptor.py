@@ -17,7 +17,7 @@ class W_Super(W_Root):
     def descr_init(self, space, __args__):
         args_w = __args__.arguments_w
         argc = len(args_w)
-        if __args__.keywords:
+        if __args__.keywords_w:
             raise oefmt(space.w_TypeError,
                         "super() takes no keyword arguments")
         if argc > 2:
