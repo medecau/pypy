@@ -54,6 +54,7 @@ jobs:
         tar xjf pypy-nightly.tar.bz2
         PYPY_DIR=$(find . -maxdepth 1 -name 'pypy-nightly' -type d | head -1)
         PYPY_BIN=$(find "$PYPY_DIR" -name 'pypy*' -type f -executable | grep -v '\.debug' | head -1)
+        PYPY_BIN=$(realpath "$PYPY_BIN")
         chmod +x "$PYPY_BIN"
         echo "PYPY_BIN=$PYPY_BIN" >> "$GITHUB_ENV"
         echo "Found PyPy binary: $PYPY_BIN"

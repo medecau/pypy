@@ -26,6 +26,7 @@ def run_test(pypy, test_name, timeout):
         return (test_name, "timeout", duration)
     except Exception as e:
         duration = time.monotonic() - start
+        print(f"  exception: {e}", file=sys.stderr)
         return (test_name, "error", duration)
 
 
