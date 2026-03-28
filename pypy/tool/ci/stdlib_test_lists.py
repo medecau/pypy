@@ -170,7 +170,6 @@ EXPECTED_FAILURES = [
     "test_metaclass",        # metaclass doctest
     "test_multibytecodec",   # codec state handling
     "test_pdb",              # debugger details
-    "test_positional_only_arg", # error message wording
     "test_pyclbr",           # class browser completeness
     "test_pydoc",            # pydoc output differences
     "test_re",               # buffer handling, error messages
@@ -194,5 +193,5 @@ EXPECTED_FAILURES = [
     "test_unparse",          # AST unparse of f-strings
     "test_utf8_mode",        # UTF-8 mode behavior
     "test_venv",             # pip default behavior
-    "test_weakref",          # proxy behavior, error messages
+    "test_weakref",          # repr failure edge case
 ]
