@@ -57,6 +57,11 @@ from _pypy_typing import (
     TypeAliasType,
     Generic,
 )
+# Fix __module__ so these appear as typing.X, not _pypy_typing.X
+for _cls in (TypeVar, ParamSpec, TypeVarTuple, ParamSpecArgs,
+             ParamSpecKwargs, TypeAliasType, Generic):
+    _cls.__module__ = __name__
+del _cls
 
 # Please keep __all__ alphabetized within each category.
 __all__ = [
