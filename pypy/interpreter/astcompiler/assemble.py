@@ -33,7 +33,7 @@ class Instruction(object):
         self.opcode = opcode
         self.arg = arg
         if opcode < ops.HAVE_ARGUMENT:
-            assert arg == 0
+            assert arg == 0 or opcode == ops.GET_AWAITABLE
         self.position_info = position_info
         self.jump = None
 
