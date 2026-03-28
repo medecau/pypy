@@ -1616,14 +1616,15 @@ class __extend__(pyframe.PyFrame):
         except OperationError as e:
             if oparg >= 1 and e.match(self.space, self.space.w_TypeError):
                 if oparg == 1:
-                    msg = ("'async with' received an object from __aenter__ "
-                           "that does not implement __await__: %T")
+                    raise oefmt(self.space.w_TypeError,
+                        "'async with' received an object from __aenter__ "
+                        "that does not implement __await__: %T",
+                        w_iterable)
                 elif oparg == 2:
-                    msg = ("'async with' received an object from __aexit__ "
-                           "that does not implement __await__: %T")
-                else:
-                    raise
-                raise oefmt(self.space.w_TypeError, msg, w_iterable)
+                    raise oefmt(self.space.w_TypeError,
+                        "'async with' received an object from __aexit__ "
+                        "that does not implement __await__: %T",
+                        w_iterable)
             raise
         if isinstance(w_iter, Coroutine):
             if w_iter.get_delegate() is not None:
