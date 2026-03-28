@@ -4,7 +4,7 @@ on:
   workflow_run:
     workflows: ["Translate PyPy"]
     types: [completed]
-    branches: ["main", "py3.[0-9]+"]
+    branches: ["main", "py3.*"]
   workflow_dispatch:
     inputs:
       smoke_only:
