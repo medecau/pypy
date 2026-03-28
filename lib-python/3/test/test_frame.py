@@ -242,6 +242,7 @@ class ReprTest(unittest.TestCase):
 
 class TestIncompleteFrameAreInvisible(unittest.TestCase):
 
+    @support.cpython_only
     def test_issue95818(self):
         # See GH-95818 for details
         code = textwrap.dedent(f"""

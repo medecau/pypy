@@ -1,4 +1,5 @@
 import unittest
+from test import support
 
 
 class TestLoadAttrCache(unittest.TestCase):
@@ -177,6 +178,7 @@ class TestLoadAttrCache(unittest.TestCase):
         for _ in range(1025):
             self.assertFalse(f())
 
+    @support.cpython_only
     def test_load_shadowing_slot_should_raise_type_error(self):
         class Class:
             __slots__ = ("slot",)

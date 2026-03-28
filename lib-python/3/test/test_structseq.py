@@ -3,6 +3,7 @@ import os
 import pickle
 import time
 import unittest
+from test import support
 
 
 class StructSeqTest(unittest.TestCase):
@@ -118,6 +119,7 @@ class StructSeqTest(unittest.TestCase):
             self.assertEqual(t2.tm_year, t.tm_year)
             self.assertEqual(t2.tm_zone, t.tm_zone)
 
+    @support.cpython_only
     def test_pickling_with_unnamed_fields(self):
         assert os.stat_result.n_unnamed_fields > 0
 
@@ -152,6 +154,7 @@ class StructSeqTest(unittest.TestCase):
         self.assertIsNot(t3[0], t[0])
         self.assertIsNot(t3.tm_year, t.tm_year)
 
+    @support.cpython_only
     def test_copying_with_unnamed_fields(self):
         assert os.stat_result.n_unnamed_fields > 0
 
@@ -198,6 +201,7 @@ class StructSeqTest(unittest.TestCase):
                          'tm_sec', 'tm_wday', 'tm_yday', 'tm_isdst')
         self.assertEqual(time.struct_time.__match_args__, expected_args)
 
+    @support.cpython_only
     def test_match_args_with_unnamed_fields(self):
         expected_args = ('st_mode', 'st_ino', 'st_dev', 'st_nlink', 'st_uid',
                          'st_gid', 'st_size')

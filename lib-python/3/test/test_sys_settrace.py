@@ -1472,6 +1472,7 @@ class TraceTestCase(unittest.TestCase):
              (7, 'line'),
              (7, 'return')])
 
+    @support.cpython_only
     def test_try_except_star_nested(self):
 
         def func():

@@ -1,6 +1,7 @@
 import os
 from pickle import dump
 import sys
+from test import support
 from test.support import captured_stdout, requires_resource
 from test.support.os_helper import (TESTFN, rmtree, unlink)
 from test.support.script_helper import assert_python_ok, assert_python_failure
@@ -195,6 +196,7 @@ class TestLineCounts(unittest.TestCase):
         }
         self.assertEqual(self.tracer.results().counts, expected)
 
+    @support.cpython_only
     def test_traced_decorated_function(self):
         self.tracer.runfunc(traced_decorated_function)
 

@@ -581,6 +581,7 @@ def testfunction_kw(self, *, kw):
 
 class TestPEP590(unittest.TestCase):
 
+    @cpython_only
     def test_method_descriptor_flag(self):
         import functools
         cached = functools.lru_cache(1)(testfunction)
@@ -600,6 +601,7 @@ class TestPEP590(unittest.TestCase):
             pass
         self.assertFalse(MethodDescriptorHeap.__flags__ & Py_TPFLAGS_METHOD_DESCRIPTOR)
 
+    @cpython_only
     def test_vectorcall_flag(self):
         self.assertTrue(_testcapi.MethodDescriptorBase.__flags__ & Py_TPFLAGS_HAVE_VECTORCALL)
         self.assertTrue(_testcapi.MethodDescriptorDerived.__flags__ & Py_TPFLAGS_HAVE_VECTORCALL)
@@ -611,6 +613,7 @@ class TestPEP590(unittest.TestCase):
             pass
         self.assertFalse(MethodDescriptorHeap.__flags__ & Py_TPFLAGS_HAVE_VECTORCALL)
 
+    @cpython_only
     def test_vectorcall_override(self):
         # Check that tp_call can correctly override vectorcall.
         # MethodDescriptorNopGet implements tp_call but it inherits from

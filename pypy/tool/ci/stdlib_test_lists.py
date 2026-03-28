@@ -141,76 +141,65 @@ SKIP_TESTS = [
 # Tests expected to fail on PyPy due to implementation differences.
 # Each has only a few subtest failures (<=3) out of many.
 EXPECTED_FAILURES = [
-    # Smoke test failures (13)
-    "test_call",             # CPython-specific tp_flags
-    "test_exceptions",       # SyntaxError caret range differences
+    "test_ast",              # AST positional-only arg tuple
+    "test_c_locale_coercion", # locale encoding details
+    "test_cmd_line",         # command line behavior
+    "test_cmd_line_script",  # null bytes in multiline string
+    "test_code",             # code object differences
+    "test_code_module",      # traceback context in console
+    "test_codecs",           # escape sequence warning format
+    "test_codeop",           # SyntaxWarning handling
+    "test_concurrent_futures", # process pool edge cases
+    "test_coroutines",       # async with error message
+    "test_cprofile",         # builtin repr differences
+    "test_ctypes",           # struct format differences
+    "test_dataclasses",      # docstring format, weakref slots
+    "test_doctest",          # doctest finder details
+    "test_enum",             # flag containment
+    "test_exceptions",       # SyntaxError caret range
+    "test_extcall",          # extended call edge case
+    "test_fstring",          # f-string error messages
+    "test_future_stmt",      # future statement handling
+    "test_genericalias",     # generic alias detail
     "test_generators",       # generator finalizer edge cases
     "test_grammar",          # parser edge cases
-    "test_iter",             # reentrant exhaustion, __reduce__ edge cases
-    "test_list",             # deep repr recursion handling
+    "test_inspect",          # signature stripping
+    "test_iter",             # reentrant exhaustion, __reduce__
+    "test_list",             # deep repr recursion
+    "test_marshal",          # object identity in marshal
+    "test_memoryio",         # buffer error on write
+    "test_memoryview",       # released memory access
+    "test_metaclass",        # metaclass doctest
+    "test_mmap",             # error message wording
+    "test_multibytecodec",   # codec state handling
+    "test_pdb",              # debugger details
+    "test_positional_only_arg", # error message wording
     "test_print",            # error message wording
     "test_property",         # error message wording
-    "test_range",            # error message wording
-    "test_re",               # buffer handling differences
-    "test_sort",             # list mutation detection during sort
-    "test_types",            # type parameter pickling
-    "test_weakref",          # proxy behavior differences
-
-    # Full suite failures (56)
-    "test__opcode",          # CPython opcode details
-    "test_ast",              # AST implementation details
-    "test_c_locale_coercion", # locale coercion behavior
-    "test_cmd_line",         # command line handling details
-    "test_cmd_line_script",  # script execution details
-    "test_code",             # code object differences
-    "test_code_module",      # code module details
-    "test_codecs",           # codec edge cases
-    "test_codeop",           # code compilation details
-    "test_concurrent_futures", # process pool edge cases
-    "test_coroutines",       # coroutine implementation details
-    "test_cprofile",         # profiler implementation details
-    "test_ctypes",           # ctypes implementation differences
-    "test_dataclasses",      # dataclass edge cases
-    "test_doctest",          # doctest implementation details
-    "test_enum",             # enum edge cases
-    "test_extcall",          # extended call protocol details
-    "test_frame",            # frame object differences
-    "test_fstring",          # f-string edge cases
-    "test_future_stmt",      # future statement handling
-    "test_genericalias",     # generic alias details
-    "test_inspect",          # inspect module differences
-    "test_marshal",          # marshal implementation details
-    "test_memoryio",         # memory IO details
-    "test_memoryview",       # memoryview implementation
-    "test_metaclass",        # metaclass edge cases
-    "test_mmap",             # mmap implementation details
-    "test_multibytecodec",   # multibyte codec details
-    "test_opcache",          # opcode cache details
-    "test_pdb",              # debugger implementation details
-    "test_positional_only_arg", # error message wording
-    "test_pyclbr",           # class browser differences
+    "test_pyclbr",           # class browser completeness
     "test_pydoc",            # pydoc output differences
-    "test_regrtest",         # test framework internals
-    "test_repl",             # REPL behavior differences
-    "test_rlcompleter",      # completer implementation details
-    "test_signal",           # signal handling edge cases
-    "test_source_encoding",  # source encoding details
-    "test_string_literals",  # string literal edge cases
-    "test_structseq",        # struct sequence details
-    "test_subprocess",       # subprocess edge cases
-    "test_sundry",           # miscellaneous module imports
-    "test_super",            # super() implementation details
-    "test_support",          # test support module details
+    "test_range",            # error message wording
+    "test_re",               # buffer handling, error messages
+    "test_repl",             # REPL close_stdin behavior
+    "test_rlcompleter",      # tab completion
+    "test_signal",           # wakeup fd behavior
+    "test_sort",             # list mutation detection
+    "test_source_encoding",  # encoding error message
+    "test_string_literals",  # invalid escape DeprecationWarning
+    "test_subprocess",       # bad cwd filename in exception
+    "test_sundry",           # module importability
+    "test_super",            # error message wording
+    "test_support",          # RecursionError handling
     "test_syntax",           # syntax error details
-    "test_sys",              # sys module differences
-    "test_sys_settrace",     # trace function details
-    "test_termios",          # termios implementation
-    "test_threading",        # threading edge cases
-    "test_trace",            # trace module details
-    "test_tty",              # tty implementation
-    "test_typing",           # typing module differences
-    "test_unpack_ex",        # unpacking edge cases
-    "test_unparse",          # AST unparsing details
-    "test_utf8_mode",        # UTF-8 mode details
-    "test_venv",             # venv creation details
+    "test_sys",              # sys.flags, version_info
+    "test_termios",          # tcgetattr returns bytes vs int
+    "test_threading",        # main thread after fork
+    "test_tty",              # VMIN returns bytes vs int
+    "test_types",            # type parameter pickling
+    "test_typing",           # doctest difference
+    "test_unpack_ex",        # unpacking edge case
+    "test_unparse",          # AST unparse of f-strings
+    "test_utf8_mode",        # UTF-8 mode behavior
+    "test_venv",             # pip default behavior
+    "test_weakref",          # proxy behavior, error messages
 ]

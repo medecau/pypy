@@ -1,4 +1,5 @@
 import dis
+from test import support
 from test.support.import_helper import import_module
 import unittest
 import opcode
@@ -65,6 +66,7 @@ class OpcodeTests(unittest.TestCase):
 
 
 class SpecializationStatsTests(unittest.TestCase):
+    @support.cpython_only
     def test_specialization_stats(self):
         stat_names = opcode._specialization_stats
 
