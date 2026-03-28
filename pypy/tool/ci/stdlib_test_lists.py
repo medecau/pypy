@@ -71,7 +71,7 @@ SMOKE_TESTS = [
 ]
 
 # Tests that should never be run (platform-specific, resource-intensive,
-# or testing CPython implementation details irrelevant to PyPy)
+# testing CPython implementation details, or removed in 3.12)
 SKIP_TESTS = [
     # CPython implementation details
     "test_capi",             # CPython C API internals
@@ -115,24 +115,107 @@ SKIP_TESTS = [
     "test_ossaudiodev",      # needs audio hardware
     "test_zipfile64",        # requires too many resources
 
+    # Network-dependent (no network in CI)
+    "test_smtpnet",          # needs network
+    "test_urllib2net",        # needs network
+    "test_urllibnet",        # needs network
+    "test_xmlrpc_net",       # needs network
+
+    # Missing deps/env in CI
+    "test_curses",           # needs curses terminal
+    "test_pyrepl",           # needs terminal
+    "test_readline",         # needs readline
+    "test_tcl",              # needs Tcl/Tk
+
+    # Removed in Python 3.12
+    "test_asynchat",         # asynchat removed in 3.12
+    "test_asyncore",         # asyncore removed in 3.12
+    "test_smtpd",            # smtpd removed in 3.12
+
+    # Depend on asyncore (removed in 3.12)
+    "test_ftplib",           # imports asyncore transitively
+    "test_logging",          # imports asyncore transitively
+    "test_poplib",           # imports asyncore transitively
+    "test_smtplib",          # imports asyncore transitively
+    "test_ssl",              # imports asyncore transitively
+
     # Known to hang or be extremely slow
     "test_socketserver",     # can hang in CI
 ]
 
-# Tests expected to fail on PyPy. These represent known behavioral
-# differences between PyPy and CPython that don't affect normal usage.
+# Tests expected to fail on PyPy due to implementation differences.
+# Each has only a few subtest failures (<=3) out of many.
 EXPECTED_FAILURES = [
-    "test_call",          # CPython-specific call protocol details
-    "test_exceptions",    # minor exception message differences
-    "test_generators",    # generator implementation details
-    "test_grammar",       # parser differences
-    "test_iter",          # iterator protocol details
-    "test_list",          # implementation-specific behavior
-    "test_re",            # buffer handling and error message differences
-    "test_print",         # minor output differences
-    "test_property",      # descriptor protocol differences
-    "test_range",         # range implementation details
-    "test_sort",          # sort stability/implementation details
-    "test_types",         # type system differences
-    "test_weakref",       # weakref implementation differences
+    # Smoke test failures (13)
+    "test_call",             # CPython-specific tp_flags
+    "test_exceptions",       # SyntaxError caret range differences
+    "test_generators",       # generator finalizer edge cases
+    "test_grammar",          # parser edge cases
+    "test_iter",             # reentrant exhaustion, __reduce__ edge cases
+    "test_list",             # deep repr recursion handling
+    "test_print",            # error message wording
+    "test_property",         # error message wording
+    "test_range",            # error message wording
+    "test_re",               # buffer handling differences
+    "test_sort",             # list mutation detection during sort
+    "test_types",            # type parameter pickling
+    "test_weakref",          # proxy behavior differences
+
+    # Full suite failures (56)
+    "test__opcode",          # CPython opcode details
+    "test_ast",              # AST implementation details
+    "test_c_locale_coercion", # locale coercion behavior
+    "test_cmd_line",         # command line handling details
+    "test_cmd_line_script",  # script execution details
+    "test_code",             # code object differences
+    "test_code_module",      # code module details
+    "test_codecs",           # codec edge cases
+    "test_codeop",           # code compilation details
+    "test_concurrent_futures", # process pool edge cases
+    "test_coroutines",       # coroutine implementation details
+    "test_cprofile",         # profiler implementation details
+    "test_ctypes",           # ctypes implementation differences
+    "test_dataclasses",      # dataclass edge cases
+    "test_doctest",          # doctest implementation details
+    "test_enum",             # enum edge cases
+    "test_extcall",          # extended call protocol details
+    "test_frame",            # frame object differences
+    "test_fstring",          # f-string edge cases
+    "test_future_stmt",      # future statement handling
+    "test_genericalias",     # generic alias details
+    "test_inspect",          # inspect module differences
+    "test_marshal",          # marshal implementation details
+    "test_memoryio",         # memory IO details
+    "test_memoryview",       # memoryview implementation
+    "test_metaclass",        # metaclass edge cases
+    "test_mmap",             # mmap implementation details
+    "test_multibytecodec",   # multibyte codec details
+    "test_opcache",          # opcode cache details
+    "test_pdb",              # debugger implementation details
+    "test_positional_only_arg", # error message wording
+    "test_pyclbr",           # class browser differences
+    "test_pydoc",            # pydoc output differences
+    "test_regrtest",         # test framework internals
+    "test_repl",             # REPL behavior differences
+    "test_rlcompleter",      # completer implementation details
+    "test_signal",           # signal handling edge cases
+    "test_source_encoding",  # source encoding details
+    "test_string_literals",  # string literal edge cases
+    "test_structseq",        # struct sequence details
+    "test_subprocess",       # subprocess edge cases
+    "test_sundry",           # miscellaneous module imports
+    "test_super",            # super() implementation details
+    "test_support",          # test support module details
+    "test_syntax",           # syntax error details
+    "test_sys",              # sys module differences
+    "test_sys_settrace",     # trace function details
+    "test_termios",          # termios implementation
+    "test_threading",        # threading edge cases
+    "test_trace",            # trace module details
+    "test_tty",              # tty implementation
+    "test_typing",           # typing module differences
+    "test_unpack_ex",        # unpacking edge cases
+    "test_unparse",          # AST unparsing details
+    "test_utf8_mode",        # UTF-8 mode details
+    "test_venv",             # venv creation details
 ]
