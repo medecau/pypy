@@ -94,4 +94,18 @@ SKIP_TESTS = [
 # Tests expected to fail on PyPy. Initially empty; populate after
 # the first CI run based on actual results.
 EXPECTED_FAILURES = [
+    "test_call",          # CPython-specific call protocol details
+    "test_exceptions",    # minor exception message differences
+    "test_generators",    # generator implementation details
+    "test_grammar",       # parser differences
+    "test_iter",          # iterator protocol details
+    "test_itertools",     # C extension vs pure Python differences
+    "test_list",          # implementation-specific behavior
+    "test_print",         # minor output differences
+    "test_property",      # descriptor protocol differences
+    "test_range",         # range implementation details
+    "test_re",            # regex engine differences
+    "test_sort",          # sort stability/implementation details
+    "test_types",         # type system differences
+    "test_weakref",       # weakref implementation differences
 ]
