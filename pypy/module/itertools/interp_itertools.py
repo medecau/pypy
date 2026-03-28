@@ -806,12 +806,20 @@ class W_Cycle(W_Root):
         space.warn(space.newtext(
             "Pickling itertools objects is deprecated and will be removed "
             "in a future release."), space.w_DeprecationWarning)
+        if self.index > 0:
+            # Cycling mode: create an iterator over the remaining elements
+            # from the current position, matching CPython behavior
+            w_iter = space.iter(space.newlist(self.saved_w[self.index:]))
+            firstpass = 1
+        else:
+            w_iter = self.w_iterable
+            firstpass = 1 if self.firstpass else 0
         return space.newtuple([
             space.type(self),
-            space.newtuple([self.w_iterable]),
+            space.newtuple([w_iter]),
             space.newtuple([
                 space.newlist(self.saved_w),
-                space.newint(1 if self.firstpass else 0),
+                space.newint(firstpass),
             ]),
         ])
 
@@ -955,7 +963,9 @@ def tee(space, w_iterable, n=2):
         # includes the situation where w_iterable is already
         # a W_TeeIterable itself.
         iterators_w = [None] * n
-        for i in range(n):
+        if n > 0:
+            iterators_w[0] = w_iterator
+        for i in range(1, n):
             iterators_w[i] = space.call_method(w_iterator, "__copy__")
     else:
         w_chained_list = W_TeeChainedListNode(space)
