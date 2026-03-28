@@ -2,6 +2,7 @@
 """Run CPython stdlib tests against a translated PyPy binary."""
 
 import argparse
+import json
 import subprocess
 import sys
 import time
@@ -10,24 +11,26 @@ from stdlib_test_lists import SMOKE_TESTS, SKIP_TESTS, EXPECTED_FAILURES
 
 
 def run_test(pypy, test_name, timeout):
-    """Run a single test module. Returns (test_name, status, duration)."""
+    """Run a single test module. Returns (test_name, status, duration, output)."""
     start = time.monotonic()
     try:
         result = subprocess.run(
             [pypy, "-m", "test", "-v", test_name, f"--timeout={timeout}"],
             capture_output=True, text=True, timeout=timeout + 30)
         duration = time.monotonic() - start
+        output = result.stdout + result.stderr
         if result.returncode == 0:
-            return (test_name, "pass", duration)
+            return (test_name, "pass", duration, output)
         else:
-            return (test_name, "fail", duration)
-    except subprocess.TimeoutExpired:
+            return (test_name, "fail", duration, output)
+    except subprocess.TimeoutExpired as e:
         duration = time.monotonic() - start
-        return (test_name, "timeout", duration)
+        output = (e.stdout or "") + (e.stderr or "")
+        return (test_name, "timeout", duration, output)
     except Exception as e:
         duration = time.monotonic() - start
         print(f"  exception: {e}", file=sys.stderr)
-        return (test_name, "error", duration)
+        return (test_name, "error", duration, str(e))
 
 
 def main():
@@ -64,17 +67,21 @@ def main():
 
     results = {"pass": [], "fail": [], "timeout": [], "error": [],
                "expected_fail": []}
+    failure_outputs = {}
 
     for i, test in enumerate(tests, 1):
         if test in skip_set:
             continue
         print(f"[{i}/{len(tests)}] {test} ... ", end="", flush=True)
-        name, status, duration = run_test(args.pypy, test, args.timeout)
+        name, status, duration, output = run_test(args.pypy, test, args.timeout)
 
         if status == "fail" and name in expected_fail_set:
             status = "expected_fail"
 
         results[status].append((name, duration))
+        if status in ("fail", "error", "timeout"):
+            failure_outputs[name] = output
+
         label = {"pass": "ok", "fail": "FAIL", "timeout": "TIMEOUT",
                  "error": "ERROR", "expected_fail": "xfail"}[status]
         print(f"{label} ({duration:.1f}s)")
@@ -98,6 +105,33 @@ def main():
         print("\nTimeouts:")
         for name, dur in results["timeout"]:
             print(f"  - {name}")
+
+    # Print failure details
+    if failure_outputs:
+        print("\n" + "=" * 60)
+        print("FAILURE DETAILS")
+        print("=" * 60)
+        for name, output in sorted(failure_outputs.items()):
+            print(f"\n--- {name} ---")
+            # Print last 50 lines of output to keep it manageable
+            lines = output.splitlines()
+            if len(lines) > 50:
+                print(f"  ... ({len(lines) - 50} lines omitted)")
+                lines = lines[-50:]
+            for line in lines:
+                print(f"  {line}")
+
+    # Save results as JSON
+    json_results = {
+        "pass": [n for n, _ in results["pass"]],
+        "fail": [n for n, _ in results["fail"]],
+        "expected_fail": [n for n, _ in results["expected_fail"]],
+        "timeout": [n for n, _ in results["timeout"]],
+        "error": [n for n, _ in results["error"]],
+        "failure_details": {n: o[-2000:] for n, o in failure_outputs.items()},
+    }
+    with open("stdlib-results.json", "w") as f:
+        json.dump(json_results, f, indent=2)
 
     # Exit 1 if there are unexpected failures
     unexpected = len(results["fail"]) + len(results["error"])
