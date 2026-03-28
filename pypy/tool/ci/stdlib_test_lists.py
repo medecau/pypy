@@ -127,17 +127,12 @@ SKIP_TESTS = [
     "test_readline",         # needs readline
     "test_tcl",              # needs Tcl/Tk
 
-    # Removed in Python 3.12
-    "test_asynchat",         # asynchat removed in 3.12
-    "test_asyncore",         # asyncore removed in 3.12
-    "test_smtpd",            # smtpd removed in 3.12
-
-    # Depend on asyncore (removed in 3.12)
-    "test_ftplib",           # imports asyncore transitively
-    "test_logging",          # imports asyncore transitively
-    "test_poplib",           # imports asyncore transitively
-    "test_smtplib",          # imports asyncore transitively
-    "test_ssl",              # imports asyncore transitively
+    # Test helpers use asyncore/smtpd (removed)
+    "test_ftplib",           # test code uses asyncore mock servers
+    "test_logging",          # test code uses smtpd
+    "test_poplib",           # test code uses asyncore mock servers
+    "test_smtplib",          # test code uses asyncore/smtpd mock servers
+    "test_ssl",              # test code uses asyncore mock servers
 
     # Known to hang or be extremely slow
     "test_socketserver",     # can hang in CI
