@@ -103,7 +103,15 @@ class TestTermios(object):
         import termios
         import fcntl
         f = termios.tcgetattr(2)
+        # When ICANON is set, all cc values should be bytes
         f[3] |= termios.ICANON
+        termios.tcsetattr(2, termios.TCSANOW, f)
+        f = termios.tcgetattr(2)
+        assert len([i for i in f[-1] if isinstance(i, int)]) == 0
+        assert isinstance(f[-1][termios.VMIN], bytes)
+        assert isinstance(f[-1][termios.VTIME], bytes)
+        # When ICANON is not set, VMIN and VTIME should be ints
+        f[3] &= ~termios.ICANON
         termios.tcsetattr(2, termios.TCSANOW, f)
         f = termios.tcgetattr(2)
         assert len([i for i in f[-1] if isinstance(i, int)]) == 2
