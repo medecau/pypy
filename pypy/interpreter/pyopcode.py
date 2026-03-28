@@ -1611,7 +1611,20 @@ class __extend__(pyframe.PyFrame):
         from pypy.interpreter.generator import get_awaitable_iter
         from pypy.interpreter.generator import Coroutine
         w_iterable = self.popvalue()
-        w_iter = get_awaitable_iter(self.space, w_iterable)
+        try:
+            w_iter = get_awaitable_iter(self.space, w_iterable)
+        except OperationError as e:
+            if oparg >= 1 and e.match(self.space, self.space.w_TypeError):
+                if oparg == 1:
+                    msg = ("'async with' received an object from __aenter__ "
+                           "that does not implement __await__: %T")
+                elif oparg == 2:
+                    msg = ("'async with' received an object from __aexit__ "
+                           "that does not implement __await__: %T")
+                else:
+                    raise
+                raise oefmt(self.space.w_TypeError, msg, w_iterable)
+            raise
         if isinstance(w_iter, Coroutine):
             if w_iter.get_delegate() is not None:
                 # 'w_iter' is a coroutine object that is being awaited,
