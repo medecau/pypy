@@ -1028,7 +1028,9 @@ def sre_match(ctx, pattern, ppos, ptr, marks):
                                       pattern.pat(ppos+2),
                                       marks)
             # when we arrive here, ptr points to the tail of the target
-            # string. match the rest of the pattern.
+            # string. check that we matched at least the minimum.
+            if ptr < minptr:
+                return    # did not match minimum number of times
             ppos += pattern.pat(ppos)
         elif consts.eq(op, consts.OPCODE_POSSESSIVE_REPEAT):
             # create possessive repeat contexts.
