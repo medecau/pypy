@@ -79,7 +79,7 @@ def main():
             status = "expected_fail"
 
         results[status].append((name, duration))
-        if status in ("fail", "error", "timeout"):
+        if status in ("fail", "error", "timeout", "expected_fail"):
             failure_outputs[name] = output
 
         label = {"pass": "ok", "fail": "FAIL", "timeout": "TIMEOUT",
