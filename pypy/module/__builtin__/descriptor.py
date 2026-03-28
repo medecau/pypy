@@ -14,14 +14,21 @@ class W_Super(W_Root):
         self.w_objtype = None
         self.w_self = None
 
-    def descr_init(self, space, w_starttype=None, w_obj_or_type=None):
-        if space.is_none(w_starttype):
+    def descr_init(self, space, __args__):
+        args_w = __args__.arguments_w
+        argc = len(args_w)
+        if argc > 2:
+            raise oefmt(space.w_TypeError,
+                        "super() expected at most 2 arguments, got %d", argc)
+        w_starttype = args_w[0] if argc >= 1 else None
+        w_obj_or_type = args_w[1] if argc >= 2 else None
+
+        if w_starttype is None:
             frame = space.getexecutioncontext().gettopframe()
             w_starttype, w_obj_or_type = _super_from_frame(space, frame)
 
-        if space.is_none(w_obj_or_type):
+        if w_obj_or_type is None:
             w_type = None  # unbound super object
-            w_obj_or_type = None
         else:
             if not space.isinstance_w(w_starttype, space.w_type):
                 raise oefmt(space.w_TypeError, "super() argument 1 must be a type, not %T", w_starttype)
@@ -265,9 +272,15 @@ class W_Property(W_Root):
             w_res.w_name = self.w_name
         return w_res
 
-    def set_name(self, space, w_type, w_name):
+    def set_name(self, space, __args__):
         """ Method to set name of a property. """
-        self.w_name = w_name
+        args_w = __args__.arguments_w
+        argc = len(args_w)
+        if argc != 2:
+            raise oefmt(space.w_TypeError,
+                        "__set_name__() takes 2 positional arguments but %d were given",
+                        argc)
+        self.w_name = args_w[1]
 
     def descr_isabstract(self, space):
         return space.newbool(space.isabstractmethod_w(self.w_fget) or
