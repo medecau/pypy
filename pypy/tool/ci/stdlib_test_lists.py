@@ -147,10 +147,8 @@ EXPECTED_FAILURES = [
     "test_cmd_line_script",  # null bytes in multiline string
     "test_code",             # code object differences
     "test_code_module",      # traceback context in console
-    "test_codecs",           # escape sequence warning format
     "test_codeop",           # SyntaxWarning handling
     "test_concurrent_futures", # process pool edge cases
-    "test_coroutines",       # async with error message
     "test_cprofile",         # builtin repr differences
     "test_ctypes",           # struct format differences
     "test_dataclasses",      # docstring format, weakref slots
@@ -170,15 +168,11 @@ EXPECTED_FAILURES = [
     "test_memoryio",         # buffer error on write
     "test_memoryview",       # released memory access
     "test_metaclass",        # metaclass doctest
-    "test_mmap",             # error message wording
     "test_multibytecodec",   # codec state handling
     "test_pdb",              # debugger details
     "test_positional_only_arg", # error message wording
-    "test_print",            # error message wording
-    "test_property",         # error message wording
     "test_pyclbr",           # class browser completeness
     "test_pydoc",            # pydoc output differences
-    "test_range",            # error message wording
     "test_re",               # buffer handling, error messages
     "test_repl",             # REPL close_stdin behavior
     "test_rlcompleter",      # tab completion
@@ -188,7 +182,6 @@ EXPECTED_FAILURES = [
     "test_string_literals",  # invalid escape DeprecationWarning
     "test_subprocess",       # bad cwd filename in exception
     "test_sundry",           # module importability
-    "test_super",            # error message wording
     "test_support",          # RecursionError handling
     "test_syntax",           # syntax error details
     "test_sys",              # sys.flags, version_info
