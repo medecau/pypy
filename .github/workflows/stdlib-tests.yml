@@ -10,7 +10,7 @@ on:
       smoke_only:
         description: 'Only run smoke tests (~60 modules)'
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: read
@@ -23,7 +23,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 180
 
     env:
       SMOKE_ONLY_INPUT: ${{ github.event.inputs.smoke_only }}
@@ -66,21 +66,27 @@ jobs:
         packages: libffi-dev pkg-config zlib1g-dev libbz2-dev libsqlite3-dev libncurses5-dev libexpat1-dev libssl-dev libgdbm-dev tk-dev libgc-dev liblzma-dev libncursesw5-dev
         version: 1.0
 
-    - name: Run stdlib tests
+    - name: Run smoke tests (gate)
       working-directory: pypy/tool/ci
-      run: |
-        SMOKE_FLAG=""
-        if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$SMOKE_ONLY_INPUT" = "true" ]; then
-          SMOKE_FLAG="--smoke-only"
-        elif [ "$EVENT_NAME" = "workflow_run" ]; then
-          SMOKE_FLAG="--smoke-only"
-        fi
-        python3 run_stdlib_tests.py --pypy "$PYPY_BIN" $SMOKE_FLAG --timeout 300
+      run: python3 run_stdlib_tests.py --pypy "$PYPY_BIN" --smoke-only --timeout 300
 
-    - name: Upload results
+    - name: Upload smoke results
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: stdlib-test-results
+        name: stdlib-smoke-results
+        path: pypy/tool/ci/stdlib-results.json
+        if-no-files-found: ignore
+
+    - name: Run full stdlib tests
+      if: success() && github.event.inputs.smoke_only != 'true'
+      working-directory: pypy/tool/ci
+      run: python3 run_stdlib_tests.py --pypy "$PYPY_BIN" --timeout 300
+
+    - name: Upload full results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: stdlib-full-results
         path: pypy/tool/ci/stdlib-results.json
         if-no-files-found: ignore

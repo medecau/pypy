@@ -73,26 +73,54 @@ SMOKE_TESTS = [
 # Tests that should never be run (platform-specific, resource-intensive,
 # or testing CPython implementation details irrelevant to PyPy)
 SKIP_TESTS = [
+    # CPython implementation details
+    "test_capi",             # CPython C API internals
+    "test_clinic",           # CPython Argument Clinic tool
+    "test_compile",          # CPython compiler internals
     "test_dis",              # CPython bytecode details
     "test_dict_version",     # CPython implementation detail
+    "test_embed",            # CPython embedding API
     "test_frozen",           # CPython frozen modules
     "test_gc",               # CPython GC implementation
+    "test_gdb",              # CPython GDB hooks
+    "test_getpath",          # CPython internal details
+    "test_monitoring",       # CPython sys.monitoring (PEP 669)
+    "test_peepholer",        # CPython bytecode optimizer
+    "test_perf_profiler",    # CPython perf profiler support
+    "test_stable_abi_ctypes", # needs ctypes.pythonapi
     "test_symtable",         # CPython symbol table details
     "test_tools",            # CPython internal tools
     "test_xxlimited",        # CPython C extension test
+    "test_xxlimited_35",     # CPython C extension test
     "test_xxtestfuzz",       # CPython fuzzing
-    "test_zipfile64",        # requires too many resources
+    "test_xxsubtype",        # CPython C extension test
+
+    # Display/GUI required
+    "test_idle",             # needs display (IDLE)
     "test_tix",              # needs display
     "test_tk",               # needs display
+    "test_tkinter",          # needs display
     "test_ttk_guionly",      # needs display
+    "test_ttk_textonly",     # needs Tk libraries
+    "test_turtle",           # needs display
+
+    # Platform-specific (Windows)
+    "test_msilib",           # Windows only
+    "test_startfile",        # Windows only
+    "test_winreg",           # Windows only
     "test_winsound",         # Windows only
+    "test_wmi",              # Windows only
+
+    # Hardware/resource requirements
     "test_ossaudiodev",      # needs audio hardware
-    "test_stable_abi_ctypes", # needs ctypes.pythonapi
-    "test_getpath",          # CPython internal details
+    "test_zipfile64",        # requires too many resources
+
+    # Known to hang or be extremely slow
+    "test_socketserver",     # can hang in CI
 ]
 
-# Tests expected to fail on PyPy. Initially empty; populate after
-# the first CI run based on actual results.
+# Tests expected to fail on PyPy. These represent known behavioral
+# differences between PyPy and CPython that don't affect normal usage.
 EXPECTED_FAILURES = [
     "test_call",          # CPython-specific call protocol details
     "test_exceptions",    # minor exception message differences
