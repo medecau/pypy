@@ -101,8 +101,11 @@ class ExtensionCompiler(SystemCompilationInfo):
     """Extension compiler for appdirect mode"""
     def load_module(space, mod, name, use_imp=False):
         # use_imp is ignored, it is useful only for non-appdirect mode
-        import imp
-        return imp.load_dynamic(name, mod)
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(name, mod)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
 
 def convert_sources_to_files(sources, dirname):
     files = []
@@ -212,11 +215,13 @@ def _build(cfilenames, outputfilename, compile_extra, link_extra,
         # monkeypatch distutils for some versions of msvc compiler
         import setuptools
     except ImportError:
-        # XXX if this fails and is required,
-        #     we must call pypy -mensurepip after translation
         pass
-    from distutils.ccompiler import new_compiler
-    from distutils import sysconfig
+    try:
+        from distutils.ccompiler import new_compiler
+        from distutils import sysconfig
+    except ImportError:
+        from setuptools._distutils.ccompiler import new_compiler
+        from setuptools._distutils import sysconfig
 
     # XXX for Darwin running old versions of CPython 2.7.x
     sysconfig.get_config_vars()
@@ -244,16 +249,17 @@ def _build(cfilenames, outputfilename, compile_extra, link_extra,
         library_dirs=library_dirs)
 
 def get_so_suffix():
-    from imp import get_suffixes, C_EXTENSION
-    for suffix, mode, typ in get_suffixes():
-        if typ == C_EXTENSION:
-            return suffix
-    else:
-        raise RuntimeError("This interpreter does not define a filename "
-            "suffix for C extensions!")
+    import importlib.machinery
+    suffixes = importlib.machinery.EXTENSION_SUFFIXES
+    if suffixes:
+        return suffixes[0]
+    raise RuntimeError("This interpreter does not define a filename "
+        "suffix for C extensions!")
 
 def get_sys_info_app(base_dir):
-    from distutils.sysconfig import get_python_inc
+    import sysconfig as _sysconfig
+    def get_python_inc():
+        return _sysconfig.get_path('include')
     if sys.platform == 'win32':
         compile_extra = ["/we4013"]
         link_extra = ["/LIBPATH:" + os.path.join(sys.exec_prefix, 'libs')]

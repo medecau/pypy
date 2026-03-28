@@ -754,7 +754,11 @@ def test_unicode_libraries():
     lib_m = "m"
     if sys.platform == 'win32':
         #there is a small chance this fails on Mingw via environ $CC
-        import distutils.ccompiler
+        try:
+            import distutils.ccompiler
+        except ImportError:
+            from setuptools._distutils import ccompiler as _cc
+            import types; distutils = types.SimpleNamespace(ccompiler=_cc)
         if distutils.ccompiler.get_default_compiler() == 'msvc':
             lib_m = 'msvcrt'
     ffi = FFI()

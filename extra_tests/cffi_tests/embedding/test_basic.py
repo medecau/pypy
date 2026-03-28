@@ -112,7 +112,11 @@ if sys.platform == 'win32':
         filename = '%s.c' % name
         shutil.copy(os.path.join(local_dir, filename), path)
         shutil.copy(os.path.join(local_dir, 'thread-test.h'), path)
-        import distutils.ccompiler
+        try:
+            import distutils.ccompiler
+        except ImportError:
+            from setuptools._distutils import ccompiler
+            import types; distutils = types.SimpleNamespace(ccompiler=ccompiler)
         curdir = os.getcwd()
         try:
             os.chdir(self.get_path())

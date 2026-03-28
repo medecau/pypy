@@ -5,7 +5,10 @@ from pathlib import Path
 import re
 import subprocess
 import textwrap
-import distutils
+try:
+    import distutils
+except ImportError:
+    import setuptools._distutils as distutils
 
 PY2 = sys.version_info[0] == 2
 

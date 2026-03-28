@@ -164,7 +164,6 @@ testmap = [
     RegrTest('test_dictviews.py'),
     RegrTest('test_difflib.py'),
     RegrTest('test_dis.py', skip="implementation detail"),
-    RegrTest('test_distutils.py'),
     RegrTest('test_docxmlrpc.py'),
     RegrTest('test_dtrace.py'),
     RegrTest('test_dynamic.py'),

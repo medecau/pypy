@@ -18,8 +18,12 @@ def _build(cfilenames, outputfilename, compile_extra, link_extra,
         # XXX if this fails and is required,
         #     we must call pypy -mensurepip after translation
         pass
-    from distutils.ccompiler import new_compiler
-    from distutils import sysconfig
+    try:
+        from distutils.ccompiler import new_compiler
+        from distutils import sysconfig
+    except ImportError:
+        from setuptools._distutils.ccompiler import new_compiler
+        from setuptools._distutils import sysconfig
 
     # XXX for Darwin running old versions of CPython 2.7.x
     sysconfig.get_config_vars()
