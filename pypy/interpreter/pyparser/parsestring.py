@@ -225,7 +225,7 @@ def _PyString_DecodeEscape(space, s, errors, recode_encoding):
             # \400 is the same as \000 because 0400 == 256
             raw = int(octal, 8)
             if raw >= 256:
-                first_escape_error_char = octal
+                first_escape_error_char = "\\" + octal
             num = raw & 0xFF
             builder.append(chr(num))
             ps = span
@@ -256,7 +256,7 @@ def _PyString_DecodeEscape(space, s, errors, recode_encoding):
             ps -= 1
             assert ps >= 0
             if first_escape_error_char == '':
-                first_escape_error_char = ch
+                first_escape_error_char = "\\" + ch
             continue
             # an arbitrary number of unescaped UTF-8 bytes may follow.
 

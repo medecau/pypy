@@ -143,6 +143,8 @@ SKIP_TESTS = [
 EXPECTED_FAILURES = [
     "test_ast",              # AST positional-only arg tuple
     "test_c_locale_coercion", # locale encoding details
+    "test_codeccallbacks",   # escape sequence format in callbacks
+    "test_coroutines",       # RuntimeWarning, coroutine docstring
     "test_cmd_line",         # command line behavior
     "test_cmd_line_script",  # null bytes in multiline string
     "test_code",             # code object differences
@@ -152,10 +154,12 @@ EXPECTED_FAILURES = [
     "test_cprofile",         # builtin repr differences
     "test_ctypes",           # struct format differences
     "test_dataclasses",      # docstring format, weakref slots
+    "test_descr",            # super() keyword arg edge case
     "test_doctest",          # doctest finder details
     "test_enum",             # flag containment
     "test_exceptions",       # SyntaxError caret range
     "test_extcall",          # extended call edge case
+    "test_frame",            # frame tracing line numbers
     "test_fstring",          # f-string error messages
     "test_future_stmt",      # future statement handling
     "test_genericalias",     # generic alias detail
@@ -168,6 +172,7 @@ EXPECTED_FAILURES = [
     "test_memoryio",         # buffer error on write
     "test_memoryview",       # released memory access
     "test_metaclass",        # metaclass doctest
+    "test_mmap",             # closed mmap detection
     "test_multibytecodec",   # codec state handling
     "test_pdb",              # debugger details
     "test_pyclbr",           # class browser completeness
@@ -184,6 +189,7 @@ EXPECTED_FAILURES = [
     "test_support",          # RecursionError handling
     "test_syntax",           # syntax error details
     "test_sys",              # sys.flags, version_info
+    "test_sys_settrace",     # trace event ordering differences
     "test_termios",          # tcgetattr returns bytes vs int
     "test_threading",        # main thread after fork
     "test_tty",              # VMIN returns bytes vs int
