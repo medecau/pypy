@@ -185,10 +185,12 @@ EXPECTED_FAILURES = [
     "test_sort",             # list mutation detection
     "test_source_encoding",  # encoding error message
     "test_string_literals",  # invalid escape DeprecationWarning
+    "test_subprocess",       # flaky ResourceWarning in zombie test
     "test_support",          # RecursionError handling
     "test_syntax",           # syntax error details
     "test_sys",              # sys.flags, version_info
     "test_sys_settrace",     # trace event ordering differences
+    "test_termios",          # crashes in CI without terminal
     "test_threading",        # main thread after fork
     "test_types",            # type parameter pickling
     "test_typing",           # doctest difference
