@@ -150,7 +150,6 @@ EXPECTED_FAILURES = [
     "test_frame",            # frame tracing line numbers
     "test_fstring",          # f-string error messages
     "test_future_stmt",      # future statement handling
-    "test_genericalias",     # generic alias detail
     "test_generators",       # generator finalizer edge cases
     "test_grammar",          # parser edge cases
     "test_inspect",          # signature stripping

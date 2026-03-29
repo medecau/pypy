@@ -62,6 +62,7 @@ class ProcessPoolExecutorTest(ExecutorTest):
     def _test_traceback(cls):
         raise RuntimeError(123) # some comment
 
+    @support.cpython_only
     def test_traceback(self):
         # We want ensure that the traceback from the child process is
         # contained in the traceback raised in the main process.

@@ -1,6 +1,7 @@
 # Python test set -- part 1, grammar.
 # This just tests whether the parser accepts them all.
 
+from test import support
 from test.support import check_syntax_error
 from test.support import import_helper, check_impl_detail
 from test.support.warnings_helper import check_syntax_warning
@@ -216,6 +217,7 @@ class TokenTests(unittest.TestCase):
         else:
             check("1e+", "invalid decimal literal")
 
+    @support.cpython_only
     def test_end_of_numerical_literals(self):
         def check(test, error=False):
             with self.subTest(expr=test):
@@ -1297,6 +1299,7 @@ class GrammarTests(unittest.TestCase):
         else:
             self.fail("AssertionError not raised by 'assert False'")
 
+    @support.cpython_only
     def test_assert_syntax_warnings(self):
         # Ensure that we warn users if they provide a non-zero length tuple as
         # the assertion test.
@@ -1311,6 +1314,7 @@ class GrammarTests(unittest.TestCase):
             compile('assert x, "msg"', '<testcase>', 'exec')
             compile('assert False, "msg"', '<testcase>', 'exec')
 
+    @support.cpython_only
     def test_assert_warning_promotes_to_syntax_error(self):
         # If SyntaxWarning is configured to be an error, it actually raises a
         # SyntaxError.
@@ -1485,6 +1489,7 @@ class GrammarTests(unittest.TestCase):
         if 1 not in (): pass
         if 1 < 1 > 1 == 1 >= 1 <= 1 != 1 in 1 not in x is x is not x: pass
 
+    @support.cpython_only
     def test_comparison_is_literal(self):
         def check(test, msg='"is" with a literal'):
             self.check_syntax_warning(test, msg)
@@ -1502,6 +1507,7 @@ class GrammarTests(unittest.TestCase):
             compile('x is True', '<testcase>', 'exec')
             compile('x is ...', '<testcase>', 'exec')
 
+    @support.cpython_only
     def test_warn_missed_comma(self):
         def check(test):
             self.check_syntax_warning(test, msg)

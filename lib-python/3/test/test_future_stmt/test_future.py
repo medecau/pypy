@@ -72,6 +72,7 @@ class FutureTest(unittest.TestCase):
             from test.test_future_stmt import badsyntax_future6
         self.check_syntax_error(cm.exception, "badsyntax_future6", 3)
 
+    @support.cpython_only
     def test_badfuture7(self):
         with self.assertRaises(SyntaxError) as cm:
             from test.test_future_stmt import badsyntax_future7
@@ -189,6 +190,7 @@ class AnnotationsFutureTestCase(unittest.TestCase):
         )
         return scope
 
+    @support.cpython_only
     def test_annotations(self):
         eq = self.assertAnnotationEqual
         eq('...')
@@ -353,6 +355,7 @@ class AnnotationsFutureTestCase(unittest.TestCase):
         eq('(((a, b)))', '(a, b)')
         eq("1 + 2 + 3")
 
+    @support.cpython_only
     def test_fstring_debug_annotations(self):
         # f-strings with '=' don't round trip very well, so set the expected
         # result explicitly.
@@ -363,6 +366,7 @@ class AnnotationsFutureTestCase(unittest.TestCase):
         self.assertAnnotationEqual("f'{x=!a}'", expected="f'x={x!a}'")
         self.assertAnnotationEqual("f'{x=!s:*^20}'", expected="f'x={x!s:*^20}'")
 
+    @support.cpython_only
     def test_infinity_numbers(self):
         inf = "1e" + repr(sys.float_info.max_10_exp + 1)
         infj = f"{inf}j"
@@ -429,6 +433,7 @@ class AnnotationsFutureTestCase(unittest.TestCase):
                 def bar(arg: (yield)): pass
             """))
 
+    @support.cpython_only
     def test_get_type_hints_on_func_with_variadic_arg(self):
         # `typing.get_type_hints` might break on a function with a variadic
         # annotation (e.g. `f(*args: *Ts)`) if `from __future__ import
