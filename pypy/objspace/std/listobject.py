@@ -829,6 +829,7 @@ Raises ValueError if the value is not present."""
         sorter = sorterclass(self.getitems(), self.length())
         sorter.space = space
 
+        empty_strategy = None  # initialized before try for RPython flow analysis
         try:
             strategy = self.strategy
             # The list is temporarily made empty, so that mutations performed
