@@ -127,13 +127,6 @@ SKIP_TESTS = [
     "test_readline",         # needs readline
     "test_tcl",              # needs Tcl/Tk
 
-    # Test helpers use asyncore/smtpd (removed)
-    "test_ftplib",           # test code uses asyncore mock servers
-    "test_logging",          # test code uses smtpd
-    "test_poplib",           # test code uses asyncore mock servers
-    "test_smtplib",          # test code uses asyncore/smtpd mock servers
-    "test_ssl",              # test code uses asyncore mock servers
-
     # Known to hang or be extremely slow
     "test_socketserver",     # can hang in CI
 ]
