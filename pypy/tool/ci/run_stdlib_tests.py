@@ -3,15 +3,18 @@
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from stdlib_test_lists import SMOKE_TESTS, SKIP_TESTS, EXPECTED_FAILURES
 
 
-def run_test(pypy, test_name, timeout):
+def run_test(args):
     """Run a single test module. Returns (test_name, status, duration, output)."""
+    pypy, test_name, timeout = args
     start = time.monotonic()
     try:
         result = subprocess.run(
@@ -29,8 +32,14 @@ def run_test(pypy, test_name, timeout):
         return (test_name, "timeout", duration, output)
     except Exception as e:
         duration = time.monotonic() - start
-        print(f"  exception: {e}", file=sys.stderr)
         return (test_name, "error", duration, str(e))
+
+
+def get_cpu_count():
+    try:
+        return os.cpu_count() or 1
+    except Exception:
+        return 1
 
 
 def main():
@@ -40,14 +49,16 @@ def main():
                         help="Only run smoke tests (~60 modules)")
     parser.add_argument("--timeout", type=int, default=300,
                         help="Timeout per test in seconds (default: 300)")
+    parser.add_argument("-j", "--jobs", type=int, default=0,
+                        help="Number of parallel workers (default: CPU count)")
     args = parser.parse_args()
+
+    workers = args.jobs if args.jobs > 0 else get_cpu_count()
 
     if args.smoke_only:
         tests = sorted(SMOKE_TESTS)
-        print(f"Running {len(tests)} smoke tests")
+        print(f"Running {len(tests)} smoke tests with {workers} workers")
     else:
-        # Discover all test modules from lib-python/3/test/
-        import os
         test_dir = os.path.join(os.path.dirname(__file__),
                                 "..", "..", "..", "lib-python", "3", "test")
         test_dir = os.path.normpath(test_dir)
@@ -60,7 +71,7 @@ def main():
                 tests.add(entry)
         tests -= set(SKIP_TESTS)
         tests = sorted(tests)
-        print(f"Running {len(tests)} tests (skipping {len(SKIP_TESTS)})")
+        print(f"Running {len(tests)} tests with {workers} workers (skipping {len(SKIP_TESTS)})")
 
     skip_set = set(SKIP_TESTS)
     expected_fail_set = set(EXPECTED_FAILURES)
@@ -69,26 +80,35 @@ def main():
                "expected_fail": []}
     failure_outputs = {}
 
-    for i, test in enumerate(tests, 1):
-        if test in skip_set:
-            continue
-        print(f"[{i}/{len(tests)}] {test} ... ", end="", flush=True)
-        name, status, duration, output = run_test(args.pypy, test, args.timeout)
+    test_args = [(args.pypy, t, args.timeout) for t in tests if t not in skip_set]
+    total = len(test_args)
+    completed = 0
+    start_time = time.monotonic()
 
-        if status == "fail" and name in expected_fail_set:
-            status = "expected_fail"
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        futures = {executor.submit(run_test, ta): ta[1] for ta in test_args}
 
-        results[status].append((name, duration))
-        if status in ("fail", "error", "timeout", "expected_fail"):
-            failure_outputs[name] = output
+        for future in as_completed(futures):
+            completed += 1
+            name, status, duration, output = future.result()
 
-        label = {"pass": "ok", "fail": "FAIL", "timeout": "TIMEOUT",
-                 "error": "ERROR", "expected_fail": "xfail"}[status]
-        print(f"{label} ({duration:.1f}s)")
+            if status == "fail" and name in expected_fail_set:
+                status = "expected_fail"
+
+            results[status].append((name, duration))
+            if status in ("fail", "error", "timeout", "expected_fail"):
+                failure_outputs[name] = output
+
+            label = {"pass": "ok", "fail": "FAIL", "timeout": "TIMEOUT",
+                     "error": "ERROR", "expected_fail": "xfail"}[status]
+            elapsed = time.monotonic() - start_time
+            print(f"[{completed}/{total}] {name} ... {label} ({duration:.1f}s) [{elapsed:.0f}s elapsed]")
+            sys.stdout.flush()
 
     # Summary
+    elapsed = time.monotonic() - start_time
     print("\n" + "=" * 60)
-    print("SUMMARY")
+    print(f"SUMMARY (completed in {elapsed:.0f}s with {workers} workers)")
     print("=" * 60)
     print(f"  Passed:           {len(results['pass'])}")
     print(f"  Failed:           {len(results['fail'])}")
@@ -98,12 +118,12 @@ def main():
 
     if results["fail"]:
         print("\nUnexpected failures:")
-        for name, dur in results["fail"]:
+        for name, dur in sorted(results["fail"]):
             print(f"  - {name}")
 
     if results["timeout"]:
         print("\nTimeouts:")
-        for name, dur in results["timeout"]:
+        for name, dur in sorted(results["timeout"]):
             print(f"  - {name}")
 
     # Print failure details
@@ -113,7 +133,6 @@ def main():
         print("=" * 60)
         for name, output in sorted(failure_outputs.items()):
             print(f"\n--- {name} ---")
-            # Print last 50 lines of output to keep it manageable
             lines = output.splitlines()
             if len(lines) > 50:
                 print(f"  ... ({len(lines) - 50} lines omitted)")
