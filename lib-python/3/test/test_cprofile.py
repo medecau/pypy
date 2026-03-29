@@ -14,9 +14,21 @@ from test import support
 class CProfileTest(ProfileTest):
     profilerclass = cProfile.Profile
     profilermodule = cProfile
-    expected_max_output = "{built-in method builtins.max}"
+    expected_max_output = ("{built-in method builtins.max}"
+                           if support.check_impl_detail()
+                           else "{built-in function max}")
 
     def get_expected_output(self):
+        if not support.check_impl_detail():
+            # PyPy uses "built-in function" instead of "built-in method builtins."
+            out = {}
+            for key, value in _ProfileOutput.items():
+                value = value.replace(
+                    '{built-in method builtins.', '{built-in function ')
+                value = value.replace(
+                    '{built-in method sys.', '{built-in function sys.')
+                out[key] = value
+            return out
         return _ProfileOutput
 
     @cpython_only

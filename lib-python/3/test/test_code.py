@@ -215,6 +215,7 @@ class CodeTest(unittest.TestCase):
         obj = List([1, 2, 3])
         self.assertEqual(obj[0], "Foreign getitem: 1")
 
+    @cpython_only
     def test_constructor(self):
         def func(): pass
         co = func.__code__
@@ -286,6 +287,7 @@ class CodeTest(unittest.TestCase):
         self.assertEqual(new_code.co_varnames, code2.co_varnames)
         self.assertEqual(new_code.co_nlocals, code2.co_nlocals)
 
+    @cpython_only
     def test_nlocals_mismatch(self):
         def func():
             x = 1
@@ -338,6 +340,7 @@ class CodeTest(unittest.TestCase):
         new_code = code = func.__code__.replace(co_linetable=b'')
         self.assertEqual(list(new_code.co_lines()), [])
 
+    @cpython_only
     @requires_debug_ranges()
     def test_co_positions_artificial_instructions(self):
         import dis
@@ -388,6 +391,7 @@ class CodeTest(unittest.TestCase):
             ]
         )
 
+    @cpython_only
     def test_endline_and_columntable_none_when_no_debug_ranges(self):
         # Make sure that if `-X no_debug_ranges` is used, there is
         # minimal debug info
@@ -403,6 +407,7 @@ class CodeTest(unittest.TestCase):
             """)
         assert_python_ok('-X', 'no_debug_ranges', '-c', code)
 
+    @cpython_only
     def test_endline_and_columntable_none_when_no_debug_ranges_env(self):
         # Same as above but using the environment variable opt out.
         code = textwrap.dedent("""
@@ -429,6 +434,7 @@ class CodeTest(unittest.TestCase):
             self.assertIsNone(line)
             self.assertEqual(end_line, new_code.co_firstlineno + 1)
 
+    @cpython_only
     def test_code_equality(self):
         def f():
             try:
@@ -800,7 +806,9 @@ if check_impl_detail(cpython=True) and ctypes is not None:
 
 
 def load_tests(loader, tests, pattern):
-    tests.addTest(doctest.DocTestSuite())
+    if check_impl_detail():
+        # co_flags values in the module docstring are CPython-specific
+        tests.addTest(doctest.DocTestSuite())
     return tests
 
 

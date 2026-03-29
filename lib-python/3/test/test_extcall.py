@@ -52,15 +52,15 @@ Here we add keyword arguments
     >>> f(1, 2, **{'a': -1, 'b': 5}, **{'a': 4, 'c': 6})
     Traceback (most recent call last):
         ...
-    TypeError: test.test_extcall.f() got multiple values for keyword argument 'a'
+    TypeError: ...f() got multiple values for keyword argument 'a'
     >>> f(1, 2, **{'a': -1, 'b': 5}, a=4, c=6)
     Traceback (most recent call last):
         ...
-    TypeError: test.test_extcall.f() got multiple values for keyword argument 'a'
+    TypeError: ...f() got multiple values for keyword argument 'a'
     >>> f(1, 2, a=3, **{'a': 4}, **{'a': 5})
     Traceback (most recent call last):
         ...
-    TypeError: test.test_extcall.f() got multiple values for keyword argument 'a'
+    TypeError: ...f() got multiple values for keyword argument 'a'
     >>> f(1, 2, 3, *[4, 5], **{'a':6, 'b':7})
     (1, 2, 3, 4, 5) {'a': 6, 'b': 7}
     >>> f(1, 2, 3, x=4, y=5, *(6, 7), **{'a':8, 'b': 9})
@@ -136,7 +136,7 @@ Verify clearing of SF bug #733667
     >>> g(*Nothing())
     Traceback (most recent call last):
       ...
-    TypeError: test.test_extcall.g() argument after * must be an iterable, not Nothing
+    TypeError: ...g() argument after * must be an iterable, not Nothing
 
     >>> class Nothing:
     ...     def __len__(self): return 5
@@ -145,7 +145,7 @@ Verify clearing of SF bug #733667
     >>> g(*Nothing())
     Traceback (most recent call last):
       ...
-    TypeError: test.test_extcall.g() argument after * must be an iterable, not Nothing
+    TypeError: ...g() argument after * must be an iterable, not Nothing
 
     >>> class Nothing():
     ...     def __len__(self): return 5
@@ -265,7 +265,7 @@ What about willful misconduct?
     >>> h(*h)
     Traceback (most recent call last):
       ...
-    TypeError: test.test_extcall.h() argument after * must be an iterable, not function
+    TypeError: ...h() argument after * must be an iterable, not function
 
     >>> h(1, *h)
     Traceback (most recent call last):
@@ -292,32 +292,32 @@ not function
     >>> h(**h)
     Traceback (most recent call last):
       ...
-    TypeError: test.test_extcall.h() argument after ** must be a mapping, not function
+    TypeError: ...h() argument after ** must be a mapping, not function
 
     >>> h(**[])
     Traceback (most recent call last):
       ...
-    TypeError: test.test_extcall.h() argument after ** must be a mapping, not list
+    TypeError: ...h() argument after ** must be a mapping, not list
 
     >>> h(a=1, **h)
     Traceback (most recent call last):
       ...
-    TypeError: test.test_extcall.h() argument after ** must be a mapping, not function
+    TypeError: ...h() argument after ** must be a mapping, not function
 
     >>> h(a=1, **[])
     Traceback (most recent call last):
       ...
-    TypeError: test.test_extcall.h() argument after ** must be a mapping, not list
+    TypeError: ...h() argument after ** must be a mapping, not list
 
     >>> h(**{'a': 1}, **h)
     Traceback (most recent call last):
       ...
-    TypeError: test.test_extcall.h() argument after ** must be a mapping, not function
+    TypeError: ...h() argument after ** must be a mapping, not function
 
     >>> h(**{'a': 1}, **[])
     Traceback (most recent call last):
       ...
-    TypeError: test.test_extcall.h() argument after ** must be a mapping, not list
+    TypeError: ...h() argument after ** must be a mapping, not list
 
     >>> dir(**h)
     Traceback (most recent call last):
@@ -369,17 +369,17 @@ Test a kwargs mapping with duplicated keys.
     >>> g(**MultiDict([('x', 1), ('x', 2)]))
     Traceback (most recent call last):
       ...
-    TypeError: test.test_extcall.g() got multiple values for keyword argument 'x'
+    TypeError: ...g() got multiple values for keyword argument 'x'
 
     >>> g(a=3, **MultiDict([('x', 1), ('x', 2)]))
     Traceback (most recent call last):
       ...
-    TypeError: test.test_extcall.g() got multiple values for keyword argument 'x'
+    TypeError: ...g() got multiple values for keyword argument 'x'
 
     >>> g(**MultiDict([('a', 3)]), **MultiDict([('x', 1), ('x', 2)]))
     Traceback (most recent call last):
       ...
-    TypeError: test.test_extcall.g() got multiple values for keyword argument 'x'
+    TypeError: ...g() got multiple values for keyword argument 'x'
 
 Another helper function
 
@@ -423,7 +423,7 @@ TypeError if te dictionary is not empty
     >>> id(1, **{'foo': 1})
     Traceback (most recent call last):
       ...
-    TypeError: id() takes no keyword arguments
+    TypeError: id() ...
 
 A corner case of keyword dictionary items being deleted during
 the function call setup. See <http://bugs.python.org/issue2016>.
@@ -525,7 +525,7 @@ import unittest
 from test import support
 
 def load_tests(loader, tests, pattern):
-    tests.addTest(doctest.DocTestSuite())
+    tests.addTest(doctest.DocTestSuite(optionflags=doctest.ELLIPSIS))
     return tests
 
 

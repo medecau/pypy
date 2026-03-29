@@ -222,7 +222,11 @@ class PyclbrTest(TestCase):
         with warnings.catch_warnings():
             warnings.simplefilter('ignore', DeprecationWarning)
             cm('cgi', ignore=('log',))      # set with = in module
-        cm('pickle', ignore=('partial', 'PickleBuffer'))
+        # On PyPy, the C accelerator names differ from the Python names
+        # that pyclbr finds in the source (e.g. _Pickler vs Pickler)
+        cm('pickle', ignore=('partial', 'PickleBuffer',
+                             'Pickler', 'Unpickler',
+                             'dump', 'dumps', 'load', 'loads'))
         with warnings.catch_warnings():
             warnings.simplefilter('ignore', DeprecationWarning)
             cm('sre_parse', ignore=('dump', 'groups', 'pos')) # from sre_constants import *; property

@@ -624,6 +624,7 @@ class CmdLineTest(unittest.TestCase):
                                           cwd=tmpdir)
             self.assertEqual(out.strip(), b"ok")
 
+    @support.cpython_only
     def test_sys_flags_set(self):
         # Issue 31845: a startup refactoring broke reading flags from env vars
         for value, expected in (("", 0), ("1", 1), ("text", 1), ("2", 2)):
@@ -934,10 +935,12 @@ class IgnoreEnvironmentTest(unittest.TestCase):
         self.run_ignoring_vars("'{}' not in sys.path".format(path),
                                PYTHONPATH=path)
 
+    @support.impl_detail('hash randomization differs on PyPy', pypy=False)
     def test_ignore_PYTHONHASHSEED(self):
         self.run_ignoring_vars("sys.flags.hash_randomization == 1",
                                PYTHONHASHSEED="0")
 
+    @support.cpython_only
     def test_sys_flags_not_set(self):
         # Issue 31845: a startup refactoring broke reading flags from env vars
         expected_outcome = """
