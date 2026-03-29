@@ -138,19 +138,15 @@ EXPECTED_FAILURES = [
     "test_c_locale_coercion", # locale encoding details
     "test_codecs",           # octal/non-ASCII escape warning format
     "test_coroutines",       # RuntimeWarning, coroutine docstring
-    "test_cmd_line",         # command line behavior
     "test_cmd_line_script",  # null bytes in multiline string
-    "test_code",             # code object differences
     "test_code_module",      # traceback context in console
     "test_codeop",           # SyntaxWarning handling
     "test_concurrent_futures", # process pool edge cases
-    "test_cprofile",         # builtin repr differences
     "test_ctypes",           # struct format differences
     "test_dataclasses",      # docstring format, weakref slots
     "test_doctest",          # doctest finder details
     "test_enum",             # flag containment
     "test_exceptions",       # SyntaxError caret range
-    "test_extcall",          # extended call edge case
     "test_frame",            # frame tracing line numbers
     "test_fstring",          # f-string error messages
     "test_future_stmt",      # future statement handling
@@ -167,24 +163,19 @@ EXPECTED_FAILURES = [
     "test_mmap",             # closed mmap detection
     "test_multibytecodec",   # codec state handling
     "test_pdb",              # debugger details
-    "test_pyclbr",           # class browser completeness
     "test_pydoc",            # pydoc output differences
     "test_re",               # buffer handling, error messages
     "test_repl",             # REPL close_stdin behavior
     "test_rlcompleter",      # tab completion
-    "test_signal",           # wakeup fd behavior
     "test_source_encoding",  # encoding error message
     "test_string_literals",  # invalid escape DeprecationWarning
     "test_subprocess",       # flaky ResourceWarning in zombie test
     "test_support",          # RecursionError handling
-    "test_syntax",           # syntax error details
     "test_sys",              # sys.flags, version_info
     "test_sys_settrace",     # trace event ordering differences
     "test_termios",          # crashes in CI without terminal
     "test_threading",        # main thread after fork
-    "test_types",            # type parameter pickling
     "test_typing",           # doctest difference
-    "test_unpack_ex",        # unpacking edge case
     "test_unparse",          # AST unparse of f-strings
     "test_utf8_mode",        # UTF-8 mode behavior
     "test_venv",             # pip default behavior
