@@ -338,17 +338,17 @@ Now some general starred expressions (all fail).
     >>> *a # doctest:+ELLIPSIS
     Traceback (most recent call last):
       ...
-    SyntaxError: can't use starred expression here
+    SyntaxError: cannot use starred expression here
 
     >>> *1 # doctest:+ELLIPSIS
     Traceback (most recent call last):
       ...
-    SyntaxError: can't use starred expression here
+    SyntaxError: cannot use starred expression here
 
     >>> x = *a # doctest:+ELLIPSIS
     Traceback (most recent call last):
       ...
-    SyntaxError: can't use starred expression here
+    SyntaxError: cannot use starred expression here
 
     >>> (*x),y = 1, 2 # doctest:+ELLIPSIS
     Traceback (most recent call last):

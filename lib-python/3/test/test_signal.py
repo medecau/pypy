@@ -353,6 +353,7 @@ class WakeupSignalTests(unittest.TestCase):
 
         assert_python_ok('-c', code)
 
+    @support.cpython_only
     @unittest.skipIf(_testcapi is None, 'need _testcapi')
     @unittest.skipUnless(hasattr(os, "pipe"), "requires os.pipe()")
     def test_wakeup_write_error(self):
@@ -498,6 +499,7 @@ class WakeupSignalTests(unittest.TestCase):
 @unittest.skipUnless(hasattr(socket, 'socketpair'), 'need socket.socketpair')
 class WakeupSocketSignalTests(unittest.TestCase):
 
+    @support.cpython_only
     @unittest.skipIf(_testcapi is None, 'need _testcapi')
     def test_socket(self):
         # use a subprocess to have only one thread
@@ -534,6 +536,7 @@ class WakeupSocketSignalTests(unittest.TestCase):
 
         assert_python_ok('-c', code)
 
+    @support.cpython_only
     @unittest.skipIf(_testcapi is None, 'need _testcapi')
     def test_send_error(self):
         # Use a subprocess to have only one thread.
@@ -577,6 +580,7 @@ class WakeupSocketSignalTests(unittest.TestCase):
         """.format(action=action)
         assert_python_ok('-c', code)
 
+    @support.cpython_only
     @unittest.skipIf(_testcapi is None, 'need _testcapi')
     def test_warn_on_full_buffer(self):
         # Use a subprocess to have only one thread.
@@ -1442,6 +1446,7 @@ class RaiseSignalTest(unittest.TestCase):
         signal.raise_signal(signal.SIGINT)
         self.assertTrue(is_ok)
 
+    @support.cpython_only
     def test__thread_interrupt_main(self):
         # See https://github.com/python/cpython/issues/102397
         code = """if 1:

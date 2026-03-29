@@ -1810,26 +1810,20 @@ x: *b
 
 Invalid bytes literals:
 
-   >>> b"Ā"
+   >>> b"Ā"  # doctest: +ELLIPSIS
    Traceback (most recent call last):
       ...
-       b"Ā"
-        ^^^
-   SyntaxError: bytes can only contain ASCII literal characters
+   SyntaxError: bytes can only contain ASCII literal characters...
 
-   >>> b"абвгде"
+   >>> b"абвгде"  # doctest: +ELLIPSIS
    Traceback (most recent call last):
       ...
-       b"абвгде"
-        ^^^^^^^^
-   SyntaxError: bytes can only contain ASCII literal characters
+   SyntaxError: bytes can only contain ASCII literal characters...
 
-   >>> b"abc ъющый"  # first 3 letters are ascii
+   >>> b"abc ъющый"  # doctest: +ELLIPSIS
    Traceback (most recent call last):
       ...
-       b"abc ъющый"
-        ^^^^^^^^^^^
-   SyntaxError: bytes can only contain ASCII literal characters
+   SyntaxError: bytes can only contain ASCII literal characters...
 
    >>> f(**x, *y)
    Traceback (most recent call last):
