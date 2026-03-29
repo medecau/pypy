@@ -18,8 +18,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04]
-        revdb: [false, true]
+        os: [ubuntu-24.04, macos-14]
+        revdb: [false]
+        include:
+          - os: ubuntu-24.04
+            revdb: true
 
     steps:
     - uses: actions/checkout@v4
@@ -32,11 +35,17 @@ jobs:
         python-version: "pypy-2.7-v7.3.17"
         cache: 'pip' # caching pip dependencies
 
-    - name: install system dependencies
+    - name: install system dependencies (Linux)
+      if: runner.os == 'Linux'
       uses: awalsh128/cache-apt-pkgs-action@latest
       with:
         packages: libffi-dev pkg-config zlib1g-dev libbz2-dev libsqlite3-dev libncurses5-dev libexpat1-dev libssl-dev libgdbm-dev tk-dev libgc-dev liblzma-dev libncursesw5-dev patchelf
         version: 1.0
+
+    - name: install system dependencies (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install openssl@3 gdbm xz pkg-config
 
     - name: run objspace unit tests
       run: |
@@ -46,7 +55,7 @@ jobs:
     - name: translate
       run: |
         pypy rpython/bin/rpython ${{ matrix.revdb && '-O2 --revdb' || '-Ojit' }} pypy/goal/targetpypystandalone.py ${{ matrix.revdb && '--withoutmod-_hpy_universal' }}
-        mv pypy*-c libpypy*-c.so pypy/goal/
+        mv pypy*-c libpypy*-c.so pypy/goal/ 2>/dev/null || mv pypy*-c libpypy*-c.dylib pypy/goal/ 2>/dev/null || true
 
     - name: package
       run: |

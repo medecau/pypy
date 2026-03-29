@@ -18,12 +18,16 @@ permissions:
 
 jobs:
   stdlib-tests:
-    name: stdlib tests
+    name: stdlib (${{ matrix.os }})
     if: >
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
 
     env:
       SMOKE_ONLY_INPUT: ${{ github.event.inputs.smoke_only }}
@@ -37,7 +41,7 @@ jobs:
       if: github.event_name == 'workflow_run'
       uses: actions/download-artifact@v4
       with:
-        name: pypy-ci-build-ubuntu-24.04
+        name: pypy-ci-build-${{ matrix.os }}
         github-token: ${{ secrets.GITHUB_TOKEN }}
         run-id: ${{ github.event.workflow_run.id }}
 
@@ -46,25 +50,30 @@ jobs:
       uses: dawidd6/action-download-artifact@v6
       with:
         workflow: translate.yml
-        name: pypy-ci-build-ubuntu-24.04
+        name: pypy-ci-build-${{ matrix.os }}
         search_artifacts: true
 
     - name: Extract PyPy
       run: |
         tar xjf pypy-nightly.tar.bz2
         PYPY_DIR=$(find . -maxdepth 1 -name 'pypy-nightly' -type d | head -1)
-        PYPY_BIN=$(find "$PYPY_DIR" -name 'pypy*' -type f -executable | grep -v '\.debug' | head -1)
+        PYPY_BIN=$(find "$PYPY_DIR" -name 'pypy*' -type f -perm +111 | grep -v '\.debug' | head -1)
         PYPY_BIN=$(realpath "$PYPY_BIN")
         chmod +x "$PYPY_BIN"
         echo "PYPY_BIN=$PYPY_BIN" >> "$GITHUB_ENV"
         echo "Found PyPy binary: $PYPY_BIN"
         "$PYPY_BIN" --version
 
-    - name: Install system dependencies
+    - name: Install system dependencies (Linux)
+      if: runner.os == 'Linux'
       uses: awalsh128/cache-apt-pkgs-action@latest
       with:
         packages: libffi-dev pkg-config zlib1g-dev libbz2-dev libsqlite3-dev libncurses5-dev libexpat1-dev libssl-dev libgdbm-dev tk-dev libgc-dev liblzma-dev libncursesw5-dev
         version: 1.0
+
+    - name: Install system dependencies (macOS)
+      if: runner.os == 'macOS'
+      run: brew install openssl@3 gdbm xz
 
     - name: Run smoke tests (gate)
       working-directory: pypy/tool/ci
@@ -74,7 +83,7 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: stdlib-smoke-results
+        name: stdlib-smoke-results-${{ matrix.os }}
         path: pypy/tool/ci/stdlib-results.json
         if-no-files-found: ignore
 
@@ -87,6 +96,6 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: stdlib-full-results
+        name: stdlib-full-results-${{ matrix.os }}
         path: pypy/tool/ci/stdlib-results.json
         if-no-files-found: ignore
