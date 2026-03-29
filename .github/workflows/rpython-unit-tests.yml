@@ -15,13 +15,13 @@ on:
     paths:
         - "rpython/**/*"
         - "pytest.py"
-        - ".github/**/*"
+        - ".github/workflows/rpython-unit-tests.yml"
   pull_request:
     branches: [ "main", "py3.[0-9]+" ]
     paths:
       - "rpython/**/*"
       - "pytest.py"
-      - ".github/**/*"
+      - ".github/workflows/rpython-unit-tests.yml"
   workflow_dispatch:
 
 # Limit tests to latest commit on branches other than main

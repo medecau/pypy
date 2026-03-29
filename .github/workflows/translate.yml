@@ -3,26 +3,37 @@ name: Translate PyPy
 on:
   push:
     branches: [ "main", "py3.[0-9]+"]
+    paths:
+      - 'pypy/**'
+      - 'rpython/**'
+      - 'lib-python/**'
+      - 'lib_pypy/**'
+      - '.github/workflows/translate.yml'
   pull_request:
     branches: [ "main", "py3.[0-9]+"]
   workflow_dispatch:
+    inputs:
+      include_macos:
+        description: 'Include macOS build (10x cost)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: translate-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  build:
-
+  build-linux:
     name: build on ${{ matrix.os }}${{ matrix.revdb && ' (with RevDB)' || '' }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-14]
-        revdb: [false]
-        include:
-          - os: ubuntu-24.04
-            revdb: true
+        os: [ubuntu-24.04]
+        revdb: [false, true]
 
     steps:
     - uses: actions/checkout@v4
@@ -33,19 +44,13 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: "pypy-2.7-v7.3.17"
-        cache: 'pip' # caching pip dependencies
+        cache: 'pip'
 
-    - name: install system dependencies (Linux)
-      if: runner.os == 'Linux'
+    - name: install system dependencies
       uses: awalsh128/cache-apt-pkgs-action@latest
       with:
         packages: libffi-dev pkg-config zlib1g-dev libbz2-dev libsqlite3-dev libncurses5-dev libexpat1-dev libssl-dev libgdbm-dev tk-dev libgc-dev liblzma-dev libncursesw5-dev patchelf
         version: 1.0
-
-    - name: install system dependencies (macOS)
-      if: runner.os == 'macOS'
-      run: |
-        brew install openssl@3 gdbm xz pkg-config
 
     - name: run objspace unit tests
       run: |
@@ -55,7 +60,7 @@ jobs:
     - name: translate
       run: |
         pypy rpython/bin/rpython ${{ matrix.revdb && '-O2 --revdb' || '-Ojit' }} pypy/goal/targetpypystandalone.py ${{ matrix.revdb && '--withoutmod-_hpy_universal' }}
-        mv pypy*-c libpypy*-c.so pypy/goal/ 2>/dev/null || mv pypy*-c libpypy*-c.dylib pypy/goal/ 2>/dev/null || true
+        mv pypy*-c libpypy*-c.so pypy/goal/
 
     - name: package
       run: |
@@ -66,4 +71,46 @@ jobs:
       uses: actions/upload-artifact@v4.6.0
       with:
         name: pypy-ci-build-${{ matrix.os }}${{ matrix.revdb && '-revdb' || '' }}
+        path: ./pypy-nightly.tar.bz2
+
+  build-macos:
+    name: build on macos-14
+    runs-on: macos-14
+    if: >
+      github.event.inputs.include_macos == 'true' ||
+      startsWith(github.ref, 'refs/tags/')
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+
+    - name: Set up PyPy 2.7
+      uses: actions/setup-python@v5
+      with:
+        python-version: "pypy-2.7-v7.3.17"
+        cache: 'pip'
+
+    - name: install system dependencies
+      run: brew install openssl@3 gdbm xz pkg-config
+
+    - name: run objspace unit tests
+      run: |
+        pypy -m pip install -r requirements.txt
+        pypy pytest.py pypy/objspace -v -m "not flaky"
+
+    - name: translate
+      run: |
+        pypy rpython/bin/rpython -Ojit pypy/goal/targetpypystandalone.py
+        mv pypy*-c libpypy*-c.dylib pypy/goal/ 2>/dev/null || true
+
+    - name: package
+      run: |
+        ./pypy/goal/pypy*-c pypy/tool/release/package.py --make-portable --target=.
+
+    - name: upload
+      if: success() || failure()
+      uses: actions/upload-artifact@v4.6.0
+      with:
+        name: pypy-ci-build-macos-14
         path: ./pypy-nightly.tar.bz2
