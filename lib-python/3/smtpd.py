@@ -88,7 +88,7 @@ _DEPRECATION_MSG = ('The {name} module is deprecated and unmaintained and will '
                     'be removed in Python {remove}.  Please see aiosmtpd '
                     '(https://aiosmtpd.readthedocs.io/) for the recommended '
                     'replacement.')
-_deprecated(__name__, _DEPRECATION_MSG, remove=(3, 12))
+_deprecated(__name__, _DEPRECATION_MSG, remove=(3, 13))
 
 
 # These are imported after the above warning so that users get the correct

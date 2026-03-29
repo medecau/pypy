@@ -52,7 +52,7 @@ from warnings import _deprecated
 
 _DEPRECATION_MSG = ('The {name} module is deprecated and will be removed in '
                     'Python {remove}. The recommended replacement is asyncio')
-_deprecated(__name__, _DEPRECATION_MSG, remove=(3, 12))
+_deprecated(__name__, _DEPRECATION_MSG, remove=(3, 13))
 
 
 
