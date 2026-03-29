@@ -141,7 +141,6 @@ EXPECTED_FAILURES = [
     "test_cmd_line_script",  # null bytes in multiline string
     "test_code_module",      # traceback context in console
     "test_codeop",           # SyntaxWarning handling
-    "test_concurrent_futures", # process pool edge cases
     "test_ctypes",           # struct format differences
     "test_dataclasses",      # docstring format, weakref slots
     "test_doctest",          # doctest finder details
@@ -149,9 +148,6 @@ EXPECTED_FAILURES = [
     "test_exceptions",       # SyntaxError caret range
     "test_frame",            # frame tracing line numbers
     "test_fstring",          # f-string error messages
-    "test_future_stmt",      # future statement handling
-    "test_generators",       # generator finalizer edge cases
-    "test_grammar",          # parser edge cases
     "test_inspect",          # signature stripping
     "test_iter",             # reentrant exhaustion, __reduce__
     "test_list",             # deep repr recursion
