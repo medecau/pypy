@@ -1221,14 +1221,14 @@ class EscapeDecodeTest(unittest.TestCase):
             check(b"\\\xfa", b"\\\xfa")
         for i in range(0o400, 0o1000):
             with self.assertWarnsRegex(DeprecationWarning,
-                    r"invalid octal escape sequence '\\%o'" % i):
+                    r"invalid escape sequence '\\%o'" % i):
                 check(rb'\%o' % i, bytes([i & 0o377]))
 
         with self.assertWarnsRegex(DeprecationWarning,
                 r"invalid escape sequence '\\z'"):
             self.assertEqual(decode(br'\x\z', 'ignore'), (b'\\z', 4))
         with self.assertWarnsRegex(DeprecationWarning,
-                r"invalid octal escape sequence '\\501'"):
+                r"invalid escape sequence '\\501'"):
             self.assertEqual(decode(br'\x\501', 'ignore'), (b'A', 6))
 
     def test_errors(self):
@@ -2527,14 +2527,14 @@ class UnicodeEscapeTest(ReadTest, unittest.TestCase):
             check(b"\\\xfa", "\\\xfa")
         for i in range(0o400, 0o1000):
             with self.assertWarnsRegex(DeprecationWarning,
-                    r"invalid octal escape sequence '\\%o'" % i):
+                    r"invalid escape sequence '\\%o'" % i):
                 check(rb'\%o' % i, chr(i))
 
         with self.assertWarnsRegex(DeprecationWarning,
                 r"invalid escape sequence '\\z'"):
             self.assertEqual(decode(br'\x\z', 'ignore'), ('\\z', 4))
         with self.assertWarnsRegex(DeprecationWarning,
-                r"invalid octal escape sequence '\\501'"):
+                r"invalid escape sequence '\\501'"):
             self.assertEqual(decode(br'\x\501', 'ignore'), ('\u0141', 6))
 
     def test_decode_errors(self):

@@ -1056,7 +1056,7 @@ def unicode_escape_decode(space, w_string, errors="strict", w_final=None):
         # Careful, it might be >= '\x80'.  If it is, it would made an
         # invalid utf-8 string when pasted directory in it.
         if len(first_escape_error_char) == 3:
-            msg = "invalid octal escape sequence '\\%s'" % (first_escape_error_char,)
+            msg = "invalid escape sequence '\\%s'" % (first_escape_error_char,)
         elif ' ' <= first_escape_error_char <= '\x7f':
             msg = "invalid escape sequence '\\%s'" % (first_escape_error_char,)
         else:

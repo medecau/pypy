@@ -1184,7 +1184,7 @@ class CodecCallbackTest(unittest.TestCase):
             self.assertIn(msg, str(cm.warning))
 
         check(br'\x0n\z', '\u0404\n\\z', r"invalid escape sequence '\z'")
-        check(br'\x0n\501', '\u0404\n\u0141', r"invalid octal escape sequence '\501'")
+        check(br'\x0n\501', '\u0404\n\u0141', r"invalid escape sequence '\501'")
         check(br'\x0z', '\u0404\\z', r"invalid escape sequence '\z'")
 
         check(br'\x3n\zr', '\u0404\n\\zr', r"invalid escape sequence '\z'")
@@ -1194,7 +1194,7 @@ class CodecCallbackTest(unittest.TestCase):
         check(memoryview(br'\x3z5xy')[:-2], '\u0404\\z5', r"invalid escape sequence '\z'")
 
         check(br'\x5n\z', '\u0404\n\\z', r"invalid escape sequence '\z'")
-        check(br'\x5n\501', '\u0404\n\u0141', r"invalid octal escape sequence '\501'")
+        check(br'\x5n\501', '\u0404\n\u0141', r"invalid escape sequence '\501'")
         check(br'\x5z', '\u0404\\z', r"invalid escape sequence '\z'")
         check(memoryview(br'\x5zy')[:-1], '\u0404\\z', r"invalid escape sequence '\z'")
 

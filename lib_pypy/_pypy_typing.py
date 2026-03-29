@@ -16,10 +16,20 @@ A lot of this code must be rewritten in RPython later to establish proper
 parity with CPython's implementation around introspection, immutability, etc.
 """
 
+import sys as _sys
+
 __all__ = [
     'TypeVar', 'ParamSpec', 'TypeVarTuple', 'TypeAliasType',
     'ParamSpecArgs', 'ParamSpecKwargs', 'Generic',
 ]
+
+
+def _caller_module_name():
+    """Get the module name of the caller's caller (2 frames up)."""
+    try:
+        return _sys._getframe(2).f_globals.get('__name__', '__main__')
+    except (AttributeError, ValueError):
+        return None
 
 
 class _Immutable:
@@ -126,7 +136,12 @@ class TypeVar(_Immutable, _PickleUsingNameMixin, _BoundVarianceMixin):
         else:
             self.__constraints__ = ()
 
-        # TODO: Fix __module__
+        module = _caller_module_name()
+        if module is not None:
+            self.__module__ = module
+
+    def __init_subclass__(cls, *args, **kwargs):
+        raise TypeError(f"type '{TypeVar.__qualname__}' is not an acceptable base type")
 
     __bound__ = _LazyEvaluator()
     __constraints__ = _LazyEvaluator()
@@ -190,11 +205,16 @@ class ParamSpec(_Immutable, _PickleUsingNameMixin, _BoundVarianceMixin):
         self.__name__ = name
         super().__init__(bound, covariant, contravariant, infer_variance)
 
-        # TODO: __module__ is automatically set by Python to the defining module
+        module = _caller_module_name()
+        if module is not None:
+            self.__module__ = module
 
         # Create args and kwargs attributes
         self.args = ParamSpecArgs(self)
         self.kwargs = ParamSpecKwargs(self)
+
+    def __init_subclass__(cls, *args, **kwargs):
+        raise TypeError(f"type '{ParamSpec.__qualname__}' is not an acceptable base type")
 
     def __typing_subst__(self, arg):
         import typing
@@ -272,7 +292,12 @@ class TypeVarTuple(_Immutable, _PickleUsingNameMixin):
 
     def __init__(self, name):
         self.__name__ = name
-        # __module__ is automatically set by Python to the defining module
+        module = _caller_module_name()
+        if module is not None:
+            self.__module__ = module
+
+    def __init_subclass__(cls, *args, **kwargs):
+        raise TypeError(f"type '{TypeVarTuple.__qualname__}' is not an acceptable base type")
 
     def __repr__(self):
         return self.__name__
@@ -316,7 +341,12 @@ class TypeAliasType(_PickleUsingNameMixin):
         self._name = name
         self._type_params = tuple(type_params) if type_params else ()
         self.__value__ = value
-        # __module__ is automatically set by Python to the defining module
+        module = _caller_module_name()
+        if module is not None:
+            self.__module__ = module
+
+    def __init_subclass__(cls, *args, **kwargs):
+        raise TypeError(f"type '{TypeAliasType.__qualname__}' is not an acceptable base type")
 
     @property
     def __name__(self):
@@ -369,11 +399,16 @@ class TypeAliasType(_PickleUsingNameMixin):
 # with lazy evaluation support.
 
 def _make_typevar(name):
-    return TypeVar(name, infer_variance=True)
+    t = TypeVar(name, infer_variance=True)
+    # Fix __module__: we're one extra frame away from the real caller
+    t.__module__ = _sys._getframe(1).f_globals.get('__name__', '__main__')
+    return t
 
 
 def _make_typevar_with_bound(name, evaluate_bound):
     t = TypeVar(name, infer_variance=True)
+    # Fix __module__: we're one extra frame away from the real caller
+    t.__module__ = _sys._getframe(1).f_globals.get('__name__', '__main__')
     del t.__bound__
     t.__evaluate_bound__ = evaluate_bound
     return t
@@ -381,21 +416,31 @@ def _make_typevar_with_bound(name, evaluate_bound):
 
 def _make_typevar_with_constraints(name, evaluate_constraints):
     t = TypeVar(name, infer_variance=True)
+    # Fix __module__: we're one extra frame away from the real caller
+    t.__module__ = _sys._getframe(1).f_globals.get('__name__', '__main__')
     del t.__constraints__
     t.__evaluate_constraints__ = evaluate_constraints
     return t
 
 
 def _make_paramspec(name):
-    return ParamSpec(name, infer_variance=True)
+    t = ParamSpec(name, infer_variance=True)
+    # Fix __module__: we're one extra frame away from the real caller
+    t.__module__ = _sys._getframe(1).f_globals.get('__name__', '__main__')
+    return t
 
 
 def _make_typevartuple(name):
-    return TypeVarTuple(name)
+    t = TypeVarTuple(name)
+    # Fix __module__: we're one extra frame away from the real caller
+    t.__module__ = _sys._getframe(1).f_globals.get('__name__', '__main__')
+    return t
 
 
 def _make_typealiastype(name, evaluate_value, type_params):
     t = TypeAliasType(name, None, type_params=type_params)
+    # Fix __module__: we're one extra frame away from the real caller
+    t.__module__ = _sys._getframe(1).f_globals.get('__name__', '__main__')
     del t.__value__
     t.__evaluate_value__ = evaluate_value
     return t

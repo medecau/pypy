@@ -136,7 +136,6 @@ SKIP_TESTS = [
 EXPECTED_FAILURES = [
     "test_ast",              # AST positional-only arg tuple
     "test_c_locale_coercion", # locale encoding details
-    "test_codeccallbacks",   # escape sequence format in callbacks
     "test_codecs",           # octal/non-ASCII escape warning format
     "test_coroutines",       # RuntimeWarning, coroutine docstring
     "test_cmd_line",         # command line behavior
@@ -148,7 +147,6 @@ EXPECTED_FAILURES = [
     "test_cprofile",         # builtin repr differences
     "test_ctypes",           # struct format differences
     "test_dataclasses",      # docstring format, weakref slots
-    "test_descr",            # super() keyword arg edge case
     "test_doctest",          # doctest finder details
     "test_enum",             # flag containment
     "test_exceptions",       # SyntaxError caret range
@@ -160,7 +158,6 @@ EXPECTED_FAILURES = [
     "test_generators",       # generator finalizer edge cases
     "test_grammar",          # parser edge cases
     "test_inspect",          # signature stripping
-    "test_io",               # flaky multibyte seek/tell
     "test_iter",             # reentrant exhaustion, __reduce__
     "test_list",             # deep repr recursion
     "test_marshal",          # object identity in marshal
