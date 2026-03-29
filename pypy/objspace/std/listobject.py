@@ -11,7 +11,7 @@ import math
 import operator
 import sys
 
-from rpython.rlib import debug, jit, rerased, rutf8
+from rpython.rlib import debug, jit, rerased, rgc, rutf8
 from rpython.rlib.listsort import make_timsort_class
 from rpython.rlib.objectmodel import (
     import_from_mixin, instantiate, newlist_hint, resizelist_hint, specialize)
@@ -837,6 +837,13 @@ Raises ValueError if the value is not present."""
             # core-dump factory, since the storage may change).
             self.__init__(space, [])
 
+            # Save the empty strategy to detect mutations later.
+            # Any mutation (append, extend, setslice, etc.) will change the
+            # strategy away from EmptyListStrategy, even if the list ends up
+            # empty again (e.g. append then pop), because lists do not switch
+            # back to EmptyListStrategy when elements are removed.
+            empty_strategy = self.strategy
+
             # wrap each item in a KeyContainer if needed
             if has_key:
                 # XXX inefficient for unwrapped strategies:
@@ -866,13 +873,51 @@ Raises ValueError if the value is not present."""
                         sorter.list[i] = w_obj.w_item
 
             # check if the user mucked with the list during the sort
-            mucked = self.length() > 0
+            mucked = (self.strategy is not empty_strategy or
+                      self.length() > 0)
+
+            if not mucked and has_key:
+                # Force a garbage collection so that any __del__ methods
+                # on key objects (now unreferenced after unwrapping) are
+                # executed before we finalize the mutation check.  This
+                # is needed because PyPy does not use reference counting,
+                # so __del__ would not otherwise run during the sort.
+                # CPython's refcounting triggers __del__ immediately when
+                # the last reference is dropped.  Only done when no
+                # mutation was already detected, to avoid the cost of a
+                # full GC cycle on every key-based sort.
+                rgc.collect()
+                _run_finalizers_for_sort(space)
+                mucked = (self.strategy is not empty_strategy or
+                          self.length() > 0)
 
             # put the items back into the list
             self.__init__(space, sorter.list)
 
         if mucked:
             raise oefmt(space.w_ValueError, "list modified during sort")
+
+def _run_finalizers_for_sort(space):
+    """After dropping references to key objects during sort unwrapping,
+    force any pending __del__ methods to run so that mutations they cause
+    can be detected.  This mirrors CPython's refcounting behavior where
+    __del__ fires immediately when the last reference is dropped."""
+    # Temporarily re-enable finalizers if gc.disable() is in effect, matching
+    # gc.collect() behavior.  CPython's refcounting always calls __del__
+    # regardless of gc.disable().
+    uda = space.user_del_action
+    if uda.finalizers_lock_count > 0:
+        saved_lock_count = uda.finalizers_lock_count
+        saved_pending = uda.pending_with_disabled_del
+        uda.finalizers_lock_count = 0
+        uda.pending_with_disabled_del = None
+        try:
+            uda._run_finalizers()
+        finally:
+            uda.finalizers_lock_count = saved_lock_count
+            uda.pending_with_disabled_del = saved_pending
+    else:
+        uda._run_finalizers()
 
 def get_printable_location_sortkey(strategy_type, tp):
     return "_compute_keys_for_sorting [%s, %s]" % (strategy_type, tp.getname(tp.space), )

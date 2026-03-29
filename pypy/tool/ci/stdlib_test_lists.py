@@ -173,7 +173,6 @@ EXPECTED_FAILURES = [
     "test_repl",             # REPL close_stdin behavior
     "test_rlcompleter",      # tab completion
     "test_signal",           # wakeup fd behavior
-    "test_sort",             # list mutation detection
     "test_source_encoding",  # encoding error message
     "test_string_literals",  # invalid escape DeprecationWarning
     "test_subprocess",       # flaky ResourceWarning in zombie test
