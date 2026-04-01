@@ -2261,7 +2261,7 @@ And finalization:
 
 >>> g = f()
 >>> next(g)
->>> del g; gc_collect()  # For PyPy or other GCs.
+>>> del g; _ = gc_collect()  # For PyPy or other GCs.
 exiting
 
 
@@ -2276,7 +2276,7 @@ GeneratorExit is not caught by except Exception:
 
 >>> g = f()
 >>> next(g)
->>> del g; gc_collect()  # For PyPy or other GCs.
+>>> del g; _ = gc_collect()  # For PyPy or other GCs.
 finally
 
 
@@ -2301,7 +2301,7 @@ Our ill-behaved code should be invoked during GC:
 ...     g = f()
 ...     next(g)
 ...     del g
-...     gc_collect()  # For PyPy or other GCs.
+...     _ = gc_collect()  # For PyPy or other GCs.
 ...
 ...     cm.unraisable.exc_type == RuntimeError
 ...     "generator ignored GeneratorExit" in str(cm.unraisable.exc_value)
@@ -2417,7 +2417,7 @@ to test.
 >>> with support.catch_unraisable_exception() as cm:
 ...     l = Leaker()
 ...     del l
-...     gc_collect()  # For PyPy or other GCs.
+...     _ = gc_collect()  # For PyPy or other GCs.
 ...
 ...     cm.unraisable.object == Leaker.__del__
 ...     cm.unraisable.exc_type == RuntimeError
