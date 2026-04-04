@@ -1,6 +1,7 @@
 import dis
 from test import support
 from test.support.import_helper import import_module
+from test.support import cpython_only
 import unittest
 import opcode
 
@@ -67,7 +68,7 @@ class OpcodeTests(unittest.TestCase):
                     self.assertEqual(jump, common)
                     self.assertEqual(nojump, common)
 
-
+@cpython_only
 class SpecializationStatsTests(unittest.TestCase):
     @support.cpython_only
     def test_specialization_stats(self):
