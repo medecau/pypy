@@ -1876,6 +1876,9 @@ class Blob(object):
         if not self.__blob:
             raise ProgrammingError("Cannot operate on a closed blob")
 
+    def __del__(self):
+        self.close()
+
     def close(self):
         """ Close the blob. """
         if self.__blob:
