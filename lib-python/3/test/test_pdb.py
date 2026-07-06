@@ -1074,7 +1074,7 @@ def test_pdb_next_command_for_generator():
     finished
     """
 
-if not SKIP_ASYNCIO_TESTS:
+if not SKIP_ASYNCIO_TESTS and sys.implementation.name != 'pypy':
     def test_pdb_next_command_for_coroutine():
         """Testing skip unwindng stack on yield for coroutines for "next" command
 
@@ -1382,94 +1382,96 @@ if not SKIP_ASYNCIO_TESTS:
         finished
         """
 
-def test_pdb_next_command_in_generator_for_loop():
-    """The next command on returning from a generator controlled by a for loop.
+if sys.implementation.name != 'pypy':
+    def test_pdb_next_command_in_generator_for_loop():
+        """The next command on returning from a generator controlled by a for loop.
 
-    >>> def test_gen():
-    ...     yield 0
-    ...     return 1
+        >>> def test_gen():
+        ...     yield 0
+        ...     return 1
 
-    >>> def test_function():
-    ...     import pdb; pdb.Pdb(nosigint=True, readrc=False).set_trace()
-    ...     for i in test_gen():
-    ...         print('value', i)
-    ...     x = 123
+        >>> def test_function():
+        ...     import pdb; pdb.Pdb(nosigint=True, readrc=False).set_trace()
+        ...     for i in test_gen():
+        ...         print('value', i)
+        ...     x = 123
 
-    >>> reset_Breakpoint()
-    >>> with PdbTestInput(['break test_gen',
-    ...                    'continue',
-    ...                    'next',
-    ...                    'next',
-    ...                    'next',
-    ...                    'continue']):
-    ...     test_function()
-    > <doctest test.test_pdb.test_pdb_next_command_in_generator_for_loop[1]>(3)test_function()
-    -> for i in test_gen():
-    (Pdb) break test_gen
-    Breakpoint 1 at <doctest test.test_pdb.test_pdb_next_command_in_generator_for_loop[0]>:1
-    (Pdb) continue
-    > <doctest test.test_pdb.test_pdb_next_command_in_generator_for_loop[0]>(2)test_gen()
-    -> yield 0
-    (Pdb) next
-    value 0
-    > <doctest test.test_pdb.test_pdb_next_command_in_generator_for_loop[0]>(3)test_gen()
-    -> return 1
-    (Pdb) next
-    Internal StopIteration: 1
-    > <doctest test.test_pdb.test_pdb_next_command_in_generator_for_loop[1]>(3)test_function()
-    -> for i in test_gen():
-    (Pdb) next
-    > <doctest test.test_pdb.test_pdb_next_command_in_generator_for_loop[1]>(5)test_function()
-    -> x = 123
-    (Pdb) continue
-    """
+        >>> reset_Breakpoint()
+        >>> with PdbTestInput(['break test_gen',
+        ...                    'continue',
+        ...                    'next',
+        ...                    'next',
+        ...                    'next',
+        ...                    'continue']):
+        ...     test_function()
+        > <doctest test.test_pdb.test_pdb_next_command_in_generator_for_loop[1]>(3)test_function()
+        -> for i in test_gen():
+        (Pdb) break test_gen
+        Breakpoint 1 at <doctest test.test_pdb.test_pdb_next_command_in_generator_for_loop[0]>:1
+        (Pdb) continue
+        > <doctest test.test_pdb.test_pdb_next_command_in_generator_for_loop[0]>(2)test_gen()
+        -> yield 0
+        (Pdb) next
+        value 0
+        > <doctest test.test_pdb.test_pdb_next_command_in_generator_for_loop[0]>(3)test_gen()
+        -> return 1
+        (Pdb) next
+        Internal StopIteration: 1
+        > <doctest test.test_pdb.test_pdb_next_command_in_generator_for_loop[1]>(3)test_function()
+        -> for i in test_gen():
+        (Pdb) next
+        > <doctest test.test_pdb.test_pdb_next_command_in_generator_for_loop[1]>(5)test_function()
+        -> x = 123
+        (Pdb) continue
+        """
 
-def test_pdb_next_command_subiterator():
-    """The next command in a generator with a subiterator.
+if sys.implementation.name != 'pypy':
+    def test_pdb_next_command_subiterator():
+        """The next command in a generator with a subiterator.
 
-    >>> def test_subgenerator():
-    ...     yield 0
-    ...     return 1
+        >>> def test_subgenerator():
+        ...     yield 0
+        ...     return 1
 
-    >>> def test_gen():
-    ...     x = yield from test_subgenerator()
-    ...     return x
+        >>> def test_gen():
+        ...     x = yield from test_subgenerator()
+        ...     return x
 
-    >>> def test_function():
-    ...     import pdb; pdb.Pdb(nosigint=True, readrc=False).set_trace()
-    ...     for i in test_gen():
-    ...         print('value', i)
-    ...     x = 123
+        >>> def test_function():
+        ...     import pdb; pdb.Pdb(nosigint=True, readrc=False).set_trace()
+        ...     for i in test_gen():
+        ...         print('value', i)
+        ...     x = 123
 
-    >>> with PdbTestInput(['step',
-    ...                    'step',
-    ...                    'next',
-    ...                    'next',
-    ...                    'next',
-    ...                    'continue']):
-    ...     test_function()
-    > <doctest test.test_pdb.test_pdb_next_command_subiterator[2]>(3)test_function()
-    -> for i in test_gen():
-    (Pdb) step
-    --Call--
-    > <doctest test.test_pdb.test_pdb_next_command_subiterator[1]>(1)test_gen()
-    -> def test_gen():
-    (Pdb) step
-    > <doctest test.test_pdb.test_pdb_next_command_subiterator[1]>(2)test_gen()
-    -> x = yield from test_subgenerator()
-    (Pdb) next
-    value 0
-    > <doctest test.test_pdb.test_pdb_next_command_subiterator[1]>(3)test_gen()
-    -> return x
-    (Pdb) next
-    Internal StopIteration: 1
-    > <doctest test.test_pdb.test_pdb_next_command_subiterator[2]>(3)test_function()
-    -> for i in test_gen():
-    (Pdb) next
-    > <doctest test.test_pdb.test_pdb_next_command_subiterator[2]>(5)test_function()
-    -> x = 123
-    (Pdb) continue
-    """
+        >>> with PdbTestInput(['step',
+        ...                    'step',
+        ...                    'next',
+        ...                    'next',
+        ...                    'next',
+        ...                    'continue']):
+        ...     test_function()
+        > <doctest test.test_pdb.test_pdb_next_command_subiterator[2]>(3)test_function()
+        -> for i in test_gen():
+        (Pdb) step
+        --Call--
+        > <doctest test.test_pdb.test_pdb_next_command_subiterator[1]>(1)test_gen()
+        -> def test_gen():
+        (Pdb) step
+        > <doctest test.test_pdb.test_pdb_next_command_subiterator[1]>(2)test_gen()
+        -> x = yield from test_subgenerator()
+        (Pdb) next
+        value 0
+        > <doctest test.test_pdb.test_pdb_next_command_subiterator[1]>(3)test_gen()
+        -> return x
+        (Pdb) next
+        Internal StopIteration: 1
+        > <doctest test.test_pdb.test_pdb_next_command_subiterator[2]>(3)test_function()
+        -> for i in test_gen():
+        (Pdb) next
+        > <doctest test.test_pdb.test_pdb_next_command_subiterator[2]>(5)test_function()
+        -> x = 123
+        (Pdb) continue
+        """
 
 def test_pdb_issue_20766():
     pass

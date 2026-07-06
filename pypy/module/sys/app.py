@@ -3,7 +3,7 @@
 The 'sys' module.
 """
 
-from _structseq import structseqtype, structseqfield, SimpleNamespace
+from _structseq import structseqtype, structseqfield, structseq_new, SimpleNamespace
 import sys
 import _imp
 from __pypy__.os import _get_multiarch
@@ -155,6 +155,7 @@ All Rights Reserved.
 # This is tested in test_app_main.py
 class sysflags(metaclass=structseqtype):
     name = "sys.flags"
+    _forbid_instantiation = True
 
     debug = structseqfield(0)
     inspect = structseqfield(1)
@@ -179,8 +180,69 @@ class sysflags(metaclass=structseqtype):
 # Set reasonable defaults for testing, in particular set utf8_mode to 1
 # no clue why some have to be a bool, but CPython has tests
 # for that. Also see default_otions in app_main
-null_sysflags = sysflags((0,)*13 + (False, 1, 0, -1, False))
+null_sysflags = structseq_new(sysflags, (0,)*13 + (False, 1, 0, -1, False))
 null__xoptions = {}
+
+# Names of the modules PyPy ships as part of its standard library (built-in
+# plus lib-python/3 plus lib_pypy). Unlike CPython, which generates this
+# from a build-time Lib/ scan, this is a static snapshot -- good enough
+# since nothing depends on exact membership, only that it's a frozenset
+# of strings (see test_sys.py:test_module_names).
+stdlib_module_names = frozenset([
+    '__decimal', '__future__', '__hello__', '__phello__', '_abc',
+    '_aix_support', '_ast', '_blake2', '_bootsubprocess', '_cffi_backend',
+    '_cffi_ssl', '_codecs', '_codecs_cn', '_codecs_hk', '_codecs_iso2022',
+    '_codecs_jp', '_codecs_kr', '_codecs_tw', '_collections',
+    '_collections_abc', '_colorize', '_compat_pickle', '_compression',
+    '_contextvars', '_crypt', '_csv', '_ctypes', '_curses', '_curses_panel',
+    '_dbm', '_ffi', '_frozen_importlib', '_gdbm', '_hashlib',
+    '_immutables_map', '_io', '_locale', '_lzma', '_markupbase', '_marshal',
+    '_md5', '_multibytecodec', '_multiprocessing', '_opcode',
+    '_osx_support', '_overlapped', '_posixshmem', '_posixsubprocess',
+    '_py_abc', '_pydecimal', '_pyio', '_pypy_generic_alias',
+    '_pypy_interact', '_pypy_irc_topic', '_pypy_remote_debug',
+    '_pypy_testcapi', '_pypy_typing', '_pypy_util_cffi', '_pypy_wait',
+    '_pypy_winbase_cffi', '_pypy_winbase_cffi64', '_random', '_scproxy',
+    '_sha1', '_sha256', '_sha3', '_sha512', '_signal', '_sitebuiltins',
+    '_socket', '_sqlite3', '_sre', '_ssl', '_string', '_strptime',
+    '_structseq', '_sysconfigdata', '_testcapi', '_thread',
+    '_threading_local', '_tkinter', '_warnings', '_weakref', '_weakrefset',
+    '_winapi', 'abc', 'aifc', 'antigravity', 'argparse', 'array', 'ast',
+    'asynchat', 'asyncio', 'asyncore', 'atexit', 'audioop', 'base64', 'bdb',
+    'binascii', 'bisect', 'builtins', 'bz2', 'cProfile', 'calendar', 'cffi',
+    'cgi', 'cgitb', 'chunk', 'cmath', 'cmd', 'code', 'codecs', 'codeop',
+    'collections', 'colorsys', 'compileall', 'concurrent', 'configparser',
+    'contextlib', 'contextvars', 'copy', 'copyreg', 'crypt', 'csv',
+    'ctypes', 'ctypes_support', 'curses', 'dataclasses', 'datetime', 'dbm',
+    'decimal', 'difflib', 'dis', 'doctest', 'email', 'encodings',
+    'ensurepip', 'enum', 'errno', 'faulthandler', 'fcntl', 'filecmp',
+    'fileinput', 'fnmatch', 'fractions', 'ftplib', 'functools',
+    'future_builtins', 'gc', 'genericpath', 'getopt', 'getpass', 'gettext',
+    'glob', 'graphlib', 'greenlet', 'grp', 'gzip', 'hashlib', 'heapq',
+    'hmac', 'html', 'http', 'identity_dict', 'idlelib', 'imaplib', 'imghdr',
+    'importlib', 'inspect', 'io', 'ipaddress', 'itertools', 'json',
+    'keyword', 'lib2to3', 'linecache', 'locale', 'logging', 'lzma',
+    'mailbox', 'mailcap', 'marshal', 'math', 'mimetypes', 'mmap',
+    'modulefinder', 'msilib', 'msvcrt', 'multiprocessing', 'netrc',
+    'nntplib', 'ntpath', 'nturl2path', 'numbers', 'opcode', 'operator',
+    'optparse', 'os', 'pathlib', 'pdb', 'pickle', 'pickletools', 'pipes',
+    'pkgutil', 'platform', 'plistlib', 'poplib', 'posix', 'posixpath',
+    'pprint', 'profile', 'pstats', 'pty', 'pwd', 'py_compile', 'pyclbr',
+    'pydoc', 'pydoc_data', 'pyexpat', 'pypy_tools', 'pyrepl', 'queue',
+    'quopri', 'random', 're', 'readline', 'reprlib', 'resource',
+    'rlcompleter', 'runpy', 'sched', 'secrets', 'select', 'selectors',
+    'shelve', 'shlex', 'shutil', 'signal', 'site', 'smtpd', 'smtplib',
+    'sndhdr', 'socket', 'socketserver', 'sqlite3', 'sre_compile',
+    'sre_constants', 'sre_parse', 'ssl', 'stackless', 'stat', 'statistics',
+    'string', 'stringprep', 'struct', 'subprocess', 'sunau', 'symtable',
+    'sys', 'sysconfig', 'syslog', 'tabnanny', 'tarfile', 'telnetlib',
+    'tempfile', 'termios', 'textwrap', 'this', 'threading', 'time',
+    'timeit', 'tkinter', 'token', 'tokenize', 'tomllib', 'tputil', 'trace',
+    'traceback', 'tracemalloc', 'tty', 'turtle', 'turtledemo', 'types',
+    'typing', 'unicodedata', 'unittest', 'urllib', 'uu', 'uuid', 'venv',
+    'warnings', 'wave', 'weakref', 'webbrowser', 'wsgiref', 'xdrlib', 'xml',
+    'xmlrpc', 'zipapp', 'zipfile', 'zipimport', 'zlib', 'zoneinfo',
+])
 
 # copied from version.py
 def tuple2hex(ver):

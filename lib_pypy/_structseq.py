@@ -73,7 +73,13 @@ class structseqtype(type):
 
         dict['_extra_fields'] = tuple(extra_fields)
         if '__new__' not in dict:
-            dict['__new__'] = structseq_new
+            if dict.get('_forbid_instantiation', False):
+                # Matches CPython: some structseq types (sys.flags,
+                # sys.version_info, ...) have no public constructor; they
+                # are only ever built internally via structseq_new().
+                dict['__new__'] = structseq_new_forbidden
+            else:
+                dict['__new__'] = structseq_new
         dict['__reduce__'] = structseq_reduce
         dict['__setattr__'] = structseq_setattr
         dict['__repr__'] = structseq_repr
@@ -81,6 +87,10 @@ class structseqtype(type):
         dict['_name'] = dict.get('name', classname)
         dict['__match_args__'] = tuple(sequence_fields)
         return type.__new__(metacls, classname, (tuple,), dict)
+
+
+def structseq_new_forbidden(cls, *args, **kwargs):
+    raise TypeError("cannot create '%s' instances" % (cls._name,))
 
 
 builtin_dict = dict

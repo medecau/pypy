@@ -195,6 +195,12 @@ def listrepr(space, w_currently_in_repr, w_list):
         return space.newtext('[...]')
     space.setitem(w_currently_in_repr, w_list, space.newint(1))
     try:
+        if space.len_w(w_currently_in_repr) > space.sys.recursionlimit:
+            # mirrors CPython's Py_ReprEnter/Py_EnterRecursiveCall depth
+            # check: deep acyclic nesting must still raise RecursionError,
+            # not just cyclic nesting (which is handled by the check above).
+            raise oefmt(space.w_RecursionError,
+                        "maximum recursion depth exceeded")
         return _listrepr_inner(space, w_list, length)
     finally:
         try:

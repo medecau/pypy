@@ -304,10 +304,12 @@ def _determine_encoding(space, encoding, w_buffer):
         return space.newtext("utf-8")
 
     # On legacy systems or darwin, try app-level
-    # _bootlocale.getprefferedencoding(False)
+    # locale.getpreferredencoding(False) (CPython 3.10+ dropped the
+    # _bootlocale shim and calls _Py_GetLocaleEncoding, which for our
+    # purposes is equivalent to locale.getpreferredencoding(False))
     try:
         w_locale = space.call_method(space.builtin, '__import__',
-                                     space.newtext('_bootlocale'))
+                                     space.newtext('locale'))
         w_encoding = space.call_method(w_locale, 'getpreferredencoding',
                                        space.w_False)
     except OperationError as e:

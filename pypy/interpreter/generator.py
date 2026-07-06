@@ -403,6 +403,20 @@ class Coroutine(GeneratorOrCoroutine):
     def descr__await__(self, space):
         return CoroutineWrapper(self)
 
+    def descr_send(self, w_arg):
+        """send(arg) -> send 'arg' into coroutine,
+return next iterated value or raise StopIteration."""
+        return GeneratorOrCoroutine.descr_send(self, w_arg)
+
+    def descr_throw(self, w_type, w_val=None, w_tb=None):
+        """throw(typ[,val[,tb]]) -> raise exception in coroutine,
+return next iterated value or raise StopIteration."""
+        return GeneratorOrCoroutine.descr_throw(self, w_type, w_val, w_tb)
+
+    def descr_close(self):
+        """close() -> raise GeneratorExit inside coroutine."""
+        return GeneratorOrCoroutine.descr_close(self)
+
     def _finalize_(self):
         # If coroutine was never awaited on issue a RuntimeWarning.
         if (self.pycode is not None and

@@ -1005,6 +1005,12 @@ class TracebackException:
                 # Convert 1-based column offset to 0-based index into stripped text
                 colno = offset - 1 - spaces
                 end_colno = end_offset - 1 - spaces
+                # Clamp a reversed/negative end offset to a single-char
+                # caret, and an end offset past the end of the line to the
+                # line's length, mirroring CPython's C excepthook.
+                if end_colno <= colno:
+                    end_colno = colno + 1
+                end_colno = min(end_colno, len(ltext))
                 if colno >= 0:
                     caretspace = ((c if c.isspace() else ' ') for c in ltext[:colno])
                     start_color = end_color = ""

@@ -13,7 +13,8 @@ from pypy.interpreter.pyparser.parsestring import decode_unicode_str, parsestr
 
 from pypy.interpreter.astcompiler import ast
 from pypy.interpreter.astcompiler.astbuilder import parse_number
-from pypy.interpreter.astcompiler.fstring import build, concatenate_strings
+from pypy.interpreter.astcompiler.fstring import (
+    build, concatenate_strings, add_constant_string)
 from pypy.interpreter.astcompiler import asthelpers # Side effects
 from pypy.interpreter.astcompiler import consts, misc
 
@@ -305,14 +306,19 @@ class Parser:
             self.raise_indentation_error("unexpected indent")
         self.raise_syntax_error_known_location("invalid syntax", tok)
 
-    def deprecation_warn(self, msg, tok):
+    def deprecation_warn(self, msg, tok, w_category=None):
         from pypy.interpreter import error
         from pypy.module._warnings.interp_warnings import warn_explicit
         space = self.space
-        if self.compile_info.feature_version >= 12:
-            w_category = space.w_SyntaxWarning
-        else:
-            w_category = space.w_DeprecationWarning
+        if w_category is None:
+            # Only f-string (and other tokenizer-level) escape warnings were
+            # upgraded to SyntaxWarning in 3.12; regular str/bytes literal
+            # escape warnings stay DeprecationWarning and pass an explicit
+            # w_category (see parsestring.py).
+            if self.compile_info.feature_version >= 12:
+                w_category = space.w_SyntaxWarning
+            else:
+                w_category = space.w_DeprecationWarning
         try:
             warn_explicit(
                 space, space.newtext(msg),
@@ -791,6 +797,12 @@ class Parser:
                 if not space.is_true(item.value):
                     # empty string, can happen for FSTRING_MIDDLE token w. '\\\n'
                     continue
+                # CPython's PEG builder merges consecutive constant
+                # f-string pieces into a single Constant node (e.g. a
+                # \N{...} escape forces a tokenizer flush mid-literal,
+                # but that must not split the AST in two).
+                add_constant_string(self, items, item)
+                continue
             else:
                 if isinstance(item, ast.JoinedStr):
                     # formatted value with debug expr

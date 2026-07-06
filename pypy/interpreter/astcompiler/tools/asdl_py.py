@@ -189,7 +189,16 @@ class ASTNodeVisitor(ASDLVisitor):
         elif field.type in ("string", "bytes"):
             return "check_string(space, %s, %d)" % (value, field.opt)
         elif field.type in ("identifier",):
-            if field.opt:
+            if field.opt or not field.seq:
+                # text_or_none_w() returns None for w_None (rather than
+                # raising TypeError like text_w() would). For a scalar
+                # (non-seq) field this lets the "is None" check below in
+                # get_field_extractor() turn a missing *required*
+                # identifier field into the same ValueError CPython
+                # raises, instead of an unrelated TypeError. (For seq
+                # fields there is no such per-item None check, so a
+                # required identifier list keeps using text_w() to fail
+                # loudly on a None item rather than admitting it silently.)
                 return "space.text_or_none_w(%s)" % (value,)
             return "space.text_w(%s)" % (value,)
         elif field.type in ("int",):

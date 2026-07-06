@@ -38,10 +38,11 @@ def get_version_info(space):
     from pypy.interpreter import gateway
     app = gateway.applevel('''
     "NOT_RPYTHON"
-    from _structseq import structseqtype, structseqfield
+    from _structseq import structseqtype, structseqfield, structseq_new
     class version_info(metaclass=structseqtype):
         __module__ = 'sys'
         name = 'sys.version_info'
+        _forbid_instantiation = True
 
         major        = structseqfield(0, "Major release number")
         minor        = structseqfield(1, "Minor release number")
@@ -49,11 +50,14 @@ def get_version_info(space):
         releaselevel = structseqfield(3,
                            "'alpha', 'beta', 'candidate', or 'release'")
         serial       = structseqfield(4, "Serial release number")
+
+    def _make_version_info(value):
+        return structseq_new(version_info, value)
     ''')
 
-    w_version_info = app.wget(space, "version_info")
+    w_make = app.wget(space, "_make_version_info")
     # run at translation time
-    return space.call_function(w_version_info, space.wrap(CPYTHON_VERSION))
+    return space.call_function(w_make, space.wrap(CPYTHON_VERSION))
 
 def _make_version_template(PYPY_VERSION=PYPY_VERSION):
     ver = "%d.%d.%d" % (PYPY_VERSION[0], PYPY_VERSION[1], PYPY_VERSION[2])

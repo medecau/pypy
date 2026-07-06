@@ -2198,6 +2198,10 @@ class CoroutineTest(unittest.TestCase):
             return 'end'
         self.assertEqual(run_async(run_gen()), ([], 'end'))
 
+    @support.impl_detail(
+        "relies on the temporary coroutine being refcount-finalized "
+        "synchronously inside the assertWarns block; PyPy's GC doesn't "
+        "guarantee that without an explicit gc.collect()", pypy=False)
     def test_bpo_45813_1(self):
         'This would crash the interpreter in 3.11a2'
         async def f():

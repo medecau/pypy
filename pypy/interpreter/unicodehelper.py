@@ -570,6 +570,34 @@ def hexescape(space, builder, s, w_s, pos, digits,
                 builder.append(r)
     return pos, s, w_s
 
+def format_invalid_escape_message(first_escape_error_char, distinguish_octal=False):
+    """'first_escape_error_char' is a backslash followed by either up to
+    three octal digits (an overflowing \\NNN octal escape) or a single
+    arbitrary char, which might be a raw byte >= 0x80 (e.g. from
+    unicode_escape-decoding non-UTF-8 bytes). Build the "invalid (octal)
+    escape sequence '...'" warning text as valid UTF-8, treating any byte
+    >= 0x80 as its latin-1 codepoint (matching CPython's
+    PyErr_WarnFormat("invalid escape sequence '\\%c'", ...)).
+
+    CPython 3.12 only distinguishes the "invalid octal escape sequence"
+    wording for str/bytes *literals* compiled from source (pass
+    distinguish_octal=True); the runtime codecs.escape_decode /
+    codecs.unicode_escape_decode functions always use the generic
+    "invalid escape sequence" wording, so leave distinguish_octal False
+    for those.
+    """
+    is_octal = (distinguish_octal and len(first_escape_error_char) > 1 and
+                '0' <= first_escape_error_char[1] <= '7')
+    builder = rutf8.Utf8StringBuilder()
+    if is_octal:
+        builder.append("invalid octal escape sequence '")
+    else:
+        builder.append("invalid escape sequence '")
+    for c in first_escape_error_char:
+        builder.append_code(ord(c))
+    builder.append("'")
+    return builder.build(), builder.getlength()
+
 def str_decode_unicode_escape(space, s, w_s, errors, final, errorhandler, ud_handler):
     if len(s) == 0:
         return '', 0, 0, None
@@ -643,8 +671,8 @@ def str_decode_unicode_escape(space, s, w_s, errors, final, errorhandler, ud_han
                             span += ch
                             pos += 1
                             x = (x << 3) + ord(ch) - ord('0')
-            if x > 0x7F:
-                first_escape_error_char = span
+            if x > 0o377:
+                first_escape_error_char = "\\" + span
                 builder.append_code(x)
             else:
                 builder.append_char(chr(x))
@@ -728,7 +756,7 @@ def str_decode_unicode_escape(space, s, w_s, errors, final, errorhandler, ud_han
         else:
             builder.append_char('\\')
             builder.append_code(ord(ch))
-            first_escape_error_char = ch
+            first_escape_error_char = "\\" + ch
 
     return builder.build(), builder.getlength(), pos + pos_delta, first_escape_error_char
 

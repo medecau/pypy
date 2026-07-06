@@ -14,6 +14,31 @@ def recode_to_utf8(space, bytes, encoding):
     w_recoded = space.call_method(w_text, "encode", space.newtext("utf-8"))
     return space.bytes_w(w_recoded)
 
+def _check_valid_utf8_source(bytessrc, compile_info, explicit_encoding):
+    # When the effective encoding is utf-8, recode_to_utf8() above returns
+    # the source unchanged without validating it (unlike any other
+    # declared encoding, which goes through a real decode/encode
+    # round-trip). Do that validation here so a stray non-UTF-8 byte
+    # anywhere in the source -- including inside a string literal, which
+    # the tokenizer's own per-token checks never see -- is reported the
+    # same way CPython's C tokenizer reports it.
+    from rpython.rlib import rutf8
+    try:
+        rutf8.check_utf8(bytessrc, False)
+    except rutf8.CheckError as e:
+        pos = e.pos
+        badbyte = ord(bytessrc[pos])
+        lineno = 1
+        for i in range(pos):
+            if bytessrc[i] == '\n':
+                lineno += 1
+        msg = "Non-UTF-8 code starting with '\\x%02x' in file %s on line %d" % (
+            badbyte, compile_info.filename, lineno)
+        if not explicit_encoding:
+            msg += (", but no encoding declared; see "
+                    "https://peps.python.org/pep-0263/ for details")
+        raise error.SyntaxError(msg, filename=compile_info.filename)
+
 def _normalize_encoding(encoding):
     """returns normalized name for <encoding>
 
@@ -116,6 +141,7 @@ class PythonParser(object): # leave class for mergeability of _handle_encoding
                 raise error.SyntaxError("UTF-8 BOM with %s coding cookie" % decl_enc,
                                         filename=compile_info.filename)
             textsrc = bytessrc
+            _check_valid_utf8_source(textsrc, compile_info, explicit_encoding)
         else:
             enc = _normalize_encoding(_check_for_encoding(bytessrc))
             explicit_encoding = (enc is not None)
@@ -136,6 +162,10 @@ class PythonParser(object): # leave class for mergeability of _handle_encoding
                     w_message = space.str(w_value)
                     raise error.SyntaxError(space.text_w(w_message))
                 raise
+            if enc == 'utf-8':
+                # recode_to_utf8() short-circuits (returns the bytes
+                # unvalidated) for this case; check it here instead.
+                _check_valid_utf8_source(textsrc, compile_info, explicit_encoding)
         if enc is not None:
             compile_info.encoding = enc
         if explicit_encoding:

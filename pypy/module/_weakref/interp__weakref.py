@@ -1,6 +1,6 @@
 import py
 from pypy.interpreter.baseobjspace import W_Root
-from pypy.interpreter.error import oefmt
+from pypy.interpreter.error import oefmt, OperationError
 from pypy.interpreter.gateway import interp2app, ObjSpace
 from pypy.interpreter.typedef import TypeDef, GetSetProperty
 from pypy.interpreter.executioncontext import AsyncAction, report_error
@@ -184,7 +184,16 @@ class W_WeakrefBase(W_Root):
             state = '; dead'
         else:
             typename = space.type(w_obj).getname(space)
-            objname = w_obj.getname(space)
+            try:
+                objname = w_obj.getname(space)
+            except OperationError as e:
+                # the referent may have a hostile __getattr__ that raises
+                # something other than TypeError/AttributeError while
+                # looking up '__name__' (e.g. CPython gh-99184); don't let
+                # that break repr()/str() of the weakref itself.
+                if e.async(space):
+                    raise
+                objname = '?'
             if objname and objname != '?':
                 state = "; to '%s' (%s)" % (typename, objname)
             else:

@@ -138,10 +138,18 @@ class BufferView(object):
     def new_slice(self, start, step, slicelength):
         return BufferSlice(self, start, step, slicelength, w_obj=self.w_obj)
 
+    def pack_value(self, space, w_val):
+        """Convert an app-level value into the interp-level bytes to store
+        for a single scalar item. May run arbitrary app-level code (e.g. via
+        __index__/__float__/__bool__), so callers that need to guard against
+        the buffer being released/resized during that conversion should call
+        this separately from setbytes()."""
+        return self.bytes_from_value(space, w_val)
+
     def setitem_w(self, space, idx, w_obj):
         offset = self.get_offset(space, 0, idx)
         # TODO: this probably isn't very fast
-        byteval = self.bytes_from_value(space, w_obj)
+        byteval = self.pack_value(space, w_obj)
         self.setbytes(offset, byteval)
 
     def w_tolist(self, space):
@@ -296,9 +304,12 @@ class SimpleView(RawBufferView_Base):
         else:
             return BufferSlice(self, start, step, slicelength, w_obj=self.w_obj)
 
+    def pack_value(self, space, w_val):
+        return space.byte_w(w_val)
+
     def setitem_w(self, space, idx, w_obj):
         idx = self.get_offset(space, 0, idx)
-        self.data[idx] = space.byte_w(w_obj)
+        self.data[idx] = self.pack_value(space, w_obj)
 
 
 class BufferSlice(BufferView):
@@ -375,6 +386,9 @@ class BufferSlice(BufferView):
         real_start = start + self.start
         real_step = self.step * step
         return BufferSlice(self.parent, real_start, real_step, slicelength)
+
+    def pack_value(self, space, w_val):
+        return self.parent.pack_value(space, w_val)
 
     def setitem_w(self, space, idx, w_obj):
         return self.parent.setitem_w(space, self.parent_index(idx), w_obj)

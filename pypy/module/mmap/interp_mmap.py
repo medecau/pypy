@@ -50,6 +50,9 @@ class W_MMap(W_Root):
             num = -1
         else:
             num = self.space.int_w(w_num)
+        # int_w() can call back into app-level code (via __index__) that
+        # closes the mmap; re-check before touching self.mmap.
+        self.check_valid()
         return self.space.newbytes(self.mmap.read(num))
 
     def find(self, w_tofind, w_start=None, w_end=None):
@@ -64,6 +67,9 @@ class W_MMap(W_Root):
             end = self.mmap.size
         else:
             end = space.getindex_w(w_end, None)
+        # getindex_w() can call back into app-level code (via __index__)
+        # that closes the mmap; re-check before touching self.mmap.
+        self.check_valid()
         return space.newint(self.mmap.find(tofind, start, end))
 
     def rfind(self, w_tofind, w_start=None, w_end=None):
@@ -78,6 +84,9 @@ class W_MMap(W_Root):
             end = self.mmap.size
         else:
             end = space.getindex_w(w_end, None)
+        # getindex_w() can call back into app-level code (via __index__)
+        # that closes the mmap; re-check before touching self.mmap.
+        self.check_valid()
         return space.newint(self.mmap.find(tofind, start, end, True))
 
     @unwrap_spec(pos=OFF_T, whence=int)

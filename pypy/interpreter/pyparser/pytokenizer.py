@@ -245,6 +245,16 @@ class Tokenizer(object):
     def tokenize_line(self, line):
         self.lnum += 1
         line = universal_newline(line)
+        nul_pos = line.find('\x00')
+        if nul_pos >= 0:
+            # checked here (rather than via source_as_str's
+            # PyCF_ACCEPT_NULL_BYTES-guarded check) because script/file
+            # compilation intentionally sets that flag, and because this
+            # covers NUL bytes anywhere -- including inside multi-line
+            # string bodies, which are tokenized one physical line at a
+            # time via repeated tokenize_line() calls.
+            self._raise_token_error("source code cannot contain null bytes",
+                                     line[:nul_pos], self.lnum, 0)
         self.line = line
         self.pos, self.max = 0, len(line)
         self.switch_indents = 0
@@ -603,6 +613,15 @@ class Tokenizer(object):
             if level_adjustment == 1:
                 self.parenstack.append(tok)
             if level_adjustment == -1:
+                if (initial in ')]' and self._in_fstring_interpolation() and
+                        len(self.parenstack) == self.state.level):
+                    # a stray closing bracket inside an f-string
+                    # interpolation: don't pop the interpolation's own
+                    # opening '{' (which isn't on the same bracket kind
+                    # anyway), report it the way CPython does instead.
+                    self._raise_token_error(
+                            "f-string: unmatched '%s'" % initial, line,
+                            self.lnum, start + 1)
                 if not self.parenstack:
                     self._raise_token_error("unmatched '%s'" % initial, line,
                                      self.lnum, start + 1)
@@ -849,6 +868,10 @@ def _generate_tokens(lines, flags):
     for lines_index, line in enumerate(lines):
         lnum = lnum + 1
         line = universal_newline(line)
+        nul_pos = line.find('\x00')
+        if nul_pos >= 0:
+            raise TokenError("source code cannot contain null bytes",
+                              line[:nul_pos], lnum, 0, token_list)
         pos, max = 0, len(line)
         switch_indents = 0
 

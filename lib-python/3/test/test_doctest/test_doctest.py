@@ -726,7 +726,11 @@ DocTestFinder finds the line number of each example:
     [1, 9, 12]
 """
 
-    if int.__doc__: # simple check for --without-doc-strings, skip if lacking
+    # PyPy's builtin docstring coverage differs from CPython's, so the
+    # "825 < len(tests) < 845" window below (an arbitrary, CPython-specific
+    # count of docstring-bearing builtins.* objects) doesn't hold; skip
+    # defining/collecting this doctest on PyPy.
+    if int.__doc__ and sys.implementation.name != 'pypy': # simple check for --without-doc-strings, skip if lacking
         def non_Python_modules(): r"""
 
 Finding Doctests in Modules Not Written in Python

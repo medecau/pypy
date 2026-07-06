@@ -167,6 +167,18 @@ def prod(iterable, /, *, start=1):
         res = res * x
     return res
 
+def sumprod(p, q, /):
+    """
+    Return the sum of products of values from two iterables p and q.
+
+    Raises ValueError if the iterables have different lengths.
+    """
+    p = list(p)
+    q = list(q)
+    if len(p) != len(q):
+        raise ValueError("Inputs are not the same length")
+    return sum(x * y for x, y in zip(p, q))
+
 def comb(n, k, /):
     """
     Number of ways to choose k items from n items without repetition and without order.

@@ -3161,6 +3161,7 @@ class TestSlots(unittest.TestCase):
         self.assertEqual(obj.a, 'a')
         self.assertEqual(obj.b, 'b')
 
+    @support.impl_detail("all mapdict-based instances are weakref-able on PyPy", pypy=False)
     def test_slots_no_weakref(self):
         @dataclass(slots=True)
         class A:

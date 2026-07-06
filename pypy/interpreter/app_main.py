@@ -199,6 +199,7 @@ def display_exception(e):
         sys.last_type = etype
         sys.last_value = evalue
         sys.last_traceback = etraceback
+        sys.last_exc = evalue
 
         # call sys.excepthook
         hook = getattr(sys, 'excepthook', originalexcepthook)
@@ -415,9 +416,12 @@ def initstdio(encoding=None, unbuffered=False):
         if _WIN32 and not encoding:
             encoding = "utf-8"
         if not (encoding or errors):
-            # stdin/out default to strict in C locale
-            if _locale.setlocale(_locale.LC_CTYPE, None) == 'C':
-                errors = 'strict'
+            # CPython's config_get_stdio_errors(): stdin/stdout default to
+            # surrogateescape for the C/POSIX locale and for the locale
+            # coercion targets (PEP 538/540), else strict.
+            loc = _locale.setlocale(_locale.LC_CTYPE, None)
+            if loc == 'C' or loc == 'POSIX' or loc in ('C.UTF-8', 'C.utf8', 'UTF-8'):
+                errors = 'surrogateescape'
 
         sys.stderr = sys.__stderr__ = create_stdio(
             2, True, "<stderr>", encoding, 'backslashreplace', unbuffered)
@@ -769,7 +773,8 @@ def _parse_command_line(argv):
         # hack: delete the flags first to make sure they don't turn into an
         # cell in the celldict
         del sys.flags
-        sys.flags = type(oldflags)(flags)
+        from _structseq import structseq_new
+        sys.flags = structseq_new(type(oldflags), flags)
         sys.dont_write_bytecode = bool(sys.flags.dont_write_bytecode)
 
     if getenv('PYTHON_DISABLE_REMOTE_DEBUG'):
@@ -812,7 +817,9 @@ def run_command_line(interactive,
     readenv = not ignore_environment
     io_encoding = getenv("PYTHONIOENCODING") if readenv else None
     if (not io_encoding or io_encoding == ":") and utf8_mode:
-        io_encoding = "utf-8"
+        # CPython's UTF-8 mode defaults stdin/stdout (not stderr, which
+        # is hardcoded to backslashreplace below) to surrogateescape.
+        io_encoding = "utf-8:surrogateescape"
     initstdio(io_encoding, unbuffered)
 
     if 'faulthandler' in sys.builtin_module_names:

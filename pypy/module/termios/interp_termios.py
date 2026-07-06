@@ -88,8 +88,8 @@ def tcflow(space, w_fd, action):
     except OSError as e:
         raise convert_error(space, e)
 
-@unwrap_spec(fd=int)
-def tcgetwinsize(space, fd):
+def tcgetwinsize(space, w_fd):
+    fd = space.c_filedescriptor_w(w_fd)
     if rtermios.TIOCGWINSZ:
         with lltype.scoped_alloc(rposix.WINSIZE) as winsize:
             failed = rposix.c_ioctl_voidp(fd, rtermios.TIOCGWINSZ, winsize)
@@ -104,9 +104,12 @@ def tcgetwinsize(space, fd):
     else:
         raise oefmt(space.w_NotImplementedError, "requires termios.TIOCGWINSZ")
          
-@unwrap_spec(fd=int)
-def tcsetwinsize(space, fd, w_winsz):
+def tcsetwinsize(space, w_fd, w_winsz):
+    fd = space.c_filedescriptor_w(w_fd)
     winsz_w = space.listview(w_winsz)
+    if winsz_w is None or len(winsz_w) != 2:
+        raise oefmt(space.w_TypeError,
+                    "tcsetwinsize, arg 2: must be a tuple of 2 ints")
     rows = space.int_w(winsz_w[0])
     cols = space.int_w(winsz_w[1])
     if rtermios.TIOCGWINSZ and rtermios.TIOCSWINSZ:

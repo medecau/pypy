@@ -323,7 +323,13 @@ class W_MemoryView(W_Root):
         start, stop, step, slicelength = self._decode_index(space, w_index, is_slice)
         itemsize = self.getitemsize()
         if step == 0:  # index only
-            self.view.setitem_w(space, start, w_obj)
+            offset = self.view.get_offset(space, 0, start)
+            # pack_value() may run arbitrary app-level code (__index__,
+            # __float__, __bool__, ...) which could release() this
+            # memoryview; re-check before writing (gh-92888).
+            byteval = self.view.pack_value(space, w_obj)
+            self._check_released(space)
+            self.view.setbytes(offset, byteval)
         elif step == 1:
             value = space.buffer_w(w_obj, space.BUF_CONTIG_RO)
             if value.getlength() != slicelength * itemsize:

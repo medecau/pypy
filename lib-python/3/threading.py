@@ -1690,6 +1690,15 @@ def _after_fork():
         _active.update(new_active)
         assert len(_active) == 1
 
+    # XXX PyPy change: on CPython, refcounting reclaims the old
+    # _MainThread (the one replaced by `_main_thread = current` above)
+    # the instant it becomes unreachable, dropping it from the weak
+    # _dangling set immediately. PyPy's GC doesn't collect that eagerly,
+    # so without this it can linger in _dangling until the next
+    # collection, showing up as an extra 'MainThread' entry.
+    import gc
+    gc.collect()
+
 
 if hasattr(_os, "register_at_fork"):
     _os.register_at_fork(after_in_child=_after_fork)

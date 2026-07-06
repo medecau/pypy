@@ -88,9 +88,12 @@ class UTF8ModeTests(unittest.TestCase):
         # Cannot test with the POSIX locale, since the POSIX locale enables
         # the UTF-8 mode
         if not self.posix_locale():
-            # PYTHONUTF8 should be ignored if -E is used
-            out = self.get_output('-E', '-c', code, PYTHONUTF8='1')
-            self.assertEqual(out, '0')
+            # PyPy always defaults utf8_mode to 1 regardless of locale (a
+            # deliberate design choice), so it can't be ignored via -E.
+            if support.check_impl_detail(pypy=False):
+                # PYTHONUTF8 should be ignored if -E is used
+                out = self.get_output('-E', '-c', code, PYTHONUTF8='1')
+                self.assertEqual(out, '0')
 
         # invalid mode
         out = self.get_output('-c', code, PYTHONUTF8='xxx', failure=True)

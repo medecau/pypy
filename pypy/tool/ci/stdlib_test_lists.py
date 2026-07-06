@@ -84,7 +84,6 @@ SKIP_TESTS = [
     "test_gc",               # CPython GC implementation
     "test_gdb",              # CPython GDB hooks
     "test_getpath",          # CPython internal details
-    "test_monitoring",       # CPython sys.monitoring (PEP 669)
     "test_peepholer",        # CPython bytecode optimizer
     "test_perf_profiler",    # CPython perf profiler support
     "test_stable_abi_ctypes", # needs ctypes.pythonapi
@@ -129,50 +128,20 @@ SKIP_TESTS = [
 
     # Known to hang or be extremely slow
     "test_socketserver",     # can hang in CI
+
+    # Unimplemented public 3.12 APIs (not CPython implementation details --
+    # genuine feature gaps; sys.settrace covers most tracing/profiling use
+    # cases in the meantime)
+    "test_monitoring",       # sys.monitoring (PEP 669) isn't implemented at all
 ]
 
 # Tests expected to fail on PyPy due to implementation differences.
 # Each has only a few subtest failures (<=3) out of many.
 EXPECTED_FAILURES = [
-    "test_ast",              # AST positional-only arg tuple
-    "test_c_locale_coercion", # locale encoding details
-    "test_codecs",           # octal/non-ASCII escape warning format
-    "test_coroutines",       # RuntimeWarning, coroutine docstring
-    "test_cmd_line_script",  # null bytes in multiline string
-    "test_code_module",      # traceback context in console
-    "test_codeop",           # SyntaxWarning handling
-    "test_ctypes",           # struct format differences
-    "test_dataclasses",      # docstring format, weakref slots
-    "test_doctest",          # doctest finder details
-    "test_enum",             # flag containment
-    "test_exceptions",       # SyntaxError caret range
-    "test_frame",            # frame tracing line numbers
-    "test_fstring",          # f-string error messages
-    "test_inspect",          # signature stripping
-    "test_iter",             # reentrant exhaustion, __reduce__
-    "test_list",             # deep repr recursion
-    "test_marshal",          # object identity in marshal
-    "test_memoryio",         # buffer error on write
-    "test_memoryview",       # released memory access
-    "test_metaclass",        # metaclass doctest
-    "test_mmap",             # closed mmap detection
+    "test_ctypes",           # test_pep3118: format producers match on static review; exact failing
+                             # entry unconfirmed without a translated-build diagnostic run
+    "test_inspect",          # no Argument-Clinic __text_signature__ on builtins (large, deferred)
+    "test_marshal",          # InstancingTestCase: int/float/tuple/code not ref-shared (testIntern fixed)
     "test_multibytecodec",   # codec state handling
-    "test_pdb",              # debugger details
-    "test_pydoc",            # pydoc output differences
-    "test_re",               # buffer handling, error messages
-    "test_repl",             # REPL close_stdin behavior
-    "test_rlcompleter",      # tab completion
-    "test_source_encoding",  # encoding error message
-    "test_string_literals",  # invalid escape DeprecationWarning
-    "test_subprocess",       # flaky ResourceWarning in zombie test
-    "test_support",          # RecursionError handling
-    "test_sys",              # sys.flags, version_info
-    "test_sys_settrace",     # trace event ordering differences
-    "test_termios",          # crashes in CI without terminal
-    "test_threading",        # main thread after fork
-    "test_typing",           # doctest difference
-    "test_unparse",          # AST unparse of f-strings
-    "test_utf8_mode",        # UTF-8 mode behavior
-    "test_venv",             # pip default behavior
-    "test_weakref",          # repr failure edge case
+    "test_pydoc",            # no Argument-Clinic __text_signature__ on builtins (large, deferred)
 ]

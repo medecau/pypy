@@ -529,6 +529,8 @@ def _unmarshal_ascii(space, u, short_length, interned):
     except rutf8.CheckError:
         raise oefmt(space.w_ValueError, "bad marshal data (string is not ascii)")
     w_u = u.space.newtext(s, len(s)) # ascii is valid utf-8
+    if interned:
+        w_u = u.space.new_interned_w_str(w_u)
     return w_u
 
 @unmarshaller(TYPE_ASCII)

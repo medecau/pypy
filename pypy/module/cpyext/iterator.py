@@ -11,7 +11,7 @@ def PyCallIter_New(space, w_callable, w_sentinel):
     return the next item in the iteration.  When callable returns a value equal to
     sentinel, the iteration will be terminated.
     """
-    return operation.iter_sentinel(space, w_callable, w_sentinel)
+    return operation.iter(space, w_callable, w_sentinel)
 
 @cpython_api([PyObject], PyObject)
 def PyObject_GetIter(space, w_obj):

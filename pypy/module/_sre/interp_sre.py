@@ -253,11 +253,11 @@ class W_SRE_Pattern(W_Root):
                 # W_SRE_Match.bytepos_to_charindex()
                 ctx.w_unicode_obj = w_unicode_obj
             return ctx
-        elif self.is_known_unicode():
-            raise oefmt(space.w_TypeError,
-                        "can't use a string pattern on a bytes-like "
-                        "object")
         elif space.isinstance_w(w_string, space.w_bytes):
+            if self.is_known_unicode():
+                raise oefmt(space.w_TypeError,
+                            "can't use a string pattern on a bytes-like "
+                            "object")
             string = space.bytes_w(w_string)
             length = len(string)
             if pos > length:
@@ -266,7 +266,23 @@ class W_SRE_Pattern(W_Root):
                 endpos = length
             return rsre_core.StrMatchContext(string, pos, endpos)
         else:
-            buf = space.readbuf_w(w_string)
+            # try the buffer protocol before checking for a str/bytes
+            # pattern mismatch, so e.g. re.search("x*", 5) reports
+            # "expected string or bytes-like object, got 'int'" instead of
+            # mislabelling an int as bytes-like (matches CPython's
+            # getstring()).
+            try:
+                buf = space.readbuf_w(w_string)
+            except OperationError as e:
+                if not e.match(space, space.w_TypeError):
+                    raise
+                raise oefmt(space.w_TypeError,
+                            "expected string or bytes-like object, got '%T'",
+                            w_string)
+            if self.is_known_unicode():
+                raise oefmt(space.w_TypeError,
+                            "can't use a string pattern on a bytes-like "
+                            "object")
             size = buf.getlength()
             assert size >= 0
             if pos > size:

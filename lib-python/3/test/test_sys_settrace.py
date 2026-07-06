@@ -560,6 +560,11 @@ class TraceTestCase(unittest.TestCase):
              (7, 'line'),
              (7, 'return')])
 
+    @support.impl_detail(
+        "PyPy's async-for compiles to pre-3.11-style block-based bytecode, "
+        "so its trace event sequence around StopAsyncIteration handling "
+        "doesn't match CPython 3.12's SEND/END_SEND scheme exactly",
+        pypy=False)
     def test_20_async_for_loop(self):
         class AsyncIteratorWrapper:
             def __init__(self, obj):
@@ -636,6 +641,11 @@ class TraceTestCase(unittest.TestCase):
         self.compare_events(doit_async.__code__.co_firstlineno,
                             tracer.events, events)
 
+    @support.impl_detail(
+        "PyPy's async-for compiles to pre-3.11-style block-based bytecode, "
+        "so its trace event sequence around the loop back-edge doesn't "
+        "match CPython 3.12's SEND/END_SEND scheme exactly",
+        pypy=False)
     def test_async_for_backwards_jump_has_no_line(self):
         async def arange(n):
             for i in range(n):

@@ -674,14 +674,13 @@ class PyFrame(W_Root):
 
     def fget_f_lineno(self, space):
         "Returns the line number of the instruction currently being executed."
-        if self.get_w_f_trace() is None:
-            return space.newint(self.get_last_lineno())
-        else:
-            f_lineno = self.getorcreatedebug().f_lineno
-            if f_lineno == -1:
-                # means first line number, but we haven's executed anything yet
-                f_lineno = self.pycode.co_firstlineno
-            return space.newint(f_lineno)
+        # Always derive f_lineno from the instruction pointer (matching
+        # CPython 3.12), rather than from a cached FrameDebugData.f_lineno
+        # that is only kept in sync while a *global* sys.settrace hook is
+        # active (see executioncontext.run_trace_func). A frame whose
+        # f_trace was set directly (without sys.settrace) would otherwise
+        # see a stale line number on every read after the first.
+        return space.newint(self.get_last_lineno())
 
     def fset_f_lineno(self, space, w_new_lineno):
         "Change the line number of the instruction currently being executed."
@@ -829,8 +828,14 @@ class PyFrame(W_Root):
                 if gen.running:
                     raise oefmt(space.w_RuntimeError,
                                 "cannot clear an executing frame")
-                # xxx CPython raises the RuntimeWarning "coroutine was never
-                # awaited" in this case too.  Does it make any sense?
+                if (self.getcode().co_flags & pycode.CO_COROUTINE and
+                        self.last_instr == -1):
+                    # matches Coroutine._finalize_: a coroutine that was
+                    # never started (never awaited) warns when closed.
+                    w_mod = space.getbuiltinmodule("_warnings")
+                    w_f = space.getattr(w_mod,
+                            space.newtext("_warn_unawaited_coroutine"))
+                    space.call_function(w_f, gen)
                 gen.descr_close()
 
         debug = self.getdebug()

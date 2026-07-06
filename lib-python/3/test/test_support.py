@@ -584,6 +584,9 @@ class TestSupport(unittest.TestCase):
         else:
             self.assertTrue(support.has_strftime_extensions)
 
+    @support.impl_detail(
+        "PyPy's recursion limit is approximate (C-stack based), "
+        "not exact Python-frame counting", pypy=False)
     def test_get_recursion_depth(self):
         # test support.get_recursion_depth()
         code = textwrap.dedent("""
@@ -638,6 +641,9 @@ class TestSupport(unittest.TestCase):
         """)
         script_helper.assert_python_ok("-c", code)
 
+    @support.impl_detail(
+        "PyPy's recursion limit is approximate (C-stack based), "
+        "not exact Python-frame counting", pypy=False)
     def test_recursion(self):
         # Test infinite_recursion() and get_recursion_available() functions.
         def recursive_function(depth):

@@ -1052,19 +1052,13 @@ def unicode_escape_decode(space, w_string, errors="strict", w_final=None):
         unicode_name_handler)
 
     if first_escape_error_char is not None:
-        # Here, 'first_escape_error_char' is a single string character.
-        # Careful, it might be >= '\x80'.  If it is, it would made an
-        # invalid utf-8 string when pasted directory in it.
-        if len(first_escape_error_char) == 3:
-            msg = "invalid escape sequence '\\%s'" % (first_escape_error_char,)
-        elif ' ' <= first_escape_error_char <= '\x7f':
-            msg = "invalid escape sequence '\\%s'" % (first_escape_error_char,)
-        else:
-            msg = "invalid escape sequence: '\\' followed by %s" % (
-                space.text_w(space.repr(
-                    space.newbytes(first_escape_error_char))),)
+        # 'first_escape_error_char' may contain a raw byte >= 0x80 (e.g.
+        # when decoding non-UTF-8 bytes); build the warning text as valid
+        # UTF-8 rather than pasting the raw byte directly into it.
+        msg, msg_len = unicodehelper.format_invalid_escape_message(
+            first_escape_error_char)
         space.warn(
-            space.newtext(msg),
+            space.newutf8(msg, msg_len),
             space.w_DeprecationWarning
         )
     return space.newtuple2(space.newutf8(result, u_len), space.newint(lgt))

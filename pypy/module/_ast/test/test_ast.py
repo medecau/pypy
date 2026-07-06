@@ -492,6 +492,23 @@ def f():
         exc = raises(ValueError, compile, empty_yield_from, "<test>", "exec")
         assert "field 'value' is required for YieldFrom" in str(exc.value)
 
+    def test_required_identifier_field_none(self):
+        # A required 'identifier' field set to None must raise the same
+        # ValueError as any other required field, not a TypeError from
+        # unwrapping None as a string.
+        import ast
+        tree = ast.parse("import spam as SPAM")
+        tree.body[0].names[0].asname = None  # already optional: no error
+        compile(tree, "<test>", "exec")
+        tree.body[0].names[0].name = None
+        exc = raises(ValueError, compile, tree, "<test>", "exec")
+        assert "field 'name' is required for alias" in str(exc.value)
+
+        tree = ast.parse("def spam(SPAM): spam")
+        tree.body[0].args.args[0].arg = None
+        exc = raises(ValueError, compile, tree, "<test>", "exec")
+        assert "field 'arg' is required for arg" in str(exc.value)
+
     def test_compare(self):
         import ast as ast_utils
         import _ast as ast

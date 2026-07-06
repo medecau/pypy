@@ -64,6 +64,9 @@ class ReTests(unittest.TestCase):
             if pos is not None:
                 self.assertEqual(err.pos, pos)
 
+    @cpython_only
+    # PyPy's moving GC doesn't lock/pin exported buffers, so extend()
+    # doesn't raise BufferError while a bytearray's buffer is exported.
     def test_keep_buffer(self):
         # See bug 14212
         b = bytearray(b'x')

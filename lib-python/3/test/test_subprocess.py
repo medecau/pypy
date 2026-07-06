@@ -3148,6 +3148,7 @@ class POSIXProcessTestCase(BaseTestCase):
         pid = p.pid
         with warnings_helper.check_warnings(('', ResourceWarning)):
             p = None
+            support.gc_collect()  # For PyPy or other GCs.
 
         if mswindows:
             # subprocess._active is not used on Windows and is set to None.

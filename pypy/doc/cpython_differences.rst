@@ -613,6 +613,117 @@ Miscellaneous
 
 .. _`file protocol`: https://docs.python.org/3/library/sys_path_init.html#pth-files
 
+.. _cpython-3-12-stdlib-test-divergences:
+
+CPython 3.12 stdlib test suite: known divergences
+--------------------------------------------------
+
+The ``py3.12`` branch runs the CPython 3.12 regression test suite against a
+translated PyPy binary as part of CI (see
+:source:`pypy/tool/ci/run_stdlib_tests.py`). The great majority of it passes.
+A handful of tests are permanently excluded because they exercise a genuine,
+deliberate implementation difference rather than a bug PyPy intends to fix.
+These are either skipped outright (in ``SKIP_TESTS``) or have the one or two
+offending sub-tests guarded out directly in the vendored copy under
+``lib-python/3/test/`` (so the rest of the module keeps being exercised).
+The list below explains *why*, so it doesn't need re-diagnosing each time:
+
+* ``test_dataclasses`` (``TestSlots.test_slots_no_weakref``) -- PyPy's
+  mapdict-based instances are all weakref-able by design, unlike CPython's
+  C-level ``__slots__`` which can omit ``__weakref__``.
+
+* ``test_doctest`` (the ``non_Python_modules`` doctest in
+  ``test.test_doctest.test_doctest``) -- asserts an exact count of
+  docstring-bearing objects in ``builtins`` (``825 < len(tests) < 845``).
+  PyPy's builtin docstring coverage differs from CPython's and this window
+  is CPython-specific and re-tuned every release upstream anyway.
+
+* ``test_pdb`` (a few "Internal StopIteration" doctests, plus the
+  already-guarded ``test_pdb_issue_20766``) -- these need the interpreter to
+  deliver a generator/coroutine's terminating ``StopIteration`` as a
+  traceback-less ``exception`` trace event *inside* the generator's frame.
+  PyPy's generators finish cleanly and raise ``StopIteration`` from the
+  *caller's* frame instead, so ``bdb``'s "Internal StopIteration" detection
+  never triggers. A faithful fix means re-implementing async/generator
+  return as CPython 3.11+'s zero-cost-exception SEND/END_SEND scheme.
+
+* ``test_sys_settrace`` (``test_20_async_for_loop``,
+  ``test_async_for_backwards_jump_has_no_line``) -- same root cause as
+  ``test_pdb`` above: PyPy's ``async for`` still compiles to pre-3.11-style
+  block-based bytecode, so the exact trace-event sequence around
+  ``StopAsyncIteration`` handling doesn't match CPython 3.12 byte-for-byte.
+
+* ``test_support`` (``test_recursion``, ``test_get_recursion_depth``) --
+  PyPy's recursion limit is approximate and checked against remaining
+  C-stack space (see :ref:`setrecursionlimit`), not by counting exact
+  Python-level frames the way CPython does, so these boundary-precision
+  tests don't apply.
+
+* ``test_re`` (``test_keep_buffer``) and ``test_memoryio``
+  (``test_getbuffer_empty``'s ``BufferError`` assertions) -- PyPy's moving
+  GC does not lock/pin a buffer for the duration of a memoryview/array
+  export the way CPython's refcounted, non-moving objects do, so mutating
+  the underlying object while a buffer is exported does not raise
+  ``BufferError``.
+
+* ``test_iter`` (``test_reduce_mutating_builtins_iter``) -- a reproducer for
+  a CPython C-level undefined-behaviour bug (issue #101765) that depends on
+  the exact order of argument evaluation and dict-probing during a
+  ``__reduce__`` call; not meaningful on PyPy's object model.
+
+* ``test_coroutines`` (``test_bpo_45813_1``) -- relies on a temporary,
+  never-awaited coroutine being refcount-finalized *synchronously* inside
+  an ``assertWarns`` block so the "coroutine was never awaited"
+  ``RuntimeWarning`` fires deterministically. PyPy's non-refcounting GC
+  doesn't guarantee that without an explicit ``gc.collect()`` (the sibling
+  test ``test_bpo_45813_2``, which clears the coroutine's frame directly
+  instead of relying on GC timing, is fixed and passes).
+
+* ``test_utf8_mode`` (``test_env_var``'s ``-E`` sub-test) -- PyPy always
+  defaults UTF-8 mode to on regardless of locale (a deliberate, longstanding
+  PyPy policy), so ``-E`` cannot make it fall back to off the way it does
+  on CPython.
+
+* ``test_threading`` -- fixed: ``_after_fork()`` now calls ``gc.collect()``
+  so a stale ``_MainThread`` doesn't linger in the weak ``_dangling`` set
+  past the fork, matching CPython's immediate refcount-based cleanup.
+
+Still tracked as known-broken in ``EXPECTED_FAILURES`` (a handful of
+remaining sub-tests fail out of many in each module) rather than fully
+resolved or reclassified:
+
+* ``test_inspect``, ``test_pydoc`` -- PyPy's built-in functions/methods
+  don't carry an Argument-Clinic-style ``__text_signature__``, so
+  ``inspect.signature()`` and pydoc's rendering of built-ins differ from
+  CPython. Fixing this properly means building an Argument-Clinic-like
+  facility for PyPy's ``interp2app``/``TypeDef`` machinery -- a large,
+  interpreter-wide effort, intentionally out of scope for now.
+
+* ``test_marshal`` -- CPython's ``marshal`` shares any object referenced
+  more than once (checked via refcount); PyPy has no refcount to check, so
+  only a few container types (list/dict/set/str/bytes) currently opt in to
+  reference-sharing on round-trip, not scalars (int/float/complex), tuples,
+  or code objects.
+
+* ``test_multibytecodec`` -- the incremental CJK codecs' ``getstate``/
+  ``setstate`` only stub-implement the CPython C state-serialization format
+  (packing pending bytes plus an internal 8-byte codec-state struct);
+  finishing this needs new native accessors in
+  :source:`pypy/module/_multibytecodec/src/cjkcodecs/multibytecodec.c`.
+
+* ``test_ctypes`` -- one narrow ``test_pep3118`` struct-format entry is
+  suspected already fixed (static review shows PyPy's PEP 3118 format
+  strings, itemsize, shape and read-only flag matching CPython for every
+  table entry), but pinning down the exact failure needs running against a
+  translated binary rather than static analysis.
+
+* ``sys.monitoring`` (:pep:`669`) is not implemented at all (see
+  ``test_monitoring`` in ``SKIP_TESTS``). Unlike most other entries in that
+  list, this is a genuine missing **public** 3.12 API used by profilers and
+  coverage tools -- not a CPython-internal implementation detail -- but
+  implementing it is a large, self-contained project of its own.
+  ``sys.settrace`` still covers most existing tracing/profiling use cases.
+
 .. _extension-modules:
 
 Extension modules

@@ -93,9 +93,11 @@ def parsestr(space, encoding, s, token=None, astbuilder=None):
     v, first_escape_error_char = _PyString_DecodeEscape(
         space, substr, 'strict', encoding)
     if first_escape_error_char != '':
-        msg = "invalid escape sequence '%s'"
         if astbuilder:
-            astbuilder.deprecation_warn(msg % first_escape_error_char, token)
+            msg, _ = unicodehelper.format_invalid_escape_message(
+                first_escape_error_char, distinguish_octal=True)
+            astbuilder.deprecation_warn(
+                msg, token, w_category=space.w_DeprecationWarning)
 
     return space.newbytes(v)
 
@@ -267,8 +269,12 @@ def _PyString_DecodeEscape(space, s, errors, recode_encoding):
 def PyString_DecodeEscape(space, s, errors, recode_encoding):
     buf, first_escape_error_char = _PyString_DecodeEscape(space, s, errors, recode_encoding)
     if first_escape_error_char != '':
-        msg = "invalid escape sequence '%s'"
-        space.warn(space.newtext(msg % first_escape_error_char), space.w_DeprecationWarning)
+        # first_escape_error_char may contain a raw byte >= 0x80 (escape_decode
+        # accepts arbitrary bytes, unlike bytes literals); build the warning
+        # text as valid UTF-8 rather than pasting the raw byte into it.
+        msg, msg_len = unicodehelper.format_invalid_escape_message(
+            first_escape_error_char)
+        space.warn(space.newutf8(msg, msg_len), space.w_DeprecationWarning)
     return buf, first_escape_error_char
 
 
@@ -284,8 +290,10 @@ def decode_unicode_escape(space, string, astbuilder, token):
         errorhandler=state.decode_error_handler,
         ud_handler=unicodedata_handler)
     if first_escape_error_char is not None and astbuilder is not None:
-        msg = "invalid escape sequence '%s'"
-        astbuilder.deprecation_warn(msg % first_escape_error_char, token)
+        msg, _ = unicodehelper.format_invalid_escape_message(
+            first_escape_error_char, distinguish_octal=True)
+        astbuilder.deprecation_warn(msg, token,
+                                     w_category=space.w_DeprecationWarning)
     return s, ulen, blen
 
 def isxdigit(ch):

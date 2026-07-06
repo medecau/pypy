@@ -57,14 +57,22 @@ class TestRlcompleter(unittest.TestCase):
                          ['str.{}('.format(x) for x in dir(str)
                           if x.startswith('s')])
         self.assertEqual(self.stdcompleter.attr_matches('tuple.foospamegg'), [])
-        # PyPy changes: CPython 3.10 has ( for everything exept __doc__
-        expected = sorted({'None.%s%s' % (x,
-                                          '()' if x in (
-            '__bool__', '__dir__', '__getstate__', '__hash__', '__init_subclass__',
-            '__reduce__', '__repr__', '__str__')
-                                          else '' if x == '__doc__'
-                                          else '(')
-                           for x in dir(None)})
+        if IS_PYPY:
+            # PyPy has no __text_signature__ for builtins/slot wrappers, so
+            # inspect.signature() always fails for them and _callable_postfix
+            # leaves a bare '(' instead of '()' (see test_global_matches).
+            expected = sorted({'None.%s%s' % (x,
+                                              '' if x == '__doc__'
+                                              else '(')
+                               for x in dir(None)})
+        else:
+            expected = sorted({'None.%s%s' % (x,
+                                              '()' if x in (
+                '__bool__', '__dir__', '__getstate__', '__hash__', '__init_subclass__',
+                '__reduce__', '__repr__', '__str__')
+                                              else '' if x == '__doc__'
+                                              else '(')
+                               for x in dir(None)})
         self.assertEqual(self.stdcompleter.attr_matches('None.'), expected)
         self.assertEqual(self.stdcompleter.attr_matches('None._'), expected)
         self.assertEqual(self.stdcompleter.attr_matches('None.__'), expected)
@@ -74,7 +82,8 @@ class TestRlcompleter(unittest.TestCase):
                          ['CompleteMe.spam'])
         self.assertEqual(self.completer.attr_matches('Completeme.egg'), [])
         self.assertEqual(self.completer.attr_matches('CompleteMe.'),
-                         ['CompleteMe.mro()', 'CompleteMe.spam'])
+                         ['CompleteMe.mro(' if IS_PYPY else 'CompleteMe.mro()',
+                          'CompleteMe.spam'])
         self.assertEqual(self.completer.attr_matches('CompleteMe._'),
                          ['CompleteMe._ham'])
         matches = self.completer.attr_matches('CompleteMe.__')

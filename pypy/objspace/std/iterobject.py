@@ -248,6 +248,50 @@ W_ReverseSeqIterObject.typedef = TypeDef(
 W_ReverseSeqIterObject.typedef.acceptable_as_base_class = False
 
 
+class W_CallableIterObject(W_Root):
+    """iter(callable, sentinel) implementation.  Unlike a plain generator,
+    this permanently sinks (like CPython's callable_iterator) the moment
+    the sentinel is seen, and tolerates the callable reentrantly
+    exhausting this same iterator (gh-101892).
+    """
+    def __init__(self, w_callable, w_sentinel):
+        self.w_callable = w_callable
+        self.w_sentinel = w_sentinel
+
+    def descr_iter(self, space):
+        return self
+
+    def descr_next(self, space):
+        if self.w_callable is None:
+            raise OperationError(space.w_StopIteration, space.w_None)
+        w_callable = self.w_callable
+        w_result = space.call_function(w_callable)
+        if self.w_callable is None:
+            # the sentinel was reached reentrantly while w_callable was
+            # running (gh-101892): the result we just got is stale.
+            raise OperationError(space.w_StopIteration, space.w_None)
+        if space.eq_w(w_result, self.w_sentinel):
+            self.w_callable = None
+            self.w_sentinel = None
+            raise OperationError(space.w_StopIteration, space.w_None)
+        return w_result
+
+    def descr_reduce(self, space):
+        if self.w_callable is None:
+            return _empty_iterable(space)
+        w_iter = space.builtin.get('iter')
+        return space.newtuple([w_iter,
+            space.newtuple([self.w_callable, self.w_sentinel])])
+
+W_CallableIterObject.typedef = TypeDef(
+    "callable_iterator",
+    __iter__ = interp2app(W_CallableIterObject.descr_iter),
+    __next__ = interp2app(W_CallableIterObject.descr_next),
+    __reduce__ = interp2app(W_CallableIterObject.descr_reduce),
+)
+W_CallableIterObject.typedef.acceptable_as_base_class = False
+
+
 def _empty_iterable(space):
     w_callable = space.builtin.get('iter')
     return space.newtuple([w_callable, space.newtuple([space.newtuple([])])])

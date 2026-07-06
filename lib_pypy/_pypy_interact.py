@@ -67,6 +67,12 @@ def run_simple_interactive_console(mainmodule):
             except EOFError:
                 console.write("\n")
                 break
+            except OSError:
+                # stdin was closed (e.g. by os.close(0)) while we were
+                # about to read from it; treat that the same as EOF
+                # instead of letting the OSError escape as a crash.
+                console.write("\n")
+                break
             else:
                 more = console.push(line)
         except KeyboardInterrupt:

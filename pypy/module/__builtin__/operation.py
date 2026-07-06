@@ -4,7 +4,6 @@ Interp-level implementation of the basic space operations.
 
 import math
 
-from pypy.interpreter import gateway
 from pypy.interpreter.error import OperationError, oefmt
 from pypy.interpreter.gateway import unwrap_spec, WrappedDefault
 from rpython.rlib.rfloat import isfinite, round_double, round_away
@@ -111,27 +110,6 @@ otherwise the same type as the number. ndigits may be negative."""
 
 # ____________________________________________________________
 
-iter_sentinel = gateway.applevel('''
-    # NOT_RPYTHON  -- uses yield
-    # App-level implementation of the iter(callable,sentinel) operation.
-
-    def iter_generator(callable_, sentinel):
-        while 1:
-            try:
-                result = callable_()
-            except StopIteration:
-                return
-            if result == sentinel:
-                return
-            yield result
-
-    def iter_sentinel(callable_, sentinel):
-        if not callable(callable_):
-            raise TypeError('iter(v, w): v must be callable')
-        return iter_generator(callable_, sentinel)
-
-''', filename=__file__).interphook("iter_sentinel")
-
 def iter(space, w_collection_or_callable, w_sentinel=None):
     """iter(collection) -> iterator over the elements of the collection.
 
@@ -141,7 +119,10 @@ iter(callable, sentinel) -> iterator calling callable() until it returns
     if w_sentinel is None:
         return space.iter(w_collection_or_callable)
     else:
-        return iter_sentinel(space, w_collection_or_callable, w_sentinel)
+        from pypy.objspace.std.iterobject import W_CallableIterObject
+        if not space.is_true(space.callable(w_collection_or_callable)):
+            raise oefmt(space.w_TypeError, "iter(v, w): v must be callable")
+        return W_CallableIterObject(w_collection_or_callable, w_sentinel)
 
 def next(space, w_iterator, w_default=None):
     """next(iterator[, default])
