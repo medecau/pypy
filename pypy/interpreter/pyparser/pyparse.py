@@ -24,7 +24,14 @@ def _check_valid_utf8_source(bytessrc, compile_info, explicit_encoding):
     # same way CPython's C tokenizer reports it.
     from rpython.rlib import rutf8
     try:
-        rutf8.check_utf8(bytessrc, False)
+        # allow_surrogates=True: str-derived source (e.g. compiled via
+        # space.exec_() of a surrogatepass-encoded string, as the app-test
+        # raises("...") helper does) legitimately carries UTF-8-encoded
+        # surrogate code points -- exactly as it did before this whole-source
+        # check was added. Genuine non-UTF-8 bytes (lone high bytes, truncated
+        # or overlong sequences) are still rejected, the way CPython's C
+        # tokenizer reports them.
+        rutf8.check_utf8(bytessrc, True)
     except rutf8.CheckError as e:
         pos = e.pos
         badbyte = ord(bytessrc[pos])

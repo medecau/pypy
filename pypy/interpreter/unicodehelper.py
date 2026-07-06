@@ -673,9 +673,10 @@ def str_decode_unicode_escape(space, s, w_s, errors, final, errorhandler, ud_han
                             x = (x << 3) + ord(ch) - ord('0')
             if x > 0o377:
                 first_escape_error_char = "\\" + span
-                builder.append_code(x)
-            else:
-                builder.append_char(chr(x))
+            # append_code() (not append_char) so 0x80..0xFF octal escapes such
+            # as '\202' are UTF-8-encoded as the code point U+0082 rather than
+            # emitted as a raw, invalid-UTF-8 byte.
+            builder.append_code(x)
         # hex escapes
         # \xXX
         elif ch == 'x':
