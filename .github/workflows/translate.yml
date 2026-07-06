@@ -17,6 +17,14 @@ on:
         description: 'Include macOS build (10x cost)'
         type: boolean
         default: false
+      run_thirdparty:
+        description: 'Run third-party library test suites (slow)'
+        type: boolean
+        default: true
+      tiers:
+        description: 'Third-party tiers to run (comma-separated: 1=meta 2=cext 3=rust 4=pure)'
+        type: string
+        default: '1,2,3,4'
 
 concurrency:
   group: translate-${{ github.ref }}
@@ -208,4 +216,75 @@ jobs:
       with:
         name: stdlib-results-macos-14
         path: pypy/tool/ci/stdlib-results.json
+        if-no-files-found: ignore
+
+  # Third-party library test suites -- ON-DEMAND ONLY (workflow_dispatch).
+  # Installs ~33 popular packages against the freshly built pypy3 and runs each
+  # one's own upstream test suite. Builds are slow (numpy / spaCy / Cython /
+  # Rust cores), so this never runs on push or pull_request.
+  thirdparty-linux:
+    name: third-party tests (ubuntu-24.04)
+    needs: build-linux
+    if: github.event_name == 'workflow_dispatch' && inputs.run_thirdparty
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: psycopg2_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download PyPy artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: pypy-ci-build-ubuntu-24.04
+
+    - name: Extract PyPy
+      run: |
+        tar xjf pypy-nightly.tar.bz2
+        PYPY_DIR=$(find . -maxdepth 1 -name 'pypy-nightly' -type d | head -1)
+        PYPY_BIN=$(find "$PYPY_DIR" -name 'pypy*' -type f -executable | grep -v '\.debug' | head -1)
+        PYPY_BIN=$(realpath "$PYPY_BIN")
+        chmod +x "$PYPY_BIN"
+        echo "PYPY_BIN=$PYPY_BIN" >> "$GITHUB_ENV"
+        "$PYPY_BIN" --version
+
+    - name: Install system dependencies
+      uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: build-essential git libffi-dev libssl-dev zlib1g-dev libbz2-dev libsqlite3-dev liblzma-dev libxml2-dev libxslt1-dev libyaml-dev libpq-dev ninja-build
+        version: 1.0
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Run third-party tests
+      env:
+        # psycopg2's suite reads these to reach the postgres service above
+        PSYCOPG2_TESTDB: psycopg2_test
+        PSYCOPG2_TESTDB_HOST: localhost
+        PSYCOPG2_TESTDB_PORT: '5432'
+        PSYCOPG2_TESTDB_USER: postgres
+        PGPASSWORD: postgres
+      working-directory: pypy/tool/ci
+      run: python3 run_thirdparty_tests.py --pypy "$PYPY_BIN" --tiers "${{ inputs.tiers }}"
+
+    - name: Upload results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: thirdparty-results-ubuntu-24.04
+        path: pypy/tool/ci/thirdparty-results.json
         if-no-files-found: ignore
