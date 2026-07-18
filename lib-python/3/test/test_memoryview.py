@@ -24,6 +24,12 @@ except AttributeError:
     getrefcount = lambda o: len(gc.get_referents(o))
 import struct
 
+try:
+    getrefcount = sys.getrefcount
+except AttributeError:
+    # PyPy
+    getrefcount = lambda o: len(gc.get_referents(o))
+
 from test.support import import_helper
 
 
