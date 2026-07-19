@@ -2,6 +2,7 @@ from test.test_importlib import abc, util
 from importlib.machinery import BuiltinImporter
 
 machinery = util.import_importlib('importlib.machinery')
+from importlib.machinery import BuiltinImporter
 
 import sys
 import types
