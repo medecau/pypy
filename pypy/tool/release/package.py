@@ -231,6 +231,7 @@ def create_package(basedir, options, _fake=False):
         # See that issue for a post-installation solution
         # generate_sysconfigdata(pypy_c, str(target))
         subprocess.check_call([str(pypy_c), "-c", "import _testmultiphase_build"])
+        subprocess.check_call([str(pypy_c), "-c", "import _testsinglephase_build"])
         subprocess.check_call([str(pypy_c), "-c", "import _ctypes_test_build"])
         subprocess.check_call([str(pypy_c), "-c", "import _testcapi"])
     if ARCH == 'win32':
