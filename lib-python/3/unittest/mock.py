@@ -1996,6 +1996,8 @@ magic_methods = (
     "fspath "
     "aiter "
 )
+if sys.implementation.name != "pypy":
+    magic_methods += "sizeof "
 
 if sys.implementation.name != "pypy":
     # PyPy's mocks do not support __sizeof__
