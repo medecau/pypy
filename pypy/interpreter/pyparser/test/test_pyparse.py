@@ -35,7 +35,7 @@ stuff = "nothing"
         assert info.encoding == "utf-8"
         input = "\xEF\xBB\xBF# coding: latin-1\nx"
         exc = pytest.raises(SyntaxError, self.parse, input).value
-        assert exc.msg == "UTF-8 BOM with latin-1 coding cookie"
+        assert exc.msg == "encoding problem: latin-1 with BOM"
         input = "\xEF\xBB\xBF# coding: UtF-8-yadda-YADDA\nx"
         self.parse(input)    # this does not raise
         input = "# coding: not-here"

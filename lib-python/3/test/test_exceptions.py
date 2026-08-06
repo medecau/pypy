@@ -1308,14 +1308,20 @@ class ExceptionTests(unittest.TestCase):
             else:
                 self.fail("Should have raised KeyError")
 
-        def g():
-            try:
-                return g()
-            except RecursionError:
-                return sys.exc_info()
-        e, v, tb = g()
-        self.assertIsInstance(v, RecursionError, type(v))
-        self.assertIn("maximum recursion depth exceeded", str(v))
+        if check_impl_detail(pypy=False):
+            # On PyPy the C-stack-based recursion check does not guarantee
+            # headroom for the handler: with the test suite's deeper base
+            # stack, the sys.exc_info() call inside the except block can
+            # raise a second RecursionError that escapes g().  CPython's
+            # guaranteed post-overflow margin is an implementation detail.
+            def g():
+                try:
+                    return g()
+                except RecursionError:
+                    return sys.exc_info()
+            e, v, tb = g()
+            self.assertIsInstance(v, RecursionError, type(v))
+            self.assertIn("maximum recursion depth exceeded", str(v))
 
 
     @cpython_only

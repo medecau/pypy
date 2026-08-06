@@ -36,9 +36,11 @@ def _check_valid_utf8_source(bytessrc, compile_info, explicit_encoding):
         pos = e.pos
         badbyte = ord(bytessrc[pos])
         lineno = 1
+        line_start = 0
         for i in range(pos):
             if bytessrc[i] == '\n':
                 lineno += 1
+                line_start = i + 1
         # RPython's %-formatting has no width/padding specifiers (%02x does
         # not rtype); build the two hex digits by hand.
         hexdigits = "0123456789abcdef"
@@ -48,7 +50,9 @@ def _check_valid_utf8_source(bytessrc, compile_info, explicit_encoding):
         if not explicit_encoding:
             msg += (", but no encoding declared; see "
                     "https://peps.python.org/pep-0263/ for details")
-        raise error.SyntaxError(msg, filename=compile_info.filename)
+        # 1-based byte column of the offending byte, like CPython's tokenizer
+        raise error.SyntaxError(msg, lineno, pos - line_start + 1,
+                                filename=compile_info.filename)
 
 def _normalize_encoding(encoding):
     """returns normalized name for <encoding>
@@ -149,7 +153,10 @@ class PythonParser(object): # leave class for mergeability of _handle_encoding
             decl_enc = _check_for_encoding(bytessrc)
             explicit_encoding = (decl_enc is not None)
             if decl_enc and _normalize_encoding(decl_enc) != "utf-8":
-                raise error.SyntaxError("UTF-8 BOM with %s coding cookie" % decl_enc,
+                # CPython reports this encoding problem at (lineno 0,
+                # offset -1) -- see test_exceptions.testSyntaxErrorOffset
+                raise error.SyntaxError("encoding problem: %s with BOM" % decl_enc,
+                                        0, -1,
                                         filename=compile_info.filename)
             textsrc = bytessrc
             _check_valid_utf8_source(textsrc, compile_info, explicit_encoding)

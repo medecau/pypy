@@ -680,7 +680,12 @@ class PyFrame(W_Root):
         # active (see executioncontext.run_trace_func). A frame whose
         # f_trace was set directly (without sys.settrace) would otherwise
         # see a stale line number on every read after the first.
-        return space.newint(self.get_last_lineno())
+        lineno = self.get_last_lineno()
+        if lineno == -1:
+            # PEP 626: instructions without line information (artificial
+            # bytecodes) expose f_lineno as None, not -1
+            return space.w_None
+        return space.newint(lineno)
 
     def fset_f_lineno(self, space, w_new_lineno):
         "Change the line number of the instruction currently being executed."

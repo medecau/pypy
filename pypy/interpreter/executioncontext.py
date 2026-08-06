@@ -692,6 +692,17 @@ class UserDelAction(AsyncAction):
 
 def report_error(space, e, where, w_obj):
     if isinstance(e, OperationError):
+        if e.get_traceback() is None:
+            # Interp-level raises from finalizers (e.g. "generator ignored
+            # GeneratorExit" out of descr_close) never crossed an app-level
+            # frame, so they carry no traceback.  CPython's unraisable hook
+            # still receives one pointing at the frame that was executing
+            # when finalization ran; attach that frame here to match.
+            from pypy.interpreter import pytraceback
+            frame = space.getexecutioncontext().gettopframe_nohidden()
+            if frame is not None:
+                pytraceback.record_application_traceback(
+                    space, e, frame, frame.last_instr)
         e.write_unraisable(space, where, w_obj)
         e.clear(space)   # break up reference cycles
     else:

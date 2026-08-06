@@ -2,6 +2,10 @@ from rpython.rlib.objectmodel import specialize
 from pypy.interpreter.unicodehelper import _str_decode_utf8_slowpath
 
 def wrap_pos(space, num):
+    if num == -1:
+        # CPython's "encoding problem" errors carry offset -1 (not None);
+        # see test_exceptions.testSyntaxErrorOffset's BOM case
+        return space.newint(-1)
     if num <= 0:
         return space.w_None
     return space.newint(num)
