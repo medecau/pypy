@@ -195,6 +195,15 @@ return next yielded value or raise StopIteration."""
         else:
             tb = check_traceback(space, w_tb, msg)
 
+        # gen.throw() has its own wording for this error, distinct from the
+        # raise statement's "exceptions must derive from BaseException"
+        # (CPython genobject.c _gen_throw)
+        if not (space.exception_is_valid_obj_as_class_w(w_type) or
+                space.isinstance_w(w_type, space.w_BaseException)):
+            raise oefmt(space.w_TypeError,
+                        "exceptions must be classes or instances deriving "
+                        "from BaseException, not %T", w_type)
+
         operr = OperationError(w_type, w_val, tb)
         w_value = operr.normalize_exception(space)
 

@@ -318,7 +318,14 @@ class PyFrame(W_Root):
             return r_uint(last_instr + 2)
 
         if isinstance(w_arg_or_err, SApplicationException):
-            return self.handle_generator_error(w_arg_or_err.operr)
+            # Record __context__ now, while the generator's saved exception
+            # state is swapped in (push_gen_or_coroutine already ran): an
+            # exception thrown into a generator suspended inside an except
+            # block must chain to that frame's active exception, mirroring
+            # the yield-from branch above.
+            operr = w_arg_or_err.operr
+            operr.record_context(space, space.getexecutioncontext())
+            return self.handle_generator_error(operr)
 
         last_instr = jit.promote(self.last_instr)
         if last_instr != -1:
