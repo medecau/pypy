@@ -708,8 +708,10 @@ class EnvironmentVarGuard(collections.abc.MutableMapping):
     def set(self, envvar, value):
         self[envvar] = value
 
-    def unset(self, envvar):
-        del self[envvar]
+    def unset(self, envvar, /, *envvars):
+        """Unset one or more environment variables."""
+        for ev in (envvar, *envvars):
+            del self[ev]
 
     def copy(self):
         # We do what os.environ.copy() does.

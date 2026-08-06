@@ -65,8 +65,14 @@ def package_commands(pkg, pypy, pkg_root):
         checkout = pkg_root
 
     cmds = []
+    # --without-pip + explicit ensurepip: venv's own pip bootstrap swallows
+    # ensurepip's traceback (CalledProcessError with no detail); as a separate
+    # step its full output lands in our captured log.
     cmds.append({"label": "venv", "kind": "setup", "cwd": None,
-                 "argv": [pypy, "-m", "venv", venv_dir]})
+                 "argv": [pypy, "-m", "venv", "--without-pip", venv_dir]})
+    cmds.append({"label": "ensurepip", "kind": "setup", "cwd": None,
+                 "argv": [venv_py, "-m", "ensurepip", "--upgrade",
+                          "--default-pip"]})
     cmds.append({"label": "bootstrap", "kind": "setup", "cwd": None,
                  "argv": [venv_py, "-m", "pip", "install", "-U",
                           "pip", "setuptools", "wheel", "pytest"]})
