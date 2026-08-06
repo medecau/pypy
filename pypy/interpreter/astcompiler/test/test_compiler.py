@@ -3123,6 +3123,22 @@ class TestOptimizations:
         assert counts == {ops.LOAD_GLOBAL:1, ops.RAISE_VARARGS: 1}
 
 
+    def test_duplicate_exits_without_lineno_falls_through(self):
+        # gh-109719 shape: inlining the artificial no-lineno exit block used
+        # to hit an "unreachable" assertion in duplicate_exits_without_lineno
+        # when the inlined block falls through to a next_block.  Just check
+        # that this compiles at all.
+        source = """def f():
+            while name:
+                try:
+                    break
+                except:
+                    pass
+            else:
+                1 if 1 else 1
+        """
+        self.run(source)
+
     def test_remove_dead_jump_after_return(self):
         source = """def f(x, y, z):
             if x:

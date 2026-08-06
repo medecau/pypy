@@ -843,12 +843,17 @@ class PythonCodeMaker(ast.ASTVisitor):
                             copy.jump.marked += 2
                         block.emit_instr(copy)
                     if target.next_block and not block.cant_add_instructions:
-                        print "should be unreachable! please report a bug about the astcompiler", self.name
-                        assert 0
-                        #instr = Instruction(ops.JUMP_ABSOLUTE, position_info=self.position_info)
-                        #instr.jump = target.next_block
-                        #block.emit_instr(instr)
-                        #target.next_block.marked += 2
+                        # the inlined target block falls through to its
+                        # next_block (it has no terminator of its own, e.g.
+                        # a while/try-break/else shape, see gh-109719's test
+                        # in test_compile) -- keep the control flow by
+                        # jumping there explicitly, like the copied-block
+                        # case below does
+                        instr = Instruction(ops.JUMP_ABSOLUTE,
+                                            position_info=op.position_info)
+                        instr.jump = target.next_block
+                        target.next_block.marked += 2
+                        block.emit_instr(instr)
 
                 elif (target.marked >> 1) > 1:
                     # copy the block, it has more than one predecessor
