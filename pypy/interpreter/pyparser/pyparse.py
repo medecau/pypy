@@ -39,8 +39,12 @@ def _check_valid_utf8_source(bytessrc, compile_info, explicit_encoding):
         for i in range(pos):
             if bytessrc[i] == '\n':
                 lineno += 1
-        msg = "Non-UTF-8 code starting with '\\x%02x' in file %s on line %d" % (
-            badbyte, compile_info.filename, lineno)
+        # RPython's %-formatting has no width/padding specifiers (%02x does
+        # not rtype); build the two hex digits by hand.
+        hexdigits = "0123456789abcdef"
+        hexbyte = hexdigits[badbyte >> 4] + hexdigits[badbyte & 0x0f]
+        msg = "Non-UTF-8 code starting with '\\x%s' in file %s on line %d" % (
+            hexbyte, compile_info.filename, lineno)
         if not explicit_encoding:
             msg += (", but no encoding declared; see "
                     "https://peps.python.org/pep-0263/ for details")
