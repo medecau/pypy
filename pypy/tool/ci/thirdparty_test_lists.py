@@ -17,8 +17,11 @@ Entry schema (all keys optional except name/tier/kind/source/test_cmd)::
           "url": "https://github.com/psf/requests",
           "ref": "v2.32.3",         #   pinned tag/sha (never a moving branch)
       },                            #   "pyargs" -> tests ship in the wheel
-      "install": ["."],             # pip install args, run in the checkout
-      "test_deps": ["trustme"],     # extra PyPI deps needed only to run the suite
+      "install": ["."],             # pip install args, run in the checkout --
+                                    #   local extras like ".[test]" go HERE
+      "test_deps": ["trustme"],     # extra PyPI deps needed only to run the
+                                    #   suite; runs with a neutral cwd, so no
+                                    #   relative paths / local extras here
       "no_build_isolation": False,  # pass --no-build-isolation to the install
       "runner": "pytest",           # "pytest" (default) | "script" (own runner)
       "test_cmd": ["-m", "pytest", "tests"],   # argv after the venv python
@@ -53,8 +56,9 @@ PACKAGES = [
         "tier": 1, "kind": "pure",
         "source": {"kind": "git", "url": "https://github.com/pytest-dev/pytest",
                    "ref": "8.3.4"},
-        "install": ["."],
-        "test_deps": ["hypothesis", "xmlschema", "requests"],
+        # [dev] is upstream's own test-deps extra (attrs, hypothesis, xmlschema,
+        # requests, ...); testing/test_assertion.py imports attr unconditionally
+        "install": [".[dev]"],
         "test_cmd": ["-m", "pytest", "testing", "-q"],
         "status": "expected_pass",
         "note": "The runner everything else uses.",
@@ -78,6 +82,9 @@ PACKAGES = [
         "source": {"kind": "git", "url": "https://github.com/cython/cython",
                    "ref": "3.0.11"},
         "install": ["."],
+        # repo-root test-requirements.txt; setuptools<60 intentionally
+        # downgrades the bootstrap's newer setuptools for ext-module builds
+        "test_deps": ["numpy<2", "coverage", "pycodestyle", "setuptools<60"],
         "runner": "script",
         "test_cmd": ["runtests.py", "-j4", "--no-cleanup"],
         "status": "expected_fail",
@@ -89,8 +96,9 @@ PACKAGES = [
         "tier": 1, "kind": "pure",
         "source": {"kind": "git", "url": "https://github.com/pypa/setuptools",
                    "ref": "v75.3.0"},
-        "install": ["."],
-        "test_deps": ["jaraco.test", "pytest-xdist", "pytest-timeout", "virtualenv"],
+        # [test] is upstream's full test extra (jaraco.*, filelock, virtualenv,
+        # build[virtualenv], ini2toml, pytest-subprocess, ...)
+        "install": [".[test]"],
         "test_cmd": ["-m", "pytest", "setuptools/tests", "-q"],
         "status": "expected_pass",
         "note": "Build backend.",
@@ -101,7 +109,9 @@ PACKAGES = [
         "source": {"kind": "git", "url": "https://github.com/pypa/build",
                    "ref": "1.2.2"},
         "install": ["."],
-        "test_deps": ["pytest-mock", "pytest-rerunfailures", "wheel"],
+        # filelock: unconditional import in tests/test_integration.py (the
+        # network-hitting tests themselves are gated behind --run-integration)
+        "test_deps": ["pytest-mock", "pytest-rerunfailures", "wheel", "filelock"],
         "test_cmd": ["-m", "pytest", "tests", "-q"],
         "status": "expected_pass",
     },
@@ -120,8 +130,11 @@ PACKAGES = [
         "source": {"kind": "git", "url": "https://github.com/pypa/pip",
                    "ref": "24.3.1"},
         "install": ["."],
-        "test_deps": ["pytest-xdist", "freezegun", "tomli-w", "werkzeug", "pretend",
-                      "installer"],
+        # mirrors pip's own tests/requirements.txt; scripttest is imported by
+        # tests/lib/__init__.py so nearly all of tests/unit needs it
+        "test_deps": ["cryptography", "freezegun", "installer", "pytest-cov",
+                      "pytest-rerunfailures", "pytest-xdist", "scripttest",
+                      "virtualenv", "werkzeug", "tomli-w", "proxy.py"],
         "test_cmd": ["-m", "pytest", "tests/unit", "-q"],
         "status": "expected_fail",
         "note": "Full suite needs network/vendoring fixtures; scoped to tests/unit. "
@@ -134,9 +147,12 @@ PACKAGES = [
     {
         "name": "numpy",
         "tier": 2, "kind": "cext",
-        "source": {"kind": "git", "url": "https://github.com/numpy/numpy",
-                   "ref": "v1.26.4"},
-        "install": ["."],
+        # sdist, NOT a git clone: the harness clones --depth 1 without
+        # submodules, and numpy@v1.26.4 hard-requires its vendored-meson /
+        # x86-simd-sort / svml submodules to configure. The PyPI sdist bundles
+        # all three, so build from it instead.
+        "source": {"kind": "pyargs"},
+        "install": ["--no-binary", ":all:", "numpy==1.26.4"],
         "test_deps": ["hypothesis", "pytest-xdist"],
         # --pyargs => import the *installed* numpy, not the source tree
         "test_cmd": ["-m", "pytest", "--pyargs", "numpy", "-q"],
@@ -149,6 +165,8 @@ PACKAGES = [
         "source": {"kind": "git", "url": "https://github.com/lxml/lxml",
                    "ref": "lxml-5.3.0"},
         "install": ["."],
+        # cssselect un-skips test_css.py (import-guarded)
+        "test_deps": ["cssselect"],
         "test_cmd": ["-m", "pytest", "src/lxml/tests", "-q"],
         "status": "expected_fail",
         "note": "Needs libxml2-dev/libxslt1-dev system headers. Calibrate.",
@@ -159,7 +177,9 @@ PACKAGES = [
         "source": {"kind": "git", "url": "https://github.com/yaml/pyyaml",
                    "ref": "6.0.2"},
         "install": ["."],
-        "test_cmd": ["-m", "pytest", "tests/lib", "-q"],
+        # at 6.0.2 the suite lives in legacy_tests/ (tests/lib is gone); its
+        # conftest drives a bespoke collector over legacy_tests/data/*
+        "test_cmd": ["-m", "pytest", "legacy_tests", "-q"],
         "status": "expected_pass",
         "note": "libyaml C path via libyaml-dev; pure-Python fallback otherwise.",
     },
@@ -180,14 +200,20 @@ PACKAGES = [
                    "ref": "3.1.1"},
         "install": ["."],
         "test_cmd": ["-m", "pytest", "--pyargs", "greenlet.tests", "-q"],
-        "status": "expected_pass",
-        "note": "PyPy provides greenlet natively via _continuation; confirm parity.",
+        "status": "skip",
+        "note": "Structurally cannot run on PyPy: upstream setup.py skips the "
+                "_greenlet C ext on PyPy but __init__.py imports it "
+                "unconditionally, and PyPy's own lib_pypy/greenlet.py shim "
+                "(over _continuation) shadows the install anyway -- 100% "
+                "collection failure, not xfailable subtests. Parity is covered "
+                "by extra_tests/test_greenlet_*.py instead.",
     },
     {
         "name": "psycopg2",
         "tier": 2, "kind": "cext",
+        # dot-separated tags from 2.9.6 on (underscore style ended at 2_9_5)
         "source": {"kind": "git", "url": "https://github.com/psycopg/psycopg2",
-                   "ref": "2_9_10"},
+                   "ref": "2.9.10"},
         "install": ["."],
         "test_cmd": ["-m", "pytest", "tests", "-q"],
         "status": "expected_fail",
@@ -204,21 +230,27 @@ PACKAGES = [
         "source": {"kind": "git", "url": "https://github.com/pydantic/pydantic",
                    "ref": "v2.10.4"},
         "install": ["."],
-        "test_deps": ["dirty-equals", "hypothesis", "pytest-mock", "email-validator",
-                      "pytest-examples"],
+        # pytest-benchmark is load-bearing: pyproject addopts pass --benchmark-*
+        # flags, so without the plugin pytest dies before collecting anything;
+        # jsonschema/pytz are module-scope imports in conftest.py / test files
+        "test_deps": ["dirty-equals", "pytest-mock", "email-validator",
+                      "pytest-examples", "pytest-benchmark", "jsonschema",
+                      "pytz"],
         "test_cmd": ["-m", "pytest", "tests", "-q"],
         "status": "expected_fail",
-        "note": "Pulls pydantic-core (PyO3); no PyPy wheels -> builds from source "
-                "via Rust. Calibrate.",
+        "note": "Pulls pydantic-core 2.27.2 (PyO3 0.22); PyPy wheels exist only "
+                "for pp39/pp310, no pp312 -> builds the sdist with stable Rust. "
+                "Calibrate.",
     },
     {
         "name": "cryptography",
         "tier": 3, "kind": "rust",
         "source": {"kind": "git", "url": "https://github.com/pyca/cryptography",
                    "ref": "44.0.0"},
-        "install": ["."],
-        "test_deps": ["cryptography_vectors", "pretend", "pytest-xdist",
-                      "pytest-benchmark"],
+        # ./vectors installs the in-repo cryptography_vectors at the exact
+        # matching version (upstream pins ==44.0.0; PyPI's latest is far newer)
+        "install": [".", "./vectors"],
+        "test_deps": ["pretend", "pytest-xdist", "pytest-benchmark", "certifi"],
         "test_cmd": ["-m", "pytest", "tests", "-q"],
         "status": "expected_fail",
         "note": "Rust + OpenSSL headers (libssl-dev). Calibrate.",
@@ -239,10 +271,13 @@ PACKAGES = [
         "source": {"kind": "git", "url": "https://github.com/ijl/orjson",
                    "ref": "3.10.12"},
         "install": ["."],
-        "test_deps": ["numpy", "python-dateutil", "pytz", "pytest-random-order"],
+        # psutil/faker un-skip test_memory.py/test_fake.py (guarded imports)
+        "test_deps": ["numpy", "python-dateutil", "pytz", "psutil", "faker"],
         "test_cmd": ["-m", "pytest", "test", "-q"],
         "status": "expected_fail",
-        "note": "Rust + maturin (historically needs a Rust nightly). Calibrate.",
+        "note": "Rust + maturin. Official wheels use nightly for opt-in SIMD "
+                "features, but default features build on stable Rust (>=1.72), "
+                "just without those fast paths. Calibrate.",
     },
 
     # ------------------------------------------------------------------ #
@@ -258,7 +293,9 @@ PACKAGES = [
         "test_cmd": ["tests/runtests.py", "--parallel=1", "--verbosity=1"],
         "status": "expected_pass",
         "note": "Own runner (tests/runtests.py); defaults to the sqlite backend. "
-                "Calibrate.",
+                "Feature-gated tests skip cleanly without the optional deps in "
+                "tests/requirements/py3.txt (Pillow, argon2, redis, ...) -- "
+                "expect skips, not failures, for those. Calibrate.",
     },
     {
         "name": "requests",
@@ -266,7 +303,10 @@ PACKAGES = [
         "source": {"kind": "git", "url": "https://github.com/psf/requests",
                    "ref": "v2.32.3"},
         "install": ["."],
-        "test_deps": ["pytest-httpbin", "httpbin", "trustme"],
+        # pytest-httpbin pinned ==2.0.0 to match upstream setup.py exactly;
+        # PySocks gates the SOCKS proxy tests
+        "test_deps": ["pytest-httpbin==2.0.0", "httpbin", "trustme",
+                      "pytest-mock", "pytest-xdist", "PySocks"],
         "test_cmd": ["-m", "pytest", "tests", "-q"],
         "status": "expected_pass",
         "note": "Deselect network/httpbin-live tests during calibration.",
@@ -277,7 +317,12 @@ PACKAGES = [
         "source": {"kind": "git", "url": "https://github.com/urllib3/urllib3",
                    "ref": "2.3.0"},
         "install": ["."],
-        "test_deps": ["trustme", "tornado", "pytest-timeout", "pytest-socket"],
+        # 2.3.0's dummyserver is hypercorn/trio/quart-based (tornado is gone);
+        # upstream dev-requirements pins git forks of Quart/hypercorn -- the
+        # PyPI versions below may need deselects for some with_dummyserver tests
+        "test_deps": ["trustme", "pytest-timeout", "pytest-socket", "h2",
+                      "pyOpenSSL", "cryptography", "trio", "quart", "quart-trio",
+                      "hypercorn", "httpx"],
         "test_cmd": ["-m", "pytest", "test", "-q"],
         "status": "expected_pass",
         "note": "Spins up a local test server; deselect true-network tests.",
@@ -291,7 +336,9 @@ PACKAGES = [
         "test_deps": ["pytest-xdist"],
         "test_cmd": ["-m", "pytest", "test", "-q"],
         "status": "expected_pass",
-        "note": "C accelerator is disabled on PyPy (pure core). Calibrate.",
+        "note": "C accelerator is disabled on PyPy (pure core). pytest config "
+                "auto-loads from pyproject.toml [tool.pytest.ini_options] at "
+                "the checkout root. Calibrate.",
     },
     {
         "name": "flask",
@@ -299,7 +346,7 @@ PACKAGES = [
         "source": {"kind": "git", "url": "https://github.com/pallets/flask",
                    "ref": "3.1.0"},
         "install": ["."],
-        "test_deps": ["asgiref"],
+        "test_deps": ["asgiref", "python-dotenv"],
         "test_cmd": ["-m", "pytest", "tests", "-q"],
         "status": "expected_pass",
     },
@@ -309,6 +356,7 @@ PACKAGES = [
         "source": {"kind": "git", "url": "https://github.com/pallets/jinja",
                    "ref": "3.1.5"},
         "install": ["."],
+        "test_deps": ["trio"],
         "test_cmd": ["-m", "pytest", "tests", "-q"],
         "status": "expected_pass",
     },
@@ -318,7 +366,8 @@ PACKAGES = [
         "source": {"kind": "git", "url": "https://github.com/pallets/werkzeug",
                    "ref": "3.1.3"},
         "install": ["."],
-        "test_deps": ["watchdog", "cryptography", "ephemeral-port-reserve"],
+        "test_deps": ["watchdog", "cryptography", "ephemeral-port-reserve",
+                      "pytest-timeout"],
         "test_cmd": ["-m", "pytest", "tests", "-q"],
         "status": "expected_pass",
     },
@@ -336,8 +385,9 @@ PACKAGES = [
         "tier": 4, "kind": "pure",
         "source": {"kind": "git", "url": "https://github.com/python-attrs/attrs",
                    "ref": "24.3.0"},
-        "install": ["."],
-        "test_deps": ["hypothesis", "cloudpickle"],
+        # the project's own "tests" extra covers hypothesis/cloudpickle/pympler/
+        # pytest-xdist
+        "install": [".[tests]"],
         "test_cmd": ["-m", "pytest", "tests", "-q"],
         "status": "expected_pass",
     },
@@ -357,7 +407,9 @@ PACKAGES = [
                    "ref": "2.9.0.post0"},
         "install": ["."],
         "test_deps": ["hypothesis", "freezegun"],
-        "test_cmd": ["-m", "pytest", "dateutil/test", "-q"],
+        # src-layout at this tag: tests live in top-level tests/, not inside
+        # the package
+        "test_cmd": ["-m", "pytest", "tests", "-q"],
         "status": "expected_pass",
     },
     {
@@ -366,7 +418,7 @@ PACKAGES = [
         "source": {"kind": "git", "url": "https://github.com/HypothesisWorks/hypothesis",
                    "ref": "hypothesis-python-6.122.3"},
         "install": ["./hypothesis-python"],
-        "test_deps": ["pytest-xdist"],
+        "test_deps": ["pytest-xdist", "pexpect"],
         "test_cmd": ["-m", "pytest", "hypothesis-python/tests/cover", "-q"],
         "status": "expected_pass",
         "note": "Package + suite live in the hypothesis-python/ subdir; scoped to "
@@ -377,22 +429,30 @@ PACKAGES = [
         "tier": 4, "kind": "pure",
         "source": {"kind": "git", "url": "https://github.com/pydantic/httpx2",
                    "ref": "v2.5.0"},
-        "install": [".[http2]"],
-        "test_deps": ["pytest-asyncio", "trustme", "typing_extensions"],
+        # uv workspace monorepo: the repo root has no [project] table, so
+        # "pip install ." fails; the installable packages live in src/. Install
+        # httpcore2 first so httpx2's workspace dep resolves locally.
+        "install": ["./src/httpcore2", "./src/httpx2[http2]"],
+        "test_deps": ["trio", "pytest-trio", "trustme", "uvicorn", "werkzeug",
+                      "pytest-httpbin", "cryptography"],
         "test_cmd": ["-m", "pytest", "tests", "-q"],
         "status": "expected_pass",
         "note": "httpx successor stewarded by Pydantic Services (Tom Christie, "
-                "author). [http2] extra pulls h2 to exercise the HTTP/2 path.",
+                "author). [http2] extra pulls h2 to exercise the HTTP/2 path. "
+                "Async tests run on trio (upstream dev group), not asyncio.",
     },
     {
         "name": "fastapi",
         "tier": 4, "kind": "pure",
         "source": {"kind": "git", "url": "https://github.com/fastapi/fastapi",
                    "ref": "0.115.6"},
-        "install": ["."],
-        "test_deps": ["pytest-asyncio", "httpx", "trustme", "dirty-equals",
-                      "email-validator", "python-multipart", "sqlmodel",
-                      "flask", "orjson", "ujson"],
+        # [all] matches upstream CI (jinja2, orjson, ujson, uvicorn,
+        # python-multipart, email-validator, ...); test_deps adds the direct
+        # pins from their requirements-tests.txt not covered by the extra
+        "install": [".[all]"],
+        "test_deps": ["httpx", "trustme", "dirty-equals==0.6.0", "sqlmodel",
+                      "flask", "anyio[trio]", "PyJWT==2.8.0", "passlib[bcrypt]",
+                      "inline-snapshot==0.13.0"],
         "test_cmd": ["-m", "pytest", "tests", "-q"],
         "status": "expected_fail",
         "note": "Depends on pydantic (Rust core) + starlette; gated on pydantic "
@@ -402,9 +462,9 @@ PACKAGES = [
         "name": "spacy",
         "tier": 4, "kind": "cext",
         "source": {"kind": "git", "url": "https://github.com/explosion/spaCy",
-                   "ref": "v3.8.3"},
+                   "ref": "release-v3.8.3"},
         "install": ["."],
-        "test_deps": ["pytest-timeout", "hypothesis"],
+        "test_deps": ["pytest-timeout", "hypothesis", "mock"],
         "test_cmd": ["-m", "pytest", "spacy/tests", "-q"],
         "status": "expected_fail",
         "note": "Cython stack (thinc/blis/cymem/preshed/murmurhash/srsly) + numpy. "
