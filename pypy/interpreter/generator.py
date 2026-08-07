@@ -204,6 +204,15 @@ return next yielded value or raise StopIteration."""
                         "exceptions must be classes or instances deriving "
                         "from BaseException, not %T", w_type)
 
+        # Like the pre-check above, argument-SHAPE errors raise at the call
+        # site with the generator untouched (CPython validates this in
+        # gen_throw itself, before _PyErr_SetObject); only failures
+        # *instantiating* an exception class are delivered into the frame.
+        if (not space.exception_is_valid_obj_as_class_w(w_type) and
+                not space.is_w(w_val, space.w_None)):
+            raise oefmt(space.w_TypeError,
+                        "instance exception may not have a separate value")
+
         operr = OperationError(w_type, w_val, tb)
         try:
             w_value = operr.normalize_exception(space)
