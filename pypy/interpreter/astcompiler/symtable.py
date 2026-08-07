@@ -135,7 +135,7 @@ class Scope(object):
 
     def note_yieldFrom(self, yieldFrom_node):
         """Called when a yield from is found."""
-        self.error("'yield' outside function", yieldFrom_node)
+        self.error("'yield from' outside function", yieldFrom_node)
 
     def note_await(self, await_node):
         """Called when await is found."""
