@@ -329,15 +329,20 @@ def _make_monitoring_module():
     # coverage.py, debuggers) conclude that monitoring is unavailable and
     # take their sys.settrace/sys.setprofile fallback paths, which work and
     # give correct results on PyPy.  No client silently gets zero events.
-    import types
+    #
+    # NB: this runs while the sys module itself is being initialized, so it
+    # must not import anything (importing types here can deadlock the
+    # bootstrap, since types.py itself imports sys).  ModuleType is
+    # reachable as type(sys): app.py already holds the in-progress module.
+    _ModuleType = type(sys)
 
-    monitoring = types.ModuleType(
+    monitoring = _ModuleType(
         'sys.monitoring',
         "An implementation of PEP 669's API surface. PyPy does not implement "
         "the underlying instrumentation yet: all tool ids report as taken so "
         "that monitoring clients use their sys.settrace-based fallbacks.")
 
-    events = types.ModuleType('sys.monitoring.events')
+    events = _ModuleType('sys.monitoring.events')
     _event_ids = [   # ids from CPython's pycore_instruments.h
         ('PY_START', 0), ('PY_RESUME', 1), ('PY_RETURN', 2), ('PY_YIELD', 3),
         ('CALL', 4), ('LINE', 5), ('INSTRUCTION', 6), ('JUMP', 7),
