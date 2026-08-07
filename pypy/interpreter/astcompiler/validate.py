@@ -124,12 +124,35 @@ class AstValidator(ast.ASTVisitor):
     def __init__(self, space):
         self.space = space
 
+    def _validate_positions(self, node):
+        # CPython's VALIDATE_POSITIONS (Python/ast.c): reject ranges that
+        # cannot describe a real span of source
+        lineno = node.lineno
+        end_lineno = node.end_lineno
+        col_offset = node.col_offset
+        end_col_offset = node.end_col_offset
+        if lineno > end_lineno:
+            raise ValidationError(
+                "AST node line range (%s, %s) is not valid" % (
+                    lineno, end_lineno))
+        if ((lineno < 0 and end_lineno != lineno) or
+                (col_offset < 0 and col_offset != end_col_offset)):
+            raise ValidationError(
+                "AST node column range (%s, %s) for line range (%s, %s) "
+                "is not valid" % (col_offset, end_col_offset, lineno,
+                                  end_lineno))
+        if lineno == end_lineno and col_offset > end_col_offset:
+            raise ValidationError(
+                "line %s, column %s-%s is not a valid range" % (
+                    lineno, col_offset, end_col_offset))
+
     def _validate_stmts(self, stmts):
         if not stmts:
             return
         for stmt in stmts:
             if not stmt:
                 raise ValidationError("None disallowed in statement list")
+            self._validate_positions(stmt)
             stmt.walkabout(self)
 
     def _len(self, node):
@@ -138,6 +161,7 @@ class AstValidator(ast.ASTVisitor):
         return len(node)
 
     def _validate_expr(self, expr, ctx=ast.Load):
+        self._validate_positions(expr)
         expr.check_context(self, ctx)
         expr.walkabout_with_ctx(self, ctx)
 
