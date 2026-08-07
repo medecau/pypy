@@ -136,6 +136,7 @@ def _finish(name, status, start, log, keep, pkg_root):
 def run_package(task):
     """Worker: build+install+test one package. Returns (name, status, dur, output)."""
     pypy, pkg, timeout, workdir, keep = task
+    timeout = pkg.get("timeout", timeout)   # per-package override
     name = pkg["name"]
     start = time.monotonic()
     deadline = start + timeout
@@ -153,9 +154,17 @@ def run_package(task):
                 return _finish(name, "timeout", start, log, keep, pkg_root)
             log.append("$ " + " ".join(cmd["argv"]))
             try:
+                env = dict(os.environ)
+                constraints = os.path.join(os.path.dirname(
+                    os.path.abspath(__file__)), "thirdparty_constraints.txt")
+                if os.path.exists(constraints):
+                    # applies to every pip invocation in the venv, pinning
+                    # transitive test deps that break on PyPy
+                    env["PIP_CONSTRAINT"] = constraints
                 res = subprocess.run(cmd["argv"], cwd=cmd["cwd"],
                                      capture_output=True, text=True,
-                                     errors="replace", timeout=remaining)
+                                     errors="replace", env=env,
+                                     timeout=remaining)
             except subprocess.TimeoutExpired as e:
                 log.append(_partial(e))
                 log.append("[TIMEOUT in '%s']" % cmd["label"])
@@ -348,7 +357,7 @@ def main():
                         "expected": p.get("status", "expected_pass")}
             for p in selected
         },
-        "failure_details": {n: o[-4000:] for n, o in failure_outputs.items()},
+        "failure_details": {n: o[-8000:] for n, o in failure_outputs.items()},
     }
     with open("thirdparty-results.json", "w") as f:
         json.dump(json_results, f, indent=2)

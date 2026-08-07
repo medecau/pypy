@@ -1,0 +1,10 @@
+# pip constraints applied to EVERY package venv in run_thirdparty_tests.py
+# (via PIP_CONSTRAINT). Constrains transitive test dependencies that break
+# on PyPy; keep each entry justified.
+
+# Recent hypothesis releases ship a Rust/PyO3 accelerator whose pyo3-ffi
+# does not compile against PyPy 3.12 (maturin build fails). 6.122.3 is the
+# last verified pure-Python version we pin elsewhere in the matrix; it
+# satisfies the unbounded "hypothesis" requirement in attrs[tests],
+# pytest[dev], coverage's and python-dateutil's test deps.
+hypothesis==6.122.3
