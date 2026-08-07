@@ -2105,16 +2105,20 @@ class ObjSpace(object):
         return w_iterable.iterator_greenkey(self)
 
     def guess_function_name_parens(self, w_function):
-        """ Returns 'funcname()' from callable w_function. If it's not a
-        function or a method, returns 'Classname object'"""
-        # XXX this is super annoying to compute every time we do a function call!
-        # CPython has a similar function, PyEval_GetFuncName
-        from pypy.interpreter.function import Function, _Method
-        if isinstance(w_function, Function):
-            return w_function.qualname + '()'
-        if isinstance(w_function, _Method):
-            return self.guess_function_name_parens(w_function.w_function)
-        return self.type(w_function).getname(self) + ' object'
+        """ CPython 3.12's _PyObject_FunctionStr: returns
+        '{module}.{qualname}()' (module omitted when missing, None or
+        'builtins'), or str(w_function) when there is no __qualname__
+        (e.g. 'None' for None).  Only used on error paths."""
+        w_qualname = self.findattr(w_function, self.newtext('__qualname__'))
+        if w_qualname is None:
+            return self.text_w(self.str(w_function))
+        qualname = self.text_w(self.str(w_qualname))
+        w_module = self.findattr(w_function, self.newtext('__module__'))
+        if w_module is not None and not self.is_w(w_module, self.w_None):
+            module = self.text_w(self.str(w_module))
+            if module != 'builtins':
+                return module + '.' + qualname + '()'
+        return qualname + '()'
 
 
 class AppExecCache(SpaceCache):

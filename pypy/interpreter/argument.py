@@ -426,9 +426,10 @@ def _do_combine_starstarargs_wrapped(space, keys_w, w_starstararg, keyword_names
             key = space.text_w(w_key)
         except OperationError as e:
             if e.match(space, space.w_TypeError):
-                raise_type_error(space, fnname_parens,
-                            "keywords must be strings, not '%T'",
-                            w_key)
+                # CPython's **-dict unpack path (Objects/call.c
+                # _PyStack_UnpackDict) raises this bare: no function name,
+                # no key type
+                raise oefmt(space.w_TypeError, "keywords must be strings")
             raise
         else:
             if ((existingkeywords_w and

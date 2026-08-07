@@ -1861,9 +1861,11 @@ class AppTestComparesByIdentity:
         def make_class():
             class A:
                 d = Descriptor()
-        excinfo = raises(RuntimeError, make_class)
-        assert isinstance(excinfo.value.__cause__, TypeError)
-        assert str(excinfo.value) == "Error calling __set_name__ on 'Descriptor' instance 'd' in 'A'"
+        # 3.12 (gh-77757): the exception is no longer wrapped in a
+        # RuntimeError; the context is attached as a __note__ instead
+        excinfo = raises(TypeError, make_class)
+        assert excinfo.value.__notes__ == [
+            "Error calling __set_name__ on 'Descriptor' instance 'd' in 'A'"]
         print(excinfo.value)
 
     def test_set_name_self(self):

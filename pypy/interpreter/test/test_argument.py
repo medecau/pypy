@@ -1029,7 +1029,9 @@ class AppTestArgument:
         def f(x, y):
             pass
         e = raises(TypeError, "f(y=2, **{3: 5}, x=6)")
-        assert "f() keywords must be strings" in str(e.value)
+        # 3.12: the **-dict unpack path raises this bare (call.c
+        # _PyStack_UnpackDict), with no function name prefix
+        assert str(e.value) == "keywords must be strings"
         e = raises(TypeError, "f(y=2, **{'x': 5}, x=6)")
         # CPython figures out the name here, by peeking around in the stack in
         # BUILD_MAP_UNPACK_WITH_CALL. we don't, too messy

@@ -999,11 +999,19 @@ def _set_names(space, w_type):
             try:
                 space.get_and_call_function(w_meth, w_value, w_type, space.newtext(key))
             except OperationError as e:
-                e2 = oefmt(space.w_RuntimeError,
-                           "Error calling __set_name__ on '%T' instance '%s' in '%N'",
-                           w_value, key, w_type)
-                e2.chain_exceptions_from_cause(space, e)
-                raise e2
+                # CPython 3.12 (gh-77757): no longer wrapped in a
+                # RuntimeError -- the context is attached as a __note__ on
+                # the original exception instead
+                e.normalize_exception(space)
+                w_exc = e.get_w_value(space)
+                note = ("Error calling __set_name__ on '%s' instance '%s' "
+                        "in '%s'" % (space.type(w_value).getname(space),
+                                     key, w_type.getname(space)))
+                try:
+                    space.call_method(w_exc, "add_note", space.newtext(note))
+                except OperationError:
+                    pass   # ignore failures adding the note, like CPython
+                raise e
 
 def _init_subclass(space, w_type, __args__):
     # bit of a mess, but I didn't feel like implementing the super logic
