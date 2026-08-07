@@ -8,8 +8,11 @@ from test import support
 import unittest
 from unittest.case import _Outcome
 
-from unittest.test.support import (LoggingResult,
-                                   ResultWithNoStartTestRunStopTestRun)
+from test.test_unittest.support import (
+    BufferedWriter,
+    LoggingResult,
+    ResultWithNoStartTestRunStopTestRun,
+)
 
 
 def resultFactory(*_):
@@ -586,6 +589,16 @@ class TestClassCleanup(unittest.TestCase):
                 'outer setup', 'start outer test',
                 'inner setup', 'inner test', 'inner cleanup',
                 'end outer test', 'outer cleanup'])
+
+    def test_run_empty_suite_error_message(self):
+        class EmptyTest(unittest.TestCase):
+            pass
+
+        suite = unittest.defaultTestLoader.loadTestsFromTestCase(EmptyTest)
+        runner = getRunner()
+        runner.run(suite)
+
+        self.assertIn("\nNO TESTS RAN\n", runner.stream.getvalue())
 
 
 class TestModuleCleanUp(unittest.TestCase):
@@ -1189,6 +1202,7 @@ class Test_TextTestRunner(unittest.TestCase):
         self.assertTrue(runner.descriptions)
         self.assertEqual(runner.resultclass, unittest.TextTestResult)
         self.assertFalse(runner.tb_locals)
+        self.assertIsNone(runner.durations)
 
     def test_multiple_inheritance(self):
         class AResult(unittest.TestResult):
@@ -1316,8 +1330,6 @@ class Test_TextTestRunner(unittest.TestCase):
             return [b.splitlines() for b in p.communicate()]
         opts = dict(stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                     cwd=os.path.dirname(__file__))
-        ae_msg = b'Please use assertEqual instead.'
-        at_msg = b'Please use assertTrue instead.'
 
         # no args -> all the warnings are printed, unittest warnings only once
         p = subprocess.Popen([sys.executable, '-E', '_test_warnings.py'], **opts)
@@ -1325,11 +1337,11 @@ class Test_TextTestRunner(unittest.TestCase):
             out, err = get_parse_out_err(p)
         self.assertIn(b'OK', err)
         # check that the total number of warnings in the output is correct
-        self.assertEqual(len(out), 12)
+        self.assertEqual(len(out), 10)
         # check that the numbers of the different kind of warnings is correct
         for msg in [b'dw', b'iw', b'uw']:
             self.assertEqual(out.count(msg), 3)
-        for msg in [ae_msg, at_msg, b'rw']:
+        for msg in [b'rw']:
             self.assertEqual(out.count(msg), 1)
 
         args_list = (
@@ -1356,11 +1368,9 @@ class Test_TextTestRunner(unittest.TestCase):
         with p:
             out, err = get_parse_out_err(p)
         self.assertIn(b'OK', err)
-        self.assertEqual(len(out), 14)
+        self.assertEqual(len(out), 12)
         for msg in [b'dw', b'iw', b'uw', b'rw']:
             self.assertEqual(out.count(msg), 3)
-        for msg in [ae_msg, at_msg]:
-            self.assertEqual(out.count(msg), 1)
 
     def testStdErrLookedUpAtInstantiationTime(self):
         # see issue 10786
@@ -1378,6 +1388,65 @@ class Test_TextTestRunner(unittest.TestCase):
         f = io.StringIO()
         runner = unittest.TextTestRunner(f)
         self.assertTrue(runner.stream.stream is f)
+
+    def test_durations(self):
+        def run(test, *, expect_durations=True):
+            stream = BufferedWriter()
+            runner = unittest.TextTestRunner(stream=stream, durations=5, verbosity=2)
+            result = runner.run(test)
+            self.assertEqual(result.durations, 5)
+            stream.flush()
+            text = stream.getvalue()
+            regex = r"\n\d+.\d\d\ds"
+            if expect_durations:
+                self.assertEqual(len(result.collectedDurations), 1)
+                self.assertIn('Slowest test durations', text)
+                self.assertRegex(text, regex)
+            else:
+                self.assertEqual(len(result.collectedDurations), 0)
+                self.assertNotIn('Slowest test durations', text)
+                self.assertNotRegex(text, regex)
+
+        # success
+        class Foo(unittest.TestCase):
+            def test_1(self):
+                pass
+
+        run(Foo('test_1'), expect_durations=True)
+
+        # failure
+        class Foo(unittest.TestCase):
+            def test_1(self):
+                self.assertEqual(0, 1)
+
+        run(Foo('test_1'), expect_durations=True)
+
+        # error
+        class Foo(unittest.TestCase):
+            def test_1(self):
+                1 / 0
+
+        run(Foo('test_1'), expect_durations=True)
+
+
+        # error in setUp and tearDown
+        class Foo(unittest.TestCase):
+            def setUp(self):
+                1 / 0
+            tearDown = setUp
+            def test_1(self):
+                pass
+
+        run(Foo('test_1'), expect_durations=True)
+
+        # skip (expect no durations)
+        class Foo(unittest.TestCase):
+            @unittest.skip("reason")
+            def test_1(self):
+                pass
+
+        run(Foo('test_1'), expect_durations=False)
+
 
 
 if __name__ == "__main__":

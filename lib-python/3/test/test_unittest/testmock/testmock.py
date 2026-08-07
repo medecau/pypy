@@ -5,7 +5,7 @@ import tempfile
 
 from test.support import ALWAYS_EQ
 import unittest
-from unittest.test.testmock.support import is_instance
+from test.test_unittest.testmock.support import is_instance
 from unittest import mock
 from unittest.mock import (
     call, DEFAULT, patch, sentinel,
@@ -104,6 +104,24 @@ class MockTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             mock()
 
+    def test_create_autospec_should_be_configurable_by_kwargs(self):
+        """If kwargs are given to configure mock, the function must configure
+        the parent mock during initialization."""
+        mocked_result = 'mocked value'
+        class_mock = create_autospec(spec=Something, **{
+            'return_value.meth.side_effect': [ValueError, DEFAULT],
+            'return_value.meth.return_value': mocked_result})
+        with self.assertRaises(ValueError):
+            class_mock().meth(a=None, b=None, c=None)
+        self.assertEqual(class_mock().meth(a=None, b=None, c=None), mocked_result)
+        # Only the parent mock should be configurable because the user will
+        # pass kwargs with respect to the parent mock.
+        self.assertEqual(class_mock().return_value.meth.side_effect, None)
+
+    def test_create_autospec_correctly_handles_name(self):
+        class X: ...
+        mock = create_autospec(X, spec_set=True, name="Y")
+        self.assertEqual(mock._mock_name, "Y")
 
     def test_repr(self):
         mock = Mock(name='foo')
@@ -1711,21 +1729,41 @@ class MockTest(unittest.TestCase):
             m.aseert_foo_call()
         with self.assertRaisesRegex(AttributeError, msg):
             m.assrt_foo_call()
+        with self.assertRaisesRegex(AttributeError, msg):
+            m.called_once_with()
+        with self.assertRaisesRegex(AttributeError, msg):
+            m.called_once()
+        with self.assertRaisesRegex(AttributeError, msg):
+            m.has_calls()
+
+        class Foo(object):
+            def called_once(self): pass
+
+            def has_calls(self): pass
+
+        m = Mock(spec=Foo)
+        m.called_once()
+        m.has_calls()
+
+        m.called_once.assert_called_once()
+        m.has_calls.assert_called_once()
+
         m = Mock(unsafe=True)
         m.assert_foo_call()
         m.assret_foo_call()
         m.asert_foo_call()
         m.aseert_foo_call()
         m.assrt_foo_call()
+        m.called_once()
+        m.called_once_with()
+        m.has_calls()
 
     # gh-100739
     def test_mock_safe_with_spec(self):
         class Foo(object):
-            def assert_bar(self):
-                pass
+            def assert_bar(self): pass
 
-            def assertSome(self):
-                pass
+            def assertSome(self): pass
 
         m = Mock(spec=Foo)
         m.assert_bar()

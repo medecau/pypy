@@ -43,8 +43,8 @@ class TestResult(object):
         self.skipped = []
         self.expectedFailures = []
         self.unexpectedSuccesses = []
-        self.shouldStop = False
         self.collectedDurations = []
+        self.shouldStop = False
         self.buffer = False
         self.tb_locals = False
         self._stdout_buffer = None
@@ -109,14 +109,6 @@ class TestResult(object):
         """
 
     @failfast
-
-    def addDuration(self, test, elapsed):
-        """Called when a test finished running, regardless of its outcome.
-
-        3.12 API; PyPy records the value but does not report it yet.
-        """
-        self.collectedDurations.append((str(test), elapsed))
-
     def addError(self, test, err):
         """Called when an error has occurred. 'err' is a tuple of values as
         returned by sys.exc_info().
@@ -165,6 +157,17 @@ class TestResult(object):
     def addUnexpectedSuccess(self, test):
         """Called when a test was expected to fail, but succeed."""
         self.unexpectedSuccesses.append(test)
+
+    def addDuration(self, test, elapsed):
+        """Called when a test finished to run, regardless of its outcome.
+        *test* is the test case corresponding to the test method.
+        *elapsed* is the time represented in seconds, and it includes the
+        execution of cleanup functions.
+        """
+        # support for a TextTestRunner using an old TestResult class
+        if hasattr(self, "collectedDurations"):
+            # Pass test repr and not the test object itself to avoid resources leak
+            self.collectedDurations.append((str(test), elapsed))
 
     def wasSuccessful(self):
         """Tells whether or not this result was a success."""
