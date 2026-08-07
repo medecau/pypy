@@ -207,7 +207,7 @@ class OperationError(Exception):
             if space.is_w(w_value, space.w_None):
                 # raise Type: we assume we have to instantiate Type
                 w_value = space.call_function(w_type)
-                w_type = self._exception_getclass(space, w_value)
+                w_type = self._check_instantiation_result(space, w_type, w_value)
             else:
                 w_valuetype = space.exception_getclass(w_value)
                 if space.exception_issubclass_w(w_valuetype, w_type):
@@ -221,7 +221,7 @@ class OperationError(Exception):
                     else:
                         # raise Type, X: assume X is the constructor argument
                         w_value = space.call_function(w_type, w_value)
-                    w_type = self._exception_getclass(space, w_value)
+                    w_type = self._check_instantiation_result(space, w_type, w_value)
             if self._application_traceback:
                 from pypy.interpreter.pytraceback import PyTraceback
                 from pypy.module.exceptions.interp_exceptions import W_BaseException
@@ -247,6 +247,18 @@ class OperationError(Exception):
         self.w_type = w_type
         self._w_value = w_value
         return w_value
+
+    def _check_instantiation_result(self, space, w_type, w_value):
+        # CPython _PyErr_CreateException (Python/errors.c): instantiating
+        # the exception class must produce a BaseException instance; a
+        # broken __new__ gets its own message, distinct from the generic
+        # "exceptions must derive from BaseException"
+        w_valuetype = space.exception_getclass(w_value)
+        if not space.exception_is_valid_class_w(w_valuetype):
+            raise oefmt(space.w_TypeError,
+                        "calling %R should have returned an instance of "
+                        "BaseException, not %T", w_type, w_value)
+        return w_valuetype
 
     def _exception_getclass(self, space, w_inst, what="exceptions"):
         w_type = space.exception_getclass(w_inst)

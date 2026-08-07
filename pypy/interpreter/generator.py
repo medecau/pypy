@@ -205,7 +205,17 @@ return next yielded value or raise StopIteration."""
                         "from BaseException, not %T", w_type)
 
         operr = OperationError(w_type, w_val, tb)
-        w_value = operr.normalize_exception(space)
+        try:
+            w_value = operr.normalize_exception(space)
+        except OperationError as e:
+            # CPython delivers a failure to *instantiate* the exception
+            # (e.g. a broken __new__) into the generator frame instead of
+            # raising it at the throw() call site: an unstarted generator
+            # is closed by it, a suspended one sees it at the yield point.
+            # (The invalid-type pre-check above still raises here directly,
+            # matching CPython, whose gen doctests rely on the generator
+            # surviving those.)
+            return self.send_error(e)
 
         # note: _w_yielded_from is always None if 'self.running'
         if (self.get_delegate() is not None and
