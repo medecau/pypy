@@ -273,3 +273,19 @@ Note: the default signal handler for SIGINT raises ``KeyboardInterrupt``."""
         raise OperationError(space.w_KeyboardInterrupt, space.w_None)
     check_signum_in_range(space, signum)
     space.check_signal_action.set_interrupt(signum)
+
+
+def daemon_threads_allowed(space):
+    """daemon_threads_allowed()
+
+Return True if daemon threads are allowed in the current interpreter,
+and False otherwise (3.12 API).  PyPy has a single interpreter, which
+always allows them."""
+    return space.w_True
+
+def _is_main_interpreter(space):
+    """_is_main_interpreter()
+
+Return True if the current interpreter is the main one (3.12 API).
+PyPy does not implement subinterpreters, so this is always True."""
+    return space.w_True

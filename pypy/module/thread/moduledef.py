@@ -18,6 +18,8 @@ class Module(MixedModule):
         'interrupt_main':         'os_thread.interrupt_main',
         'stack_size':             'os_thread.stack_size',
         '_count':                 'os_thread._count',
+        'daemon_threads_allowed': 'os_thread.daemon_threads_allowed',
+        '_is_main_interpreter':   'os_thread._is_main_interpreter',
         'allocate_lock':          'os_lock.allocate_lock',
         'allocate':               'os_lock.allocate_lock',  # obsolete synonym
         'LockType':               'os_lock.Lock',
