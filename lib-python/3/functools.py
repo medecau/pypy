@@ -65,7 +65,7 @@ def update_wrapper(wrapper,
     # from the wrapped function when updating __dict__
     wrapper.__wrapped__ = wrapped
     # Return the wrapper so this can be used as a decorator via partial()
-    return hidden_applevel(wrapper)
+    return wrapper
 
 def wraps(wrapped,
           assigned = WRAPPER_ASSIGNMENTS,
@@ -649,7 +649,7 @@ def _lru_cache_wrapper(user_function, maxsize, typed, _CacheInfo):
 
     wrapper.cache_info = cache_info
     wrapper.cache_clear = cache_clear
-    return wrapper
+    return hidden_applevel(wrapper)
 
 try:
     from _functools import _lru_cache_wrapper
