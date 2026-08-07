@@ -238,7 +238,7 @@ class W_UnicodeObject(W_Root):
             w_value = W_UnicodeObject.EMPTY
         else:
             encoding, errors = get_encoding_and_errors(space,
-                                                          w_encoding, w_errors)
+                                            w_encoding, w_errors, fname="str")
             if encoding is None and errors is None:
                 # this is very quick if w_object is already a w_unicode
                 w_value = unicode_from_object(space, w_object)
@@ -597,7 +597,8 @@ class W_UnicodeObject(W_Root):
         return space.w_True
 
     def descr_encode(self, space, w_encoding=None, w_errors=None):
-        encoding, errors = get_encoding_and_errors(space, w_encoding, w_errors)
+        encoding, errors = get_encoding_and_errors(space, w_encoding,
+                                                   w_errors, fname="encode")
         return encode_object(space, self, encoding, errors)
 
     @unwrap_spec(tabsize=int)
@@ -1564,16 +1565,26 @@ def getdefaultencoding(space):
     return space.sys.defaultencoding
 
 
-def get_encoding_and_errors(space, w_encoding, w_errors):
+def get_encoding_and_errors(space, w_encoding, w_errors, fname="str"):
     from pypy.module._codecs.interp_codecs import utf8_encode_wrapper
     if w_encoding is None:
         encoding = None
     else:
+        if not space.isinstance_w(w_encoding, space.w_unicode):
+            # CPython's argument-clinic wording (test_enum's custom
+            # StrEnum cases assert on it)
+            raise oefmt(space.w_TypeError,
+                        "%s() argument 'encoding' must be str, not %T",
+                        fname, w_encoding)
         utf8 = space.text_w(w_encoding)
         encoding = utf8_encode_wrapper(space, utf8, w_encoding, "strict")
     if w_errors is None:
         errors = None
     else:
+        if not space.isinstance_w(w_errors, space.w_unicode):
+            raise oefmt(space.w_TypeError,
+                        "%s() argument 'errors' must be str, not %T",
+                        fname, w_errors)
         utf8 = space.text_w(w_errors)
         errors = utf8_encode_wrapper(space, utf8, w_errors, "strict")
     return encoding, errors

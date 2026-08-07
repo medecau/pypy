@@ -196,7 +196,8 @@ class StringMethods(object):
     def descr_decode(self, space, w_encoding=None, w_errors=None):
         from pypy.objspace.std.unicodeobject import (
             get_encoding_and_errors, decode_object)
-        encoding, errors = get_encoding_and_errors(space, w_encoding, w_errors)
+        encoding, errors = get_encoding_and_errors(space, w_encoding,
+                                                    w_errors, fname="decode")
         if encoding is None:
             encoding = 'utf8'
         if encoding == 'utf8' or encoding == 'utf-8':
