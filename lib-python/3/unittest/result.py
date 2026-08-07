@@ -44,6 +44,7 @@ class TestResult(object):
         self.expectedFailures = []
         self.unexpectedSuccesses = []
         self.shouldStop = False
+        self.collectedDurations = []
         self.buffer = False
         self.tb_locals = False
         self._stdout_buffer = None
@@ -108,6 +109,14 @@ class TestResult(object):
         """
 
     @failfast
+
+    def addDuration(self, test, elapsed):
+        """Called when a test finished running, regardless of its outcome.
+
+        3.12 API; PyPy records the value but does not report it yet.
+        """
+        self.collectedDurations.append((str(test), elapsed))
+
     def addError(self, test, err):
         """Called when an error has occurred. 'err' is a tuple of values as
         returned by sys.exc_info().

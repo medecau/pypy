@@ -340,6 +340,7 @@ PACKAGES = [
         "install": ["."],
         "test_deps": ["pytest-xdist"],
         "test_cmd": ["-m", "pytest", "test", "-q"],
+        "timeout": 5400,   # 32k tests; exceeded the default budget
         "status": "expected_pass",
         "note": "C accelerator is disabled on PyPy (pure core). pytest config "
                 "auto-loads from pyproject.toml [tool.pytest.ini_options] at "

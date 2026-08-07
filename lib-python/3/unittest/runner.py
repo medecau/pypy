@@ -168,12 +168,16 @@ class TextTestRunner(object):
 
     def __init__(self, stream=None, descriptions=True, verbosity=1,
                  failfast=False, buffer=False, resultclass=None, warnings=None,
-                 *, tb_locals=False):
+                 *, tb_locals=False, durations=None):
         """Construct a TextTestRunner.
 
         Subclasses should accept **kwargs to ensure compatibility as the
         interface changes.
         """
+        # PyPy backport of the 3.12 signature: the ``durations`` reporting
+        # itself is not implemented yet, but the constructor accepts the
+        # argument so 3.12-aware callers (e.g. django's test runner) work.
+        self.durations = durations
         if stream is None:
             stream = sys.stderr
         self.stream = _WritelnDecorator(stream)

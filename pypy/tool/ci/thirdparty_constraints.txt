@@ -8,3 +8,8 @@
 # satisfies the unbounded "hypothesis" requirement in attrs[tests],
 # pytest[dev], coverage's and python-dateutil's test deps.
 hypothesis==6.122.3
+
+# pytest 9 (2026) removed/changed flags that packages' own configs still
+# pass (coverage's --failed-first addopts; python-dateutil's unknown-mark
+# escalation). The matrix's suites were written against pytest 8.
+pytest<9

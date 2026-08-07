@@ -315,3 +315,109 @@ def displayhook(obj):
         print_newline_to(sys_stdout())
 
 __displayhook__ = displayhook  # this is exactly like in CPython
+
+
+def _make_monitoring_module():
+    # PEP 669 (sys.monitoring, new in 3.12): API-surface implementation.
+    #
+    # PyPy does not (yet) implement the underlying low-overhead bytecode
+    # instrumentation.  Rather than being absent (which breaks importing
+    # libraries that reference sys.monitoring.events at import time behind a
+    # version check -- e.g. hypothesis' scrutineer), this module exposes the
+    # complete, value-correct API in a honestly-degraded form: every tool id
+    # reports as already in use, so well-behaved clients (hypothesis,
+    # coverage.py, debuggers) conclude that monitoring is unavailable and
+    # take their sys.settrace/sys.setprofile fallback paths, which work and
+    # give correct results on PyPy.  No client silently gets zero events.
+    import types
+
+    monitoring = types.ModuleType(
+        'sys.monitoring',
+        "An implementation of PEP 669's API surface. PyPy does not implement "
+        "the underlying instrumentation yet: all tool ids report as taken so "
+        "that monitoring clients use their sys.settrace-based fallbacks.")
+
+    events = types.ModuleType('sys.monitoring.events')
+    _event_ids = [   # ids from CPython's pycore_instruments.h
+        ('PY_START', 0), ('PY_RESUME', 1), ('PY_RETURN', 2), ('PY_YIELD', 3),
+        ('CALL', 4), ('LINE', 5), ('INSTRUCTION', 6), ('JUMP', 7),
+        ('BRANCH', 8), ('STOP_ITERATION', 9), ('RAISE', 10),
+        ('EXCEPTION_HANDLED', 11), ('PY_UNWIND', 12), ('PY_THROW', 13),
+        ('RERAISE', 14), ('C_RETURN', 15), ('C_RAISE', 16),
+    ]
+    events.NO_EVENTS = 0
+    for _name, _id in _event_ids:
+        setattr(events, _name, 1 << _id)
+    monitoring.events = events
+
+    monitoring.DEBUGGER_ID = 0
+    monitoring.COVERAGE_ID = 1
+    monitoring.PROFILER_ID = 2
+    monitoring.OPTIMIZER_ID = 5
+
+    class _Sentinel:
+        def __init__(self, name):
+            self._name = name
+        def __repr__(self):
+            return '<sys.monitoring.%s>' % self._name
+
+    monitoring.DISABLE = _Sentinel('DISABLE')
+    monitoring.MISSING = _Sentinel('MISSING')
+
+    _RESERVED = 'non-instrumenting sys.monitoring stub'
+
+    def _check_tool_id(tool_id):
+        if not isinstance(tool_id, int) or not 0 <= tool_id < 8:
+            raise ValueError("invalid tool %r (must be between 0 and 7)"
+                             % (tool_id,))
+
+    def use_tool_id(tool_id, name):
+        _check_tool_id(tool_id)
+        raise ValueError("tool %d is already in use" % (tool_id,))
+
+    def free_tool_id(tool_id):
+        _check_tool_id(tool_id)
+
+    def get_tool(tool_id):
+        _check_tool_id(tool_id)
+        # every id reads as occupied: see module docstring
+        return _RESERVED
+
+    def register_callback(tool_id, event, func):
+        _check_tool_id(tool_id)
+        return None
+
+    def get_events(tool_id):
+        _check_tool_id(tool_id)
+        return events.NO_EVENTS
+
+    def set_events(tool_id, event_set):
+        _check_tool_id(tool_id)
+        if event_set == events.NO_EVENTS:
+            return
+        raise NotImplementedError(
+            "PyPy does not implement sys.monitoring instrumentation yet "
+            "(and all tool ids report as in use -- use_tool_id should have "
+            "failed before reaching set_events)")
+
+    def get_local_events(tool_id, code):
+        _check_tool_id(tool_id)
+        return events.NO_EVENTS
+
+    def set_local_events(tool_id, code, event_set):
+        _check_tool_id(tool_id)
+        if event_set == events.NO_EVENTS:
+            return
+        raise NotImplementedError(
+            "PyPy does not implement sys.monitoring instrumentation yet")
+
+    def restart_events():
+        pass
+
+    for _fn in (use_tool_id, free_tool_id, get_tool, register_callback,
+                get_events, set_events, get_local_events, set_local_events,
+                restart_events):
+        setattr(monitoring, _fn.__name__, _fn)
+    return monitoring
+
+monitoring = _make_monitoring_module()

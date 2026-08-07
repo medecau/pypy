@@ -125,6 +125,7 @@ class Module(MixedModule):
         interpleveldefs['setdlopenflags'] = 'system.setdlopenflags'
 
     appleveldefs = {
+        'monitoring'            : 'app.monitoring',
         'excepthook'            : 'app.excepthook',
         '__excepthook__'        : 'app.excepthook',
         'breakpointhook'        : 'app.breakpointhook',
