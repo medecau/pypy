@@ -27,7 +27,11 @@ on:
         default: '1,2,3,4'
 
 concurrency:
-  group: translate-${{ github.ref }}
+  # Push runs supersede each other (only the newest commit matters), but a
+  # manual validation dispatch gets its own group: those run the long
+  # third-party matrix (2h+) and were being cancelled by unrelated pushes
+  # landing mid-run, discarding all of their results.
+  group: translate-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'dispatch' || 'push' }}
   cancel-in-progress: true
 
 permissions:
