@@ -2263,7 +2263,15 @@ class ReTests(unittest.TestCase):
         t = time.perf_counter() - start
         # Without optimization it takes 1 second on my computer.
         # With optimization -- 0.0003 seconds.
-        self.assertLess(t, 0.1)
+        from test.support import check_impl_detail
+        if check_impl_detail(pypy=False):
+            self.assertLess(t, 0.1)
+        else:
+            # The point is catching the *quadratic* unoptimized behaviour
+            # (~1s); on PyPy, JIT warmup plus loaded CI runners make the
+            # 0.1s budget flaky (observed 0.10-0.14s), so allow more slack
+            # while still failing clearly for the pathological case.
+            self.assertLess(t, 0.5)
 
     def test_possessive_quantifiers(self):
         """Test Possessive Quantifiers
