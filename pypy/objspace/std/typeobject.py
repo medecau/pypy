@@ -1082,6 +1082,12 @@ def descr_get__mro__(space, w_type):
 
 def descr_get__type_params__(space, w_type):
     w_type = _check(space, w_type)
+    if space.is_w(w_type, space.w_type):
+        # 'type' itself holds the getset descriptor in its own dict, which
+        # must not be handed out as the attribute value (CPython special-
+        # cases PyType_Type the same way); functools.update_wrapper copies
+        # this attribute and requires a tuple
+        return space.newtuple([])
     # Look up __type_params__ in the type's dict
     w_result = w_type.dict_w.get('__type_params__', None)
     if w_result is None:
