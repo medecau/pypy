@@ -102,6 +102,12 @@ stuff = "nothing"
         assert exc.msg == "invalid syntax"
         exc = pytest.raises(SyntaxError, parse, "(\nx||x").value
         assert exc.msg == "'(' was never closed"
+        # the parser's diagnosis reaches into the next line here, so the
+        # unclosed bracket wins (test_syntax.test_error_parenthesis)
+        exc = pytest.raises(SyntaxError, parse, "a = ( 1, 2, 3\nb=3").value
+        assert exc.msg == "'(' was never closed"
+        exc = pytest.raises(SyntaxError, parse, "f(a, b\nc=3").value
+        assert exc.msg == "'(' was never closed"
 
     def test_is(self):
         self.parse("x is y")

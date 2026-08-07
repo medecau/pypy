@@ -307,8 +307,17 @@ class PegParser(object):
                         fstring_level += 1
                     elif tok.token_type == pygram.tokens.FSTRING_END:
                         fstring_level -= 1
-                if fstring_level == 0 and not (
+                # ... and only while the parser's diagnosis stays on that
+                # line: when it spans past the unclosed bracket (e.g.
+                # "a = (1, 2, 3\nb=3", where the forgot-a-comma rule
+                # reaches into the next line) CPython reports the unclosed
+                # bracket instead.  end_lineno is 0 when unset, which keeps
+                # the previous behaviour.
+                confined_to_line = (
                     token_exc.lineno == syntax_exc.lineno
+                    and syntax_exc.end_lineno <= token_exc.lineno)
+                if fstring_level == 0 and not (
+                    confined_to_line
                     and "was never closed" in token_exc.msg
                 ):
                     raise token_exc
