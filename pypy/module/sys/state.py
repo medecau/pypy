@@ -19,6 +19,7 @@ class State:
         self.w_argv = space.newlist([])
         self.w_orig_argv = space.newlist([])
         self.w_int_max_str_digits = space.newint(DEFAULT_MAX_STR_DIGITS)
+        self.stdlib_dir = ''   # set by initpath.compute_lib_pypy_path
 
         self.setinitialpath(space)
 

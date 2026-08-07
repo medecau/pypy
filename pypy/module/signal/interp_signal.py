@@ -442,7 +442,14 @@ class SignalMask(object):
         self.mask = lltype.malloc(c_sigset_t.TO, flavor='raw')
         c_sigemptyset(self.mask)
         for w_signum in space.unpackiterable(self.w_signals):
-            signum = space.int_w(w_signum)
+            try:
+                signum = space.int_w(w_signum)
+            except OperationError as e:
+                if not e.match(space, space.w_OverflowError):
+                    raise
+                # CPython's sigset conversion reports out-of-range ints
+                # (e.g. 1 << 1000) as ValueError, not OverflowError
+                raise oefmt(space.w_ValueError, "signal number out of range")
             check_signum_in_range(space, signum)
             # bpo-33329: ignore c_sigaddset() return value as it can fail
             # for some reserved signals, but we want the `range(1, NSIG)`

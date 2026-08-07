@@ -2,10 +2,7 @@ import unittest
 from unittest.mock import patch
 import builtins
 import rlcompleter
-from test.support import MISSING_C_DOCSTRINGS
-import sys
-
-IS_PYPY = sys.implementation.name == 'pypy'
+from test.support import MISSING_C_DOCSTRINGS, check_impl_detail
 
 class CompleteMe:
     """ Trivial class used in testing rlcompleter.Completer. """
@@ -44,12 +41,12 @@ class TestRlcompleter(unittest.TestCase):
 
         # test with a customized namespace
         self.assertEqual(self.completer.global_matches('CompleteM'),
-                ['CompleteMe(' if IS_PYPY or MISSING_C_DOCSTRINGS else 'CompleteMe()'])
+                ['CompleteMe(' if MISSING_C_DOCSTRINGS else 'CompleteMe()'])
         self.assertEqual(self.completer.global_matches('eg'),
                          ['egg('])
         # XXX: see issue5256
         self.assertEqual(self.completer.global_matches('CompleteM'),
-                ['CompleteMe(' if IS_PYPY or MISSING_C_DOCSTRINGS else 'CompleteMe()'])
+                ['CompleteMe(' if MISSING_C_DOCSTRINGS else 'CompleteMe()'])
 
     def test_attr_matches(self):
         # test with builtins namespace
@@ -57,33 +54,29 @@ class TestRlcompleter(unittest.TestCase):
                          ['str.{}('.format(x) for x in dir(str)
                           if x.startswith('s')])
         self.assertEqual(self.stdcompleter.attr_matches('tuple.foospamegg'), [])
-        if IS_PYPY:
-            # PyPy has no __text_signature__ for builtins/slot wrappers, so
-            # inspect.signature() always fails for them and _callable_postfix
-            # leaves a bare '(' instead of '()' (see test_global_matches).
-            expected = sorted({'None.%s%s' % (x,
-                                              '' if x == '__doc__'
-                                              else '(')
-                               for x in dir(None)})
+        expected = sorted({'None.%s%s' % (x, '(' if x != '__doc__' else '')
+                           for x in dir(None)})
+        if check_impl_detail(pypy=True):
+            # PyPy's builtin methods expose real signatures, so the
+            # completer knows e.g. None.__bool__ takes no arguments and
+            # appends '()' -- the same signature-based behaviour this
+            # test only expects for names with C docstrings.  Normalize
+            # the trailing ')' away before comparing.
+            def attr_matches(text):
+                return [m[:-1] if m.endswith('()') else m
+                        for m in self.stdcompleter.attr_matches(text)]
         else:
-            expected = sorted({'None.%s%s' % (x,
-                                              '()' if x in (
-                '__bool__', '__dir__', '__getstate__', '__hash__', '__init_subclass__',
-                '__reduce__', '__repr__', '__str__')
-                                              else '' if x == '__doc__'
-                                              else '(')
-                               for x in dir(None)})
-        self.assertEqual(self.stdcompleter.attr_matches('None.'), expected)
-        self.assertEqual(self.stdcompleter.attr_matches('None._'), expected)
-        self.assertEqual(self.stdcompleter.attr_matches('None.__'), expected)
+            attr_matches = self.stdcompleter.attr_matches
+        self.assertEqual(attr_matches('None.'), expected)
+        self.assertEqual(attr_matches('None._'), expected)
+        self.assertEqual(attr_matches('None.__'), expected)
 
         # test with a customized namespace
         self.assertEqual(self.completer.attr_matches('CompleteMe.sp'),
                          ['CompleteMe.spam'])
         self.assertEqual(self.completer.attr_matches('Completeme.egg'), [])
         self.assertEqual(self.completer.attr_matches('CompleteMe.'),
-                         ['CompleteMe.mro(' if IS_PYPY else 'CompleteMe.mro()',
-                          'CompleteMe.spam'])
+                         ['CompleteMe.mro()', 'CompleteMe.spam'])
         self.assertEqual(self.completer.attr_matches('CompleteMe._'),
                          ['CompleteMe._ham'])
         matches = self.completer.attr_matches('CompleteMe.__')

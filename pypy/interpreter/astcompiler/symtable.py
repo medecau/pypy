@@ -451,6 +451,12 @@ class SymtableBuilder(ast.GenericASTVisitor):
         self.scope = None
         self.stack = []
         allow_top_level_await = compile_info.flags & consts.PyCF_ALLOW_TOP_LEVEL_AWAIT
+        # PEP 563: under `from __future__ import annotations`, annotations
+        # are stringified but the symtable must still forbid yield/await/
+        # walrus inside them (CPython's AnnotationBlock)
+        self.future_annotations = bool(
+            compile_info.flags & consts.CO_FUTURE_ANNOTATIONS)
+        self.pep563_annotation_depth = 0
         top = ModuleScope(allow_top_level_await=allow_top_level_await)
         self.globs = top.roles
         self.push_scope(top, module)
@@ -589,7 +595,21 @@ class SymtableBuilder(ast.GenericASTVisitor):
     def visit_AsyncFunctionDef(self, func):
         self._visit_function(func, AsyncFunctionScope)
 
+    def _visit_annotation_expr(self, annotation):
+        # visit an annotation expression, rejecting yield/await/walrus when
+        # PEP 563 stringification is active
+        if self.future_annotations:
+            self.pep563_annotation_depth += 1
+            try:
+                annotation.walkabout(self)
+            finally:
+                self.pep563_annotation_depth -= 1
+        else:
+            annotation.walkabout(self)
+
     def visit_Await(self, aw):
+        if self.pep563_annotation_depth:
+            self.error("await expression cannot be used within an annotation", aw)
         self.scope.note_await(aw)
         ast.GenericASTVisitor.visit_Await(self, aw)
 
@@ -626,7 +646,7 @@ class SymtableBuilder(ast.GenericASTVisitor):
         if assign.value is not None:
             assign.value.walkabout(self)
         if assign.annotation is not None:
-            assign.annotation.walkabout(self)
+            self._visit_annotation_expr(assign.annotation)
 
     def visit_ClassDef(self, clsdef):
         self.note_symbol(clsdef.name, SYM_ASSIGNED)
@@ -680,10 +700,14 @@ class SymtableBuilder(ast.GenericASTVisitor):
         ast.GenericASTVisitor.visit_ExceptHandler(self, handler)
 
     def visit_Yield(self, yie):
+        if self.pep563_annotation_depth:
+            self.error("yield expression cannot be used within an annotation", yie)
         self.scope.note_yield(yie)
         ast.GenericASTVisitor.visit_Yield(self, yie)
 
     def visit_YieldFrom(self, yfr):
+        if self.pep563_annotation_depth:
+            self.error("yield expression cannot be used within an annotation", yfr)
         self.scope.note_yieldFrom(yfr)
         ast.GenericASTVisitor.visit_YieldFrom(self, yfr)
 
@@ -884,7 +908,7 @@ class SymtableBuilder(ast.GenericASTVisitor):
         if args.kwonlyargs:
             self._visit_arg_annotations(args.kwonlyargs)
         if func.returns:
-            func.returns.walkabout(self)
+            self._visit_annotation_expr(func.returns)
 
     def _visit_arg_annotations(self, args):
         for arg in args:
@@ -893,7 +917,7 @@ class SymtableBuilder(ast.GenericASTVisitor):
 
     def _visit_arg_annotation(self, arg):
         if arg.annotation:
-            arg.annotation.walkabout(self)
+            self._visit_annotation_expr(arg.annotation)
 
     def visit_Name(self, name):
         if name.ctx == ast.Load:
@@ -915,6 +939,9 @@ class SymtableBuilder(ast.GenericASTVisitor):
         target = node.target
         assert isinstance(target, ast.Name)
         name = target.id
+        if self.pep563_annotation_depth:
+            self.error(
+                "named expression cannot be used within an annotation", node)
         if scope.comp_iter_expr > 0:
             self.error(
                 "assignment expression cannot be used in a comprehension iterable expression",

@@ -467,6 +467,19 @@ def create_stdio(fd, writing, name, encoding, errors, unbuffered):
     # it does if you explicitly open a file in text mode.
     #
     # Py3.9+: stderr is line buffered even when redirected: bpo-13601
+    # CPython canonicalizes the stdio encoding name through the codec
+    # registry (config_get_stdio_encoding): PYTHONIOENCODING=latin1 shows up
+    # as sys.stdout.encoding == 'iso8859-1', and a locale-derived 'UTF-8'
+    # as 'utf-8'.  Resolve the locale default explicitly for the same reason.
+    try:
+        import codecs
+        if not encoding:
+            import _locale
+            encoding = _locale.nl_langinfo(_locale.CODESET) or 'utf-8'
+        encoding = codecs.lookup(encoding).name
+    except Exception:
+        pass    # let TextIOWrapper produce its usual error/default
+
     newline = None if sys.platform == 'win32' else '\n'
     stream = _io.TextIOWrapper(buf, encoding, errors, newline=newline,
                               line_buffering=unbuffered or fd == 2 or raw.isatty(),

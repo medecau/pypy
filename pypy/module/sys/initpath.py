@@ -192,6 +192,8 @@ def compute_stdlib_path_sourcetree(state, platlibdir, prefix):
     return compute_lib_pypy_path(state, python_std_lib, prefix)
 
 def compute_lib_pypy_path(state, python_std_lib, prefix, use_lib_pypy=True):
+    # remember the canonical stdlib directory for sys._stdlib_dir
+    state.stdlib_dir = python_std_lib
     importlist = []
 
     if use_lib_pypy:
@@ -267,6 +269,11 @@ def pypy_find_stdlib(space, executable):
     space.setitem(space.sys.w_dict, space.newtext('exec_prefix'), w_prefix)
     space.setitem(space.sys.w_dict, space.newtext('base_prefix'), w_prefix)
     space.setitem(space.sys.w_dict, space.newtext('base_exec_prefix'), w_prefix)
+    stdlib_dir = get_state(space).stdlib_dir
+    if stdlib_dir:
+        # CPython 3.11+: private but tested (test_sys.test_stdlib_dir)
+        space.setitem(space.sys.w_dict, space.newtext('_stdlib_dir'),
+                      space.newfilename(stdlib_dir))
     return space.newlist([space.newfilename(p) for p in path])
 
 def pypy_initfsencoding(space):
