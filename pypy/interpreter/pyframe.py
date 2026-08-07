@@ -318,13 +318,18 @@ class PyFrame(W_Root):
             return r_uint(last_instr + 2)
 
         if isinstance(w_arg_or_err, SApplicationException):
-            # Record __context__ now, while the generator's saved exception
-            # state is swapped in (push_gen_or_coroutine already ran): an
-            # exception thrown into a generator suspended inside an except
-            # block must chain to that frame's active exception, mirroring
-            # the yield-from branch above.
+            # An exception thrown into a generator suspended inside an
+            # except block must chain to that frame's own active exception.
+            # Use ec.sys_exc_operror directly (the generator's saved state,
+            # swapped in by push_gen_or_coroutine): the sys_exc_info() walk
+            # would escape into *outer* handlers' exceptions and corrupt
+            # chains built later (test_contextlib's ExitStack test), and
+            # record_context()'s _context_recorded flag must stay unset so
+            # the normal raise machinery still records at the raise site.
             operr = w_arg_or_err.operr
-            operr.record_context(space, space.getexecutioncontext())
+            last = space.getexecutioncontext().sys_exc_operror
+            if last is not None:
+                operr.chain_exceptions(space, last)
             return self.handle_generator_error(operr)
 
         last_instr = jit.promote(self.last_instr)
