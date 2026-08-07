@@ -588,7 +588,7 @@ class ExplicitConstructionTest:
             self.assertRaises(InvalidOperation, Decimal, "1_2_\u00003")
 
     @cpython_only
-    @requires_legacy_unicode_capi
+    @requires_legacy_unicode_capi()
     @warnings_helper.ignore_warnings(category=DeprecationWarning)
     def test_from_legacy_strings(self):
         import _testcapi
@@ -1242,7 +1242,7 @@ class FormatTest:
         self.assertEqual(get_fmt(Decimal('-1.5'), dotsep_wide, '020n'),
                          '-0\u00b4000\u00b4000\u00b4000\u00b4001\u00bf5')
 
-    @run_with_locale('LC_ALL', 'ps_AF')
+    @run_with_locale('LC_ALL', 'ps_AF', '')
     def test_wide_char_separator_decimal_point(self):
         # locale with wide char separator and decimal point
         Decimal = self.decimal.Decimal
@@ -2060,7 +2060,9 @@ class UsabilityTest:
         #to quantize, which is already extensively tested
         test_triples = [
             ('123.456', -4, '0E+4'),
+            ('-123.456', -4, '-0E+4'),
             ('123.456', -3, '0E+3'),
+            ('-123.456', -3, '-0E+3'),
             ('123.456', -2, '1E+2'),
             ('123.456', -1, '1.2E+2'),
             ('123.456', 0, '123'),
@@ -2927,7 +2929,7 @@ class ContextAPItests:
                                               Overflow])
 
     @cpython_only
-    @requires_legacy_unicode_capi
+    @requires_legacy_unicode_capi()
     @warnings_helper.ignore_warnings(category=DeprecationWarning)
     def test_from_legacy_strings(self):
         import _testcapi
@@ -4461,6 +4463,15 @@ class Coverage:
             self.assertIs(Decimal("NaN").fma(7, 1).is_nan(), True)
             # three arg power
             self.assertEqual(pow(Decimal(10), 2, 7), 2)
+            if self.decimal == C:
+                self.assertEqual(pow(10, Decimal(2), 7), 2)
+                self.assertEqual(pow(10, 2, Decimal(7)), 2)
+            else:
+                # XXX: Three-arg power doesn't use __rpow__.
+                self.assertRaises(TypeError, pow, 10, Decimal(2), 7)
+                # XXX: There is no special method to dispatch on the
+                # third arg of three-arg power.
+                self.assertRaises(TypeError, pow, 10, 2, Decimal(7))
             # exp
             self.assertEqual(Decimal("1.01").exp(), 3)
             # is_normal
@@ -4722,8 +4733,32 @@ class PyWhitebox(unittest.TestCase):
 
             c.prec = 1
             x = Decimal("152587890625") ** Decimal('-0.5')
+            self.assertEqual(x, Decimal('3e-6'))
+            c.prec = 2
+            x = Decimal("152587890625") ** Decimal('-0.5')
+            self.assertEqual(x, Decimal('2.6e-6'))
+            c.prec = 3
+            x = Decimal("152587890625") ** Decimal('-0.5')
+            self.assertEqual(x, Decimal('2.56e-6'))
+            c.prec = 28
+            x = Decimal("152587890625") ** Decimal('-0.5')
+            self.assertEqual(x, Decimal('2.56e-6'))
+
             c.prec = 201
             x = Decimal(2**578) ** Decimal("-0.5")
+
+            # See https://github.com/python/cpython/issues/118027
+            # Testing for an exact power could appear to hang, in the Python
+            # version, as it attempted to compute 10**(MAX_EMAX + 1).
+            # Fixed via https://github.com/python/cpython/pull/118503.
+            c.prec = P.MAX_PREC
+            c.Emax = P.MAX_EMAX
+            c.Emin = P.MIN_EMIN
+            c.traps[P.Inexact] = 1
+            D2 = Decimal(2)
+            # If the bug is still present, the next statement won't complete.
+            res = D2 ** 117
+            self.assertEqual(res, 1 << 117)
 
     def test_py_immutability_operations(self):
         # Do operations and check that it didn't change internal objects.
@@ -5737,7 +5772,6 @@ class CWhitebox(unittest.TestCase):
         with C.localcontext(rounding=C.ROUND_DOWN):
             self.assertEqual(format(y, '#.1f'), '6.0')
 
-
 @requires_docstrings
 @requires_cdecimal
 class SignatureTest(unittest.TestCase):
@@ -5901,13 +5935,17 @@ def load_tests(loader, tests, pattern):
 
     if TODO_TESTS is None:
         from doctest import DocTestSuite, IGNORE_EXCEPTION_DETAIL
+        orig_context = orig_sys_decimal.getcontext().copy()
         for mod in C, P:
             if not mod:
                 continue
             def setUp(slf, mod=mod):
                 sys.modules['decimal'] = mod
-            def tearDown(slf):
+                init(mod)
+            def tearDown(slf, mod=mod):
                 sys.modules['decimal'] = orig_sys_decimal
+                mod.setcontext(ORIGINAL_CONTEXT[mod].copy())
+                orig_sys_decimal.setcontext(orig_context.copy())
             optionflags = IGNORE_EXCEPTION_DETAIL if mod is C else 0
             sys.modules['decimal'] = mod
             tests.addTest(DocTestSuite(mod, setUp=setUp, tearDown=tearDown,
@@ -5922,8 +5960,8 @@ def setUpModule():
     TEST_ALL = ARITH if ARITH is not None else is_resource_enabled('decimal')
 
 def tearDownModule():
-    if C: C.setcontext(ORIGINAL_CONTEXT[C])
-    P.setcontext(ORIGINAL_CONTEXT[P])
+    if C: C.setcontext(ORIGINAL_CONTEXT[C].copy())
+    P.setcontext(ORIGINAL_CONTEXT[P].copy())
     if not C:
         warnings.warn('C tests skipped: no module named _decimal.',
                       UserWarning)
