@@ -600,7 +600,9 @@ def format_invalid_escape_message(first_escape_error_char, distinguish_octal=Fal
 
 def str_decode_unicode_escape(space, s, w_s, errors, final, errorhandler, ud_handler):
     if len(s) == 0:
-        return '', 0, 0, None
+        # must match the 5-tuple returned below: RPython cannot unify
+        # tuples of different length
+        return '', 0, 0, None, -1
 
     builder = rutf8.Utf8StringBuilder(len(s))
     pos = 0
