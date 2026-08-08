@@ -100,7 +100,11 @@ class W_Reader(W_Root):
                         # start quoted field
                         state = IN_QUOTED_FIELD
                     elif c == dialect.escapechar:
-                        # possible escaped character
+                        # possible escaped character; this still begins an
+                        # unquoted field, so QUOTE_NONNUMERIC must convert it
+                        # (CPython's START_FIELD does the same)
+                        if dialect.quoting == QUOTE_NONNUMERIC:
+                            self.numeric_field = True
                         state = ESCAPED_CHAR
                     elif c == ord(u' ') and dialect.skipinitialspace:
                         # ignore space at start of field

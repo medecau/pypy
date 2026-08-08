@@ -186,6 +186,12 @@ return next yielded value or raise StopIteration."""
         from pypy.interpreter.pytraceback import check_traceback
 
         space = self.space
+        if w_val is not None or w_tb is not None:
+            # 3.12 deprecated the (type, exc, tb) signature
+            space.warn(space.newtext(
+                "the (type, exc, tb) signature of throw() is deprecated, "
+                "use the single-arg signature instead."),
+                space.w_DeprecationWarning)
         if w_val is None:
             w_val = space.w_None
 

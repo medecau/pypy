@@ -104,7 +104,13 @@ class W_Writer(W_Root):
 
                 # If field is empty check if it needs to be quoted
                 if len(fields_w) == 1:
-                    if dialect.quoting == QUOTE_NONE:
+                    # 3.12: None writes unquoted under QUOTE_STRINGS and
+                    # QUOTE_NOTNULL, so a lone None is as ambiguous as
+                    # QUOTE_NONE (CPython: "single empty field record")
+                    if (dialect.quoting == QUOTE_NONE or
+                            (space.is_w(w_field, space.w_None) and
+                             (dialect.quoting == QUOTE_STRINGS or
+                              dialect.quoting == QUOTE_NOTNULL))):
                         raise self.error("single empty field record "
                                          "must be quoted")
                     quoted = True
