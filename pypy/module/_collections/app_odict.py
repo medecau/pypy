@@ -94,7 +94,9 @@ class OrderedDict(dict):
             return '...'
         currently_in_repr[self] = 1
         try:
-            return '%s(%r)' % (self.__class__.__name__, list(self.items()))
+            # 3.12 (gh-101446) reprs the contents as a dict rather than a
+            # list of pairs: OrderedDict({'a': 1}) not OrderedDict([('a', 1)])
+            return '%s(%r)' % (self.__class__.__name__, dict(self.items()))
         finally:
             try:
                 del currently_in_repr[self]

@@ -210,7 +210,11 @@ class W_IOBase(W_Root):
         return space.w_False
 
     def getstate_w(self, space):
-        raise oefmt(space.w_TypeError, "cannot serialize '%T' object", self)
+        # CPython's iobase_getstate wording, which test_io's test_pickling
+        # matches on: 'cannot pickle', and the unqualified type name --
+        # 'FileIO', not '_io.FileIO'.
+        raise oefmt(space.w_TypeError, "cannot pickle '%N' instances",
+                    space.type(self))
 
     # ______________________________________________________________
 

@@ -64,7 +64,10 @@ class BaseStringFormatter(object):
 
     def fmt_i(self, w_value):
         "i% formatting"
-        r = int_num_helper(self.space, w_value, fmt_for_error="%i")
+        # CPython reports this conversion as %d -- it maps 'i' to 'd' when
+        # building the message, though it leaves 'u' alone (test_bytes'
+        # test_mod expects '%d format: ...' for both b'%i' and b'%d')
+        r = int_num_helper(self.space, w_value, fmt_for_error="%d")
         self.std_wp_int(r)
 
     def fmt_u(self, w_value):
