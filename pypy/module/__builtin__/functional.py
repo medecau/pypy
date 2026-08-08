@@ -713,11 +713,13 @@ class W_LongRangeIterator(W_AbstractRangeIterator):
         return space.newtuple([mod.get('longrangeiter_new'), w_args, self.w_index])
 
     def descr_setstate(self, space, w_index):
+        # relative to the current position, as for the int iterators
         if space.is_true(space.lt(w_index, space.newint(0))):
             w_index = space.newint(0)
-        elif space.is_true(space.lt(self.w_len, w_index)):
-            w_index = self.w_len
-        self.w_index = w_index
+        w_new = space.add(self.w_index, w_index)
+        if space.is_true(space.lt(self.w_len, w_new)):
+            w_new = self.w_len
+        self.w_index = w_new
 
 class W_IntRangeIterator(W_AbstractRangeIterator):
 
@@ -754,13 +756,19 @@ class W_IntRangeIterator(W_AbstractRangeIterator):
     def get_remaining(self, space):
         return space.newint(self.remaining)
 
-    def descr_setstate(self, space, w_remaining):
-        remaining = space.int_w(w_remaining)
-        if remaining < 0:
-            remaining = 0
-        if remaining > self.remaining:
-            remaining = self.remaining
-        self.remaining = remaining
+    def descr_setstate(self, space, w_index):
+        # CPython's state advances the iterator by 'index' items from where
+        # it currently is, silently clipped to what is left -- it is not the
+        # number of items remaining, which is what this used to set.  For the
+        # pickling case the two readings coincide, because the iterator being
+        # restored is always fresh.
+        index = space.int_w(w_index)
+        if index < 0:
+            index = 0
+        elif index > self.remaining:
+            index = self.remaining
+        self.current = self.current + index * self.step
+        self.remaining = self.remaining - index
 
 
 class W_IntRangeStepOneIterator(W_IntRangeIterator):
@@ -783,12 +791,13 @@ class W_IntRangeStepOneIterator(W_IntRangeIterator):
         return space.newint(self.stop - self.current)
 
     def descr_setstate(self, space, w_index):
+        # as above: advance by 'index' from here, not an absolute value
         index = space.int_w(w_index)
-        if index < self.start:
-            index = self.start 
-        elif index > self.stop:
-            index = self.stop
-        self.current = index
+        if index < 0:
+            index = 0
+        elif index > self.stop - self.current:
+            index = self.stop - self.current
+        self.current = self.current + index
 
 
 class W_IntRangeOneArgIterator(W_IntRangeIterator):
@@ -814,12 +823,13 @@ class W_IntRangeOneArgIterator(W_IntRangeIterator):
         return space.newint(self.stop - self.current)
 
     def descr_setstate(self, space, w_index):
+        # relative to the current position, as for the other range iterators
         index = space.int_w(w_index)
         if index < 0:
             index = 0
-        elif index > self.stop:
-            index = self.stop
-        self.current = index
+        elif index > self.stop - self.current:
+            index = self.stop - self.current
+        self.current = self.current + index
 
 W_AbstractRangeIterator.typedef = TypeDef("range_iterator",
     __iter__        = interp2app(W_AbstractRangeIterator.descr_iter),
