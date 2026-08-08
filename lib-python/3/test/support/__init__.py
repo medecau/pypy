@@ -1790,6 +1790,11 @@ def run_in_subinterp(code):
     """
     _check_tracemalloc()
     import _testcapi
+    # PyPy has no sub-interpreters: Py_NewInterpreter() is an unimplemented
+    # cpyext stub, so _testcapimodule.c compiles run_in_subinterp() out under
+    # #ifndef PYPY_VERSION.  Skip rather than failing with AttributeError.
+    if not hasattr(_testcapi, 'run_in_subinterp'):
+        raise unittest.SkipTest("sub-interpreters are not supported")
     return _testcapi.run_in_subinterp(code)
 
 
@@ -1800,6 +1805,8 @@ def run_in_subinterp_with_config(code, *, own_gil=None, **config):
     """
     _check_tracemalloc()
     import _testcapi
+    if not hasattr(_testcapi, 'run_in_subinterp_with_config'):
+        raise unittest.SkipTest("sub-interpreters are not supported")
     if own_gil is not None:
         assert 'gil' not in config, (own_gil, config)
         config['gil'] = 2 if own_gil else 1

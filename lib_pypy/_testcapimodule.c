@@ -6608,6 +6608,34 @@ sys_setobject(PyObject *Py_UNUSED(module), PyObject *args)
 }
 
 
+/* From CPython 3.12's Modules/_testcapi/abstract.c, which our vendored copy
+   predates.  test_class and test_bytes reach for these. */
+static PyObject *
+object_hasattrstring(PyObject *self, PyObject *args)
+{
+    PyObject *obj;
+    const char *attr_name;
+    Py_ssize_t size;
+    if (!PyArg_ParseTuple(args, "Oz#", &obj, &attr_name, &size)) {
+        return NULL;
+    }
+    NULLABLE(obj);
+    return PyLong_FromLong(PyObject_HasAttrString(obj, attr_name));
+}
+
+static PyObject *
+sequence_delitem(PyObject *self, PyObject *args)
+{
+    PyObject *obj;
+    Py_ssize_t i;
+    if (!PyArg_ParseTuple(args, "On", &obj, &i)) {
+        return NULL;
+    }
+    NULLABLE(obj);
+    RETURN_INT(PySequence_DelItem(obj, i));
+}
+
+
 static PyMethodDef TestMethods[] = {
     {"exc_set_object",          exc_set_object,                  METH_VARARGS},
     {"raise_exception",         raise_exception,                 METH_VARARGS},
@@ -6957,6 +6985,8 @@ static PyMethodDef TestMethods[] = {
     {"function_get_module", function_get_module, METH_O, NULL},
     {"sys_getobject", sys_getobject, METH_O},
     {"sys_setobject", sys_setobject, METH_VARARGS},
+    {"object_hasattrstring", object_hasattrstring, METH_VARARGS},
+    {"sequence_delitem", sequence_delitem, METH_VARARGS},
     {NULL, NULL} /* sentinel */
 };
 
