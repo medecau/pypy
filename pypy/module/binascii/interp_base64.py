@@ -51,6 +51,12 @@ def a2b_base64(space, ascii, strict_mode=0):
     i = 0
     for c in ascii:
         if c == PAD:
+            if strict_mode and quad_pos == 0:
+                # padding at a quantum boundary: either there is no partial
+                # group for it to complete, or a previous group already
+                # ended.  The leading '=' case is caught above and gets its
+                # own message.
+                raise_Error(space, "Excess padding not allowed")
             if quad_pos > 2 or (quad_pos == 2 and last_char_was_a_pad):
                 if strict_mode and i + 1 < len(ascii):
                     raise_Error(space, "Excess data after padding")
