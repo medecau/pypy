@@ -46,6 +46,11 @@ else:
     _collections_abc.MutableSequence.register(deque)
 
 try:
+    from _collections import _deque_iterator
+except ImportError:
+    pass
+
+try:
     from _collections import defaultdict
 except ImportError:
     pass
@@ -274,7 +279,7 @@ class OrderedDict(dict):
         'od.__repr__() <==> repr(od)'
         if not self:
             return '%s()' % (self.__class__.__name__,)
-        return '%s(%r)' % (self.__class__.__name__, list(self.items()))
+        return '%s(%r)' % (self.__class__.__name__, dict(self.items()))
 
     def __reduce__(self):
         'Return state information for pickling'
@@ -541,9 +546,12 @@ def _replace(
     # specified a particular module.
     if module is None:
         try:
-            module = _sys._getframe(1).f_globals.get('__name__', '__main__')
-        except (AttributeError, ValueError):
-            pass
+            module = _sys._getframemodulename(1) or '__main__'
+        except AttributeError:
+            try:
+                module = _sys._getframe(1).f_globals.get('__name__', '__main__')
+            except (AttributeError, ValueError):
+                pass
     if module is not None:
         result.__module__ = module
 
@@ -612,7 +620,7 @@ class Counter(dict):
     # References:
     #   http://en.wikipedia.org/wiki/Multiset
     #   http://www.gnu.org/software/smalltalk/manual-base/html_node/Bag.html
-    #   http://www.demo2s.com/Tutorial/Cpp/0380__set-multiset/Catalog0380__set-multiset.htm
+    #   http://www.java2s.com/Tutorial/Cpp/0380__set-multiset/Catalog0380__set-multiset.htm
     #   http://code.activestate.com/recipes/259174/
     #   Knuth, TAOCP Vol. II section 4.6.3
 
@@ -662,7 +670,8 @@ class Counter(dict):
         >>> sorted(c.elements())
         ['A', 'A', 'B', 'B', 'C', 'C']
 
-        # Knuth's example for prime factors of 1836:  2**2 * 3**3 * 17**1
+        Knuth's example for prime factors of 1836:  2**2 * 3**3 * 17**1
+
         >>> import math
         >>> prime_factors = Counter({2: 2, 3: 3, 17: 1})
         >>> math.prod(prime_factors.elements())
@@ -1045,8 +1054,8 @@ class ChainMap(_collections_abc.MutableMapping):
 
     def __iter__(self):
         d = {}
-        for mapping in reversed(self.maps):
-            d.update(dict.fromkeys(mapping))    # reuses stored hash values if possible
+        for mapping in map(dict.fromkeys, reversed(self.maps)):
+            d |= mapping                        # reuses stored hash values if possible
         return iter(d)
 
     def __contains__(self, key):
@@ -1166,9 +1175,16 @@ class UserDict(_collections_abc.MutableMapping):
     def __iter__(self):
         return iter(self.data)
 
-    # Modify __contains__ to work correctly when __missing__ is present
+    # Modify __contains__ and get() to work like dict
+    # does when __missing__ is present.
     def __contains__(self, key):
         return key in self.data
+
+    def get(self, key, default=None):
+        if key in self:
+            return self[key]
+        return default
+
 
     # Now, add the methods in dicts but not in MutableMapping
     def __repr__(self):

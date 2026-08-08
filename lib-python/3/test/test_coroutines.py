@@ -714,8 +714,15 @@ class CoroutineTest(unittest.TestCase):
         aw = coro.__await__()
         next(aw)
         with self.assertRaises(ZeroDivisionError):
-            aw.throw(ZeroDivisionError, None, None)
+            aw.throw(ZeroDivisionError())
         self.assertEqual(N, 102)
+
+        coro = foo()
+        aw = coro.__await__()
+        next(aw)
+        with self.assertRaises(ZeroDivisionError):
+            with self.assertWarns(DeprecationWarning):
+                aw.throw(ZeroDivisionError, ZeroDivisionError(), None)
 
     def test_func_11(self):
         async def func(): pass
@@ -2219,6 +2226,14 @@ class CoroutineTest(unittest.TestCase):
             gen.cr_frame.clear()
         gen.close()
 
+    def test_cr_frame_after_close(self):
+        async def f():
+            pass
+        gen = f()
+        self.assertIsNotNone(gen.cr_frame)
+        gen.close()
+        self.assertIsNone(gen.cr_frame)
+
     def test_stack_in_coroutine_throw(self):
         # Regression test for https://github.com/python/cpython/issues/93592
         async def a():
@@ -2368,15 +2383,15 @@ class OriginTrackingTest(unittest.TestCase):
                 f"coroutine '{corofn.__qualname__}' was never awaited\n",
                 "Coroutine created at (most recent call last)\n",
                 f'  File "{a1_filename}", line {a1_lineno}, in a1\n',
-                f'    return corofn()  # comment in a1',
+                "    return corofn()  # comment in a1",
             ]))
             check(2, "".join([
                 f"coroutine '{corofn.__qualname__}' was never awaited\n",
                 "Coroutine created at (most recent call last)\n",
                 f'  File "{a2_filename}", line {a2_lineno}, in a2\n',
-                f'    return a1()  # comment in a2\n',
+                "    return a1()  # comment in a2\n",
                 f'  File "{a1_filename}", line {a1_lineno}, in a1\n',
-                f'    return corofn()  # comment in a1',
+                "    return corofn()  # comment in a1",
             ]))
 
         finally:

@@ -7,7 +7,10 @@ class Module(MixedModule):
 
     interpleveldefs = {
         'CODESIZE':       'space.newint(interp_sre.CODESIZE)',
-        'MAGIC':          'space.newint(20220615)',
+        # 3.12 bumped MAGIC; the sre opcode set itself is unchanged from
+        # 3.11 (re/_constants.py differs only in this number), so matching
+        # it is all that is needed to satisfy re._compiler's version check.
+        'MAGIC':          'space.newint(20221023)',
         'MAXREPEAT':      'space.newint(interp_sre.MAXREPEAT)',
         'MAXGROUPS':      'space.newint(interp_sre.MAXGROUPS)',
         'OPCODES':        'space.newlist([space.newtext(s) if s is not None else space.w_None for s in interp_sre.ORDERED_OPCODE_NAMES])',

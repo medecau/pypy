@@ -479,7 +479,6 @@ class BZ2FileTest(BaseTest):
         self.assertEqual(xlines, [b'Test'])
 
     def testContextProtocol(self):
-        f = None
         with BZ2File(self.filename, "wb") as f:
             f.write(b"xxx")
         f = BZ2File(self.filename, "rb")
@@ -970,6 +969,10 @@ class BZ2DecompressorTest(BaseTest):
         for i in range(100):
             bzd.__init__()
         self.assertAlmostEqual(gettotalrefcount() - refs_before, 0, delta=10)
+
+    def test_uninitialized_BZ2Decompressor_crash(self):
+        self.assertEqual(BZ2Decompressor.__new__(BZ2Decompressor).
+                         decompress(bytes()), b'')
 
 
 class CompressDecompressTest(BaseTest):
