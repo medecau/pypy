@@ -796,7 +796,10 @@ def nextafter(space, w_a, w_b, __kwonly__, w_steps):
         return space.newfloat(rfloat.nextafter(a, b))
     # 3.12 added the 'steps' keyword: move that many representable values
     # towards y at once.
-    steps = space.int_w(space.index(w_steps))
+    # NB: r_longlong(), not a plain int.  index_a below comes from
+    # float2longlong, and unioning it with a Signed annotation makes
+    # longlong2float's compute_result_annotation assert during translation.
+    steps = r_longlong(space.int_w(space.index(w_steps)))
     if steps < 0:
         raise oefmt(space.w_ValueError,
                     "steps must be a non-negative integer")
