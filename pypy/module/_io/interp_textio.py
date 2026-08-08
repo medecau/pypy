@@ -591,6 +591,18 @@ class W_TextIOWrapper(W_TextIOBase):
         self.readtranslate = False
         self.readnl = None
 
+        # The write-side counterparts of the three above, and the two public
+        # flags.  These were assigned only by descr_init, so on a wrapper that
+        # never reached it 'line_buffering' and 'write_through' -- which are
+        # plain interp_attrproperty reads, so the STATE_ZERO check does not
+        # cover them -- returned uninitialised slot contents: PyPy printed
+        # True here where CPython returns False, and not even the same answer
+        # between instances.
+        self.writetranslate = False
+        self.writenl = None
+        self.line_buffering = False
+        self.write_through = False
+
         self.encodefunc = None # Specialized encoding func (see below)
         self.encoding_start_of_stream = False # Whether or not it's the start
                                               # of the stream

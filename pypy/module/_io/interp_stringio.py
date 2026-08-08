@@ -121,6 +121,23 @@ READING, ACCUMULATING, RWBUFFER, CLOSED = range(4)
 
 @finishsigs
 class W_StringIO(W_TextIOBase):
+    # These are written only by _init_newline(), which runs from descr_init
+    # and descr_setstate.  An instance that never saw either -- a subclass
+    # whose __init__ does not call super().__init__, say -- read them
+    # uninitialised, and an uninitialised RPython bool field is not False, it
+    # is whatever was left in the slot.  readline() on such an object returned
+    # a different answer on each run ('ab\n', 'a', ...) and, when both
+    # booleans happened to read False, fell into the `ord(newline[0])` branch
+    # below with readnl still None and segfaulted.  These defaults describe
+    # the newline=None configuration, which is what StringIO() itself uses.
+    # (CPython instead rejects the object outright with ValueError: I/O
+    # operation on uninitialized object -- it keeps an explicit `ok` flag.)
+    readuniversal = True
+    readtranslate = True
+    readnl = None
+    writenl = None
+    w_decoder = None
+
     def __init__(self, space):
         W_TextIOBase.__init__(self, space)
         self.buf = None

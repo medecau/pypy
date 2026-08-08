@@ -156,6 +156,11 @@ class W_FileIO(W_RawIOBase):
     def __init__(self, space):
         W_RawIOBase.__init__(self, space)
         self.fd = -1
+        # blksize is otherwise only assigned by descr_init, so on a FileIO
+        # that never got there it read out as a leftover heap address --
+        # _io.FileIO.__new__(_io.FileIO)._blksize disclosed pointer values,
+        # differing between instances in the same process.
+        self.blksize = 0
         self.readable = False
         self.writable = False
         self.created = False

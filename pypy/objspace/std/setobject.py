@@ -1586,12 +1586,20 @@ class W_SetIterObject(W_Root):
     def descr_reduce(self, space):
         # copy the iterator state
         w_set = self.iterimplementation.setimplementation
+        w_iter = space.builtin.get('iter')
+        if w_set is None:
+            # Exhausted: IteratorImplementation.next() drops the reference to
+            # the set when it runs out.  Dereferencing it here segfaulted --
+            # 'it = iter({1,2}); list(it); pickle.dumps(it)' crashed the
+            # interpreter.  CPython's setiter_reduce lists the (empty) rest of
+            # the iterator, so an exhausted one reduces to iter([]).
+            return space.newtuple([w_iter,
+                                   space.newtuple([space.newlist([])])])
         w_clone = W_SetIterObject(space, w_set.iter())
         # spool until we have the same pos
         for x in xrange(self.iterimplementation.pos):
             w_clone.descr_next(space)
         w_res = space.call_function(space.w_list, w_clone)
-        w_iter = space.builtin.get('iter')
         return space.newtuple([w_iter, space.newtuple([w_res])])
 
 

@@ -1181,11 +1181,24 @@ class W_BufferedRWPair(W_BufferedIOBase):
         return type(self) is not W_BufferedRWPair
 
     def isatty_w(self, space):
+        # Both of these dereferenced w_writer/w_reader unguarded, so on a
+        # never-descr_init'ed pair -- BufferedRWPair.__new__(BufferedRWPair),
+        # or a subclass whose __init__ does not call super() -- they
+        # segfaulted.  The forwarding methods above already guard the same
+        # way; these two were simply written by hand and missed it.
+        if self.w_writer is None or self.w_reader is None:
+            raise oefmt(space.w_ValueError,
+                        "I/O operation on uninitialized object")
         if space.is_true(space.call_method(self.w_writer, "isatty")):
             return space.w_True
         return space.call_method(self.w_reader, "isatty")
 
     def closed_get_w(self, space):
+        # CPython's bufferedrwpair_closed_get uses this wording rather than
+        # the "uninitialized object" ValueError of the forwarding methods.
+        if self.w_writer is None:
+            raise oefmt(space.w_RuntimeError,
+                        "the BufferedRWPair object is being garbage-collected")
         return space.getattr(self.w_writer, space.newtext("closed"))
 
 methods = dict((method, interp2app(getattr(W_BufferedRWPair, method + '_w')))

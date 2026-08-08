@@ -1469,6 +1469,14 @@ class W_BaseDictMultiIterObject(W_Root):
         new_inst = mod.get('dictiter_surrogate_new')
 
         w_dict = self.iteratorimplementation.w_dict
+        if w_dict is None:
+            # Exhausted: the iterator implementation drops its reference to
+            # the dict once it runs out, and cloning off it segfaulted --
+            # 'it = iter({1: 2}); list(it); it.__reduce__()' crashed the
+            # interpreter.  There is nothing left to spool, so hand back an
+            # iterator over the empty rest, as CPython's dictiter_reduce does.
+            return space.newtuple2(new_inst,
+                                   space.newtuple([space.newlist([])]))
         w_clone = self.clone_for_pickling(space, w_dict)
         assert isinstance(w_clone, W_BaseDictMultiIterObject)
 

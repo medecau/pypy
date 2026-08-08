@@ -1,7 +1,7 @@
 from pypy.interpreter.error import oefmt
 from pypy.interpreter.nestedscope import Cell
 from pypy.interpreter.pycode import PyCode
-from pypy.interpreter.function import Function, Method
+from pypy.interpreter.function import Method
 from pypy.interpreter.module import Module
 from pypy.interpreter.pytraceback import PyTraceback
 from pypy.interpreter.generator import GeneratorIterator, Coroutine
@@ -21,11 +21,6 @@ def code_new(space, __args__):
     w_type = space.gettypeobject(PyCode.typedef)
     return space.call_args(w_type, __args__)
 
-def func_new(space):
-    fu = instantiate(Function)
-    fu.w_func_dict = space.newdict()
-    return fu
-
 def module_new(space, w_name, w_dict):
     new_mod = Module(space, w_name, w_dict)
     return new_mod
@@ -41,10 +36,6 @@ def dictiter_surrogate_new(space, w_lis):
     # we got a listobject.
     # simply create an iterator and that's it.
     return space.iter(w_lis)
-
-def frame_new(space):
-    new_frame = instantiate(space.FrameClass)   # XXX fish
-    return new_frame
 
 def traceback_new(space):
     tb = instantiate(PyTraceback)

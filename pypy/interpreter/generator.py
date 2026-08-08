@@ -15,6 +15,12 @@ from rpython.rlib.rarithmetic import r_uint
 class GeneratorOrCoroutine(W_Root):
     _immutable_fields_ = ['pycode']
 
+    # _pickle_support.generator_new() builds one of these with instantiate(),
+    # bypassing __init__ entirely, and gi_running/cr_running is a bare
+    # interp_attrproperty read.  Without this default it reported an
+    # unpickled-but-not-yet-__setstate__'d generator as running at random.
+    running = False
+
     def __init__(self, frame, name=None, qualname=None):
         self.space = frame.space
         self.frame = frame     # turned into None when frame_finished_execution

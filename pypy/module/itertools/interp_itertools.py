@@ -1701,13 +1701,14 @@ class W_Permutations(W_Root):
         self.r = r
         n = len(pool_w)
         n_minus_r = n - r
-        if n_minus_r < 0:
-            self.stopped = self.raised_stop_iteration = True
-        else:
-            self.stopped = self.raised_stop_iteration = False
-            self.indices = range(n)
-            self.cycles = range(n, n_minus_r, -1)
-            self.started = False
+        # These used to be initialised only in the else branch, so for r > n
+        # ('permutations([1, 2], 5)') indices/cycles were never assigned and
+        # __setstate__ -- which writes into them before consulting .stopped --
+        # dereferenced whatever was left in the fields and segfaulted.
+        self.stopped = self.raised_stop_iteration = (n_minus_r < 0)
+        self.indices = range(n)
+        self.cycles = range(n, n_minus_r, -1)
+        self.started = False
 
     def descr__iter__(self, space):
         return self
