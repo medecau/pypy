@@ -343,7 +343,12 @@ class EnvBuilder:
                 #
                 # PyPy extension: also copy the main library, not just the
                 # small executable
-                for libname in ['libpypy3.11-c.so', 'libpypy3.11-c.dylib']:
+                # NB: derived from the running interpreter, not hardcoded --
+                # a 3.12 build ships libpypy3.12-c.so, and a stale name here
+                # produces a copy-mode venv whose executable cannot find its
+                # library at all (test_venv).
+                _v = '%d.%d' % sys.version_info[:2]
+                for libname in ['libpypy%s-c.so' % _v, 'libpypy%s-c.dylib' % _v]:
                     dest_library = os.path.join(binpath, libname)
                     src_library = os.path.join(os.path.dirname(context.executable),
                                                libname)
@@ -402,11 +407,11 @@ class EnvBuilder:
 
             exe = os.path.split(sys.executable)[1].lower()
             if exe not in suffixes:
-                if "pypy3.11-c.exe" in suffixes:
+                if 'pypy%d.%d-c.exe' % sys.version_info[:2] in suffixes:
                     # dirname is a source build, with only the
                     # pypy*-c.exe? Make sure to create
                     # sys.executable as well
-                    src = os.path.join(dirname, "pypy3.11-c.exe")
+                    src = os.path.join(dirname, 'pypy%d.%d-c.exe' % sys.version_info[:2])
                     dst = os.path.join(binpath, exe)
                     copier(src, dst)
                 elif not suffixes:
@@ -421,7 +426,7 @@ class EnvBuilder:
                         src = os.path.join(dirname, suffix)
                         if os.path.lexists(src):
                             copier(src, os.path.join(binpath, suffix))
-                    src = os.path.join(dirname, "pypy3.11-c.exe")
+                    src = os.path.join(dirname, 'pypy%d.%d-c.exe' % sys.version_info[:2])
                     if src != context.env_exec_cmd:
                         copier(src, context.env_exec_cmd)
                     copier(src, os.path.join(binpath, "python.exe"))

@@ -47,11 +47,11 @@ build_time_vars = {
 # the mybase/bin layout is left untouched.
 mybase = sys.base_prefix
 if sys.platform == 'win32':
-    build_time_vars['LDLIBRARY'] = 'libpypy3.11-c.dll'
+    build_time_vars['LDLIBRARY'] = 'libpypy%d.%d-c.dll' % sys.version_info[:2]
     build_time_vars['INCLUDEPY'] = os.path.join(mybase, 'include')
     build_time_vars['LIBDIR'] = mybase
 else:
-    build_time_vars['LDLIBRARY'] = 'libpypy3.11-c.so'
+    build_time_vars['LDLIBRARY'] = 'libpypy%d.%d-c.so' % sys.version_info[:2]
     build_time_vars['INCLUDEPY'] = os.path.join(mybase, 'include', 'pypy' + pydot)
     build_time_vars['LIBDIR'] = os.path.join(mybase, 'bin')
     build_time_vars['CONFINCLUDEPY'] = build_time_vars['INCLUDEPY']
@@ -88,7 +88,7 @@ if sys.platform[:6] == "darwin":
     build_time_vars["LDFLAGS"] = "-undefined dynamic_lookup"
     build_time_vars["LDSHARED"] = "clang -bundle -undefined dynamic_lookup "
     build_time_vars["LDCXXSHARED"] = "clang++ -bundle -undefined dynamic_lookup "
-    build_time_vars['LDLIBRARY'] = 'libpypy3.11-c.dylib'
+    build_time_vars['LDLIBRARY'] = 'libpypy%d.%d-c.dylib' % sys.version_info[:2]
     # scikit-build checks this, it is left over from the NextStep rld linker
     build_time_vars['WITH_DYLD'] = 1
     if "CXX" in build_time_vars:

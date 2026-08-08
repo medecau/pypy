@@ -55,7 +55,7 @@ __all__ = [
     "swap_attr", "Matcher", "set_memlimit", "SuppressCrashReport", "sortdict",
     "run_with_tz", "PGO", "missing_compiler_executable",
     "ALWAYS_EQ", "NEVER_EQ", "LARGEST", "SMALLEST",
-    "force_not_colorized"
+    "force_not_colorized",
     "LOOPBACK_TIMEOUT", "INTERNET_TIMEOUT", "SHORT_TIMEOUT", "LONG_TIMEOUT",
     "Py_DEBUG", "EXCEEDS_RECURSION_LIMIT", "C_RECURSION_LIMIT",
     "skip_on_s390x",
