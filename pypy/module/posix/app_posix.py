@@ -156,6 +156,15 @@ class sched_param(metaclass=structseqtype):
     def __new__(cls, sched_priority):
         return structseq_new(cls, sched_priority)
 
+    def __reduce__(self):
+        # The inherited structseq reduce hands __new__ a (sequence, dict)
+        # pair, but this class takes a single priority -- as CPython's does,
+        # it is not built with the generic structseq constructor -- so
+        # unpickling died with 'sched_param.__new__() takes 2 positional
+        # arguments but 3 were given'.  CPython reduces to (cls, (priority,))
+        # for exactly this reason.
+        return type(self), (self.sched_priority,)
+
 def waitstatus_to_exitcode(status):
     """
     Convert a wait status to an exit code.
