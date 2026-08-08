@@ -1548,11 +1548,15 @@ class __extend__(pyframe.PyFrame):
     CALL_METHOD_KW = CALL_FUNCTION_KW
 
     def MISSING_OPCODE(self, oparg, next_instr):
+        # An opcode the interpreter does not know about.  This is reachable
+        # from app-level by handing a code object a doctored co_code, so
+        # CPython raises a normal SystemError rather than dying; match it
+        # (test_code.CodeTest.test_invalid_bytecode).
         ofs = self.last_instr
         c = self.pycode.co_code[ofs]
-        name = self.pycode.co_name
-        raise BytecodeCorruption("unknown opcode, ofs=%d, code=%d, name=%s" %
-                                 (ofs, ord(c), name) )
+        raise oefmt(self.space.w_SystemError,
+                    "%s:%d: unknown opcode %d",
+                    self.pycode.co_filename, self.get_last_lineno(), ord(c))
 
     @jit.unroll_safe
     def BUILD_MAP(self, itemcount, next_instr):

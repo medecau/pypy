@@ -268,8 +268,10 @@ _error_names = {
     ]
 }
 
-# pysqlite version information
-version = "2.6.0"
+# pysqlite version information.  3.12 (gh-105875) deprecated sqlite3.version
+# and sqlite3.version_info; the value now lives here under a private name and
+# sqlite3/dbapi2.py re-exposes it through a deprecating module __getattr__.
+_deprecated_version = "2.6.0"
 
 # pysqlite constants
 PARSE_COLNAMES = 1
