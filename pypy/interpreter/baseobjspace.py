@@ -2105,20 +2105,34 @@ class ObjSpace(object):
         return w_iterable.iterator_greenkey(self)
 
     def guess_function_name_parens(self, w_function):
-        """ CPython 3.12's _PyObject_FunctionStr: returns
-        '{module}.{qualname}()' (module omitted when missing, None or
-        'builtins'), or str(w_function) when there is no __qualname__
-        (e.g. 'None' for None).  Only used on error paths."""
-        w_qualname = self.findattr(w_function, self.newtext('__qualname__'))
-        if w_qualname is None:
-            return self.text_w(self.str(w_function))
-        qualname = self.text_w(self.str(w_qualname))
-        w_module = self.findattr(w_function, self.newtext('__module__'))
-        if w_module is not None and not self.is_w(w_module, self.w_None):
-            module = self.text_w(self.str(w_module))
-            if module != 'builtins':
-                return module + '.' + qualname + '()'
-        return qualname + '()'
+        """Approximate CPython 3.12's _PyObject_FunctionStr.
+
+        NB: this runs on EVERY call (see PyFrame.make_arguments), not
+        just on error paths, so it must be cheap and free of side
+        effects.  It therefore never looks up __qualname__/__module__ on
+        arbitrary objects: that is observable (a Mock records the
+        access -- see test_unittest's mock_calls tests) and costs extra
+        lookups per call.  Functions and methods are inspected directly;
+        anything else falls back to a type-based description.
+        """
+        from pypy.interpreter.function import Function, _Method
+        if isinstance(w_function, Function):
+            qualname = w_function.qualname
+            w_globals = w_function.w_func_globals
+            if w_globals is not None:
+                w_module = self.finditem_str(w_globals, '__name__')
+                if w_module is not None and self.isinstance_w(
+                        w_module, self.w_unicode):
+                    module = self.text_w(w_module)
+                    if module != 'builtins':
+                        return module + '.' + qualname + '()'
+            return qualname + '()'
+        if isinstance(w_function, _Method):
+            return self.guess_function_name_parens(w_function.w_function)
+        if self.is_w(w_function, self.w_None):
+            # CPython falls back to str(x) when there is no __qualname__
+            return 'None'
+        return self.type(w_function).getname(self) + ' object'
 
 
 class AppExecCache(SpaceCache):
