@@ -36,6 +36,7 @@ objects support decompress() and flush()."""
         }
 
     appleveldefs = {
+        '_ZlibDecompressor': 'app_zlib._ZlibDecompressor',
         }
 
     def setup_after_space_initialization(self):
