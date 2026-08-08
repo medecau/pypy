@@ -491,6 +491,11 @@ class W_MemoryView(W_Root):
             size = rffi.sizeof(rffi.FLOAT)
         elif f == 'd':
             size = rffi.sizeof(rffi.DOUBLE)
+        elif f == 'e':
+            # IEEE half float.  There is no rffi type for it; CPython sizes
+            # it as sizeof(float)/2 here too.  The struct machinery that
+            # actually reads the items already understands 'e'.
+            size = rffi.sizeof(rffi.FLOAT) // 2
         elif f == '?':
             size = rffi.sizeof(rffi.CHAR)
         elif f == 'P':
