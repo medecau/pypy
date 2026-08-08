@@ -75,7 +75,13 @@ Name = r'\w+'
 Hexnumber = r'0[xX](?:_?[0-9a-fA-F])+'
 Binnumber = r'0[bB](?:_?[01])+'
 Octnumber = r'0[oO](?:_?[0-7])+'
-Decnumber = r'(?:0(?:_?0)*|[1-9](?:_?[0-9])*)'
+# NB: the first branch takes any digits after a leading zero, not just
+# more zeros.  '01234' and '007' are not valid literals, but 3.12's
+# tokenizer still hands back one NUMBER and leaves the complaint to the
+# parser; matching only '0' here split them into two tokens.  Each '_'
+# must still be followed by a digit, so '0_' stops after the '0' --
+# test_underscore_literals checks that it does not tokenize whole.
+Decnumber = r'(?:0(?:_?[0-9])*|[1-9](?:_?[0-9])*)'
 Intnumber = group(Hexnumber, Binnumber, Octnumber, Decnumber)
 Exponent = r'[eE][-+]?[0-9](?:_?[0-9])*'
 Pointfloat = group(r'[0-9](?:_?[0-9])*\.(?:[0-9](?:_?[0-9])*)?',
