@@ -94,6 +94,12 @@ def __repr__(self):
 
 def _derive_and_copy_attrs(self, excs):
     eg = self.derive(excs)
+    # derive() is documented as overridable, so check what comes back before
+    # copying metadata onto it.  Without this, a derive() returning something
+    # else failed further down with whatever attribute error came first --
+    # "'int' object has no attribute '__cause__'".
+    if not isinstance(eg, BaseExceptionGroup):
+        raise TypeError("derive must return an instance of BaseExceptionGroup")
     if hasattr(self, "__notes__"):
         # Create a new list so that add_note() only affects one exceptiongroup
         try:

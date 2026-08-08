@@ -2271,6 +2271,19 @@ def exception_group_match(space, w_eg, w_typ):
         return w_wrapped, space.w_None
     elif space.isinstance_w(w_eg, w_BaseExceptionGroup):
         w_tup = space.call_method(w_eg, 'split', w_typ)
+        # gh-128049: split() can be overridden, so check the shape of what
+        # comes back.  Without this the unpacking below reported whatever
+        # ValueError it happened to hit ("too many values to unpack").
+        # CPython requires an exact tuple, not just any 2-sequence.
+        if not space.is_w(space.type(w_tup), space.w_tuple):
+            raise oefmt(space.w_TypeError,
+                        "%N.split must return a tuple, not %T",
+                        space.type(w_eg), w_tup)
+        length = space.len_w(w_tup)
+        if length != 2:
+            raise oefmt(space.w_TypeError,
+                        "%N.split must return a 2-tuple, got tuple of size %d",
+                        space.type(w_eg), length)
         w_match, w_rest = space.unpackiterable(w_tup, 2)
         return w_match, w_rest
     else:
