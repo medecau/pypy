@@ -1341,7 +1341,6 @@ W_TypeObject.typedef = TypeDef("type",
                                          descr_set___abstractmethods__,
                                          descr_del___abstractmethods__),
     __subclasses__ = gateway.interp2app(descr___subclasses__),
-    __weakref__ = weakref_descr,
     __instancecheck__ = gateway.interp2app(type_isinstance),
     __subclasscheck__ = gateway.interp2app(type_issubtype),
 
@@ -1355,6 +1354,17 @@ W_TypeObject.typedef = TypeDef("type",
                                      W_TypeObject.descr_set_annotations,
                                      W_TypeObject.descr_del_annotations),
 )
+
+# Types are weakrefable, but -- like CPython -- 'type' must not carry a
+# '__weakref__' descriptor in its dict: CPython makes type instances
+# weakrefable through tp_weaklistoffset instead.  The descriptor is a *data*
+# descriptor, and a data descriptor found on the metatype wins over the
+# '__weakref__' entry that every ordinary class gets in its own dict, so
+# `SomeClass.__weakref__` would return the class object's own (normally empty)
+# weakref list instead of the descriptor.  See test_dataclasses' weakref_slot
+# tests.  W_TypeObject implements getweakref/setweakref/delweakref itself, so
+# dropping the app-level entry does not affect weakref.ref(SomeClass).
+W_TypeObject.typedef.weakrefable = True
 
 
 # ____________________________________________________________
