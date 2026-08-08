@@ -354,10 +354,20 @@ def blowstack(fxn, arg, compare_to):
     # argument will raise RecursionError eventually.
     tuple_arg = (compare_to,)
     if support.check_impl_detail(pypy=True):
-        # pypy change: need much deeper nested tuples to check this
-        depth = sys.getrecursionlimit() * 100
-    else:
-        depth = support.C_RECURSION_LIMIT * 2
+        # pypy change: need much deeper nested tuples to check this.  PyPy's
+        # isinstance/issubclass recursion is bounded by the RPython stack
+        # rather than by sys.getrecursionlimit(), so it takes about a million
+        # levels to trip -- and it does trip, rather than blowing the stack,
+        # which is what this test is really asserting.  Build the nesting
+        # first and make a single call: calling fxn on every iteration the
+        # way CPython does is quadratic, and at this depth it never finishes.
+        # (Before 3.12 wrapped these tests in support.infinite_recursion(),
+        # the old sys.getrecursionlimit() * 100 was small enough to survive.)
+        for cnt in range(1000000):
+            tuple_arg = (tuple_arg,)
+        fxn(arg, tuple_arg)
+        return
+    depth = support.C_RECURSION_LIMIT * 2
     for cnt in range(depth):
         tuple_arg = (tuple_arg,)
         fxn(arg, tuple_arg)
