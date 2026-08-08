@@ -19,6 +19,18 @@ TYPE_IGNORE = 'ignore'
 UNTERMINATED_STRING_ERROR = "unterminated %s%sstring literal (detected at line %s)"
 EOF_MULTI_LINE_STATEMENT_ERROR = "unexpected end of file (EOF) in multi-line statement"
 
+
+def _end_of_line_column(line):
+    """1-based column just past the line's content.
+
+    CPython reports indentation errors there rather than at the
+    indentation itself (test_exceptions.testSyntaxErrorOffset).
+    """
+    end = len(line)
+    while end > 0 and (line[end - 1] == '\n' or line[end - 1] == '\r'):
+        end -= 1
+    return end + 1
+
 def match_encoding_declaration(comment):
     """returns the declared encoding or None
 
@@ -415,7 +427,9 @@ class Tokenizer(object):
                 self.last_comment = ''
             if column != self.indents[-1]:
                 err = "unindent does not match any outer indentation level"
-                raise TokenIndentationError(err, line, self.lnum, column+1, self.token_list)
+                raise TokenIndentationError(err, line, self.lnum,
+                                            _end_of_line_column(line),
+                                            self.token_list)
             if altcolumn != self.altindents[-1]:
                 raise TabError(self.lnum, self.pos, line)
         if self.async_def_nl and self.async_def_indent >= self.indents[-1]:
@@ -971,7 +985,9 @@ def _generate_tokens(lines, flags):
                     last_comment = ''
                 if column != indents[-1]:
                     err = "unindent does not match any outer indentation level"
-                    raise TokenIndentationError(err, line, lnum, column+1, token_list)
+                    raise TokenIndentationError(err, line, lnum,
+                                                _end_of_line_column(line),
+                                                token_list)
                 if altcolumn != altindents[-1]:
                     raise TabError(lnum, pos, line)
             if async_def_nl and async_def_indent >= indents[-1]:
