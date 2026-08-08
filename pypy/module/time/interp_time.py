@@ -1121,44 +1121,15 @@ if _POSIX:
         # reset timezone, altzone, daylight and tzname
         _init_timezone(space)
 
-@unwrap_spec(format='text0')
-def strftime(space, format, w_tup=None):
-    """strftime(format[, tuple]) -> string
-
-    Convert a time tuple to a string according to a format specification.
-    See the library reference manual for formatting codes. When the time tuple
-    is not present, current time as returned by localtime() is used."""
-    from rpython.rlib.rutf8 import codepoints_in_utf8
-    buf_value = _gettmarg(space, w_tup)
-    _checktm(space, buf_value)
-
-    # Normalize tm_isdst just in case someone foolishly implements %Z
-    # based on the assumption that tm_isdst falls within the range of
-    # [-1, 1]
-    if rffi.getintfield(buf_value, 'c_tm_isdst') < -1:
-        rffi.setintfield(buf_value, 'c_tm_isdst', -1)
-    elif rffi.getintfield(buf_value, 'c_tm_isdst') > 1:
-        rffi.setintfield(buf_value, 'c_tm_isdst', 1)
-    rffi.setintfield(buf_value, "c_tm_year",
-                     rffi.getintfield(buf_value, "c_tm_year") - 1900)
-
+def _strftime1(space, format, buf_value):
+    """Run the platform strftime() on 'format', which contains only non-NUL
+    ASCII characters, and return the decoded (utf8, length) result."""
     i = 1024
-    passthrough = False
     if _WIN:
-        tm_year = rffi.getintfield(buf_value, 'c_tm_year')
-        if (tm_year + 1900 < 1 or  9999 < tm_year + 1900):
-            raise oefmt(space.w_ValueError, "strftime() requires year in [1; 9999]")
-
         # wcharp with track_allocation=True
-        format_for_call = rffi.utf82wcharp(
-                    format, codepoints_in_utf8(format))
+        format_for_call = rffi.utf82wcharp(format, len(format))
     else:
-        try:
-            format_for_call = utf8_encode_locale_surrogateescape(
-                    format, codepoints_in_utf8(format))
-        except UnicodeEncodeError:
-            format_for_call = format
-            passthrough = True
+        format_for_call = format
     try:
         while True:
             if _WIN:
@@ -1177,21 +1148,74 @@ def strftime(space, format, w_tup=None):
                     # e.g. an empty format, or %Z when the timezone
                     # is unknown.
                     if _WIN:
-                        decoded, size = rffi.wcharp2utf8n(outbuf, intmask(buflen))
+                        return rffi.wcharp2utf8n(outbuf, intmask(buflen))
                     else:
                         result = rffi.charp2strn(outbuf, intmask(buflen))
-                        if passthrough:
-                            decoded = result
-                            size = codepoints_in_utf8(result)
-                        else:
-                            decoded, size = str_decode_locale_surrogateescape(result)
-                    return space.newutf8(decoded, size)
+                        return str_decode_locale_surrogateescape(result)
             finally:
                 lltype.free(outbuf, flavor='raw')
             i += i
     finally:
         if _WIN:
             rffi.free_wcharp(format_for_call)
+
+@unwrap_spec(format='text')
+def strftime(space, format, w_tup=None):
+    """strftime(format[, tuple]) -> string
+
+    Convert a time tuple to a string according to a format specification.
+    See the library reference manual for formatting codes. When the time tuple
+    is not present, current time as returned by localtime() is used."""
+    from rpython.rlib.rutf8 import Utf8StringBuilder
+    buf_value = _gettmarg(space, w_tup)
+    _checktm(space, buf_value)
+
+    # Normalize tm_isdst just in case someone foolishly implements %Z
+    # based on the assumption that tm_isdst falls within the range of
+    # [-1, 1]
+    if rffi.getintfield(buf_value, 'c_tm_isdst') < -1:
+        rffi.setintfield(buf_value, 'c_tm_isdst', -1)
+    elif rffi.getintfield(buf_value, 'c_tm_isdst') > 1:
+        rffi.setintfield(buf_value, 'c_tm_isdst', 1)
+    rffi.setintfield(buf_value, "c_tm_year",
+                     rffi.getintfield(buf_value, "c_tm_year") - 1900)
+
+    if _WIN:
+        tm_year = rffi.getintfield(buf_value, 'c_tm_year')
+        if (tm_year + 1900 < 1 or  9999 < tm_year + 1900):
+            raise oefmt(space.w_ValueError, "strftime() requires year in [1; 9999]")
+
+    # Only the runs of plain ASCII characters are handed to the platform
+    # strftime().  Everything else -- non-ASCII characters, which includes
+    # lone surrogates and surrogate-escaped bytes, and NUL characters -- is
+    # copied to the result unchanged, up to the next '%'.  Encoding the whole
+    # format to the locale encoding and decoding the result back, which is
+    # what this used to do, recombines e.g. '\udcf0\udc9f\udc90\udc8d' into
+    # a single character, and the C string would stop at the first NUL.  This
+    # mirrors time_strftime() in CPython's Modules/timemodule.c.
+    builder = Utf8StringBuilder(len(format))
+    n = len(format)
+    i = 0
+    while i < n:
+        start = i
+        while i < n:
+            c = ord(format[i])
+            if c == 0 or c > 0x7f:
+                break
+            i += 1
+        if start < i:
+            assert start >= 0
+            decoded, size = _strftime1(space, format[start:i], buf_value)
+            builder.append_utf8(decoded, size)
+        # here format[i] is a NUL or a non-ASCII character, and it is never
+        # '%', so the loop below always makes progress
+        start = i
+        while i < n and format[i] != '%':
+            i += 1
+        if start < i:
+            assert start >= 0
+            builder.append_slice(format, start, i)
+    return space.newutf8(builder.build(), builder.getlength())
 
 def _monotonic_impl(space, w_info):
     with lltype.scoped_alloc(rffi.CArray(pytime_t), 1) as t:
