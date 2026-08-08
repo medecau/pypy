@@ -828,7 +828,8 @@ Function.typedef = TypeDef("function",
     __closure__ = GetSetProperty(Function.fget_func_closure),
     __module__ = getset___module__,
     __type_params__ = GetSetProperty(Function.fget_func_type_params,
-                                     Function.fset_func_type_params),
+                                     Function.fset_func_type_params,
+                                     Function.fdel_func_type_params),
     __weakref__ = make_weakref_descr(Function),
 )
 Function.typedef.acceptable_as_base_class = False

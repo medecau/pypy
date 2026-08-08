@@ -553,6 +553,13 @@ class Function(W_Root):
                         "__type_params__ must be set to a tuple")
         self.w_type_params = w_new
 
+    def fdel_func_type_params(self, space):
+        # CPython has no separate deleter here: deletion reaches the setter
+        # with NULL, which then fails the tuple check above, so the reported
+        # error is that TypeError rather than an AttributeError.
+        raise oefmt(space.w_TypeError,
+                    "__type_params__ must be set to a tuple")
+
 
 class _Method(W_Root):
     _immutable_fields_ = ['w_function', 'w_instance']

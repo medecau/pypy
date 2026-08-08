@@ -1097,6 +1097,15 @@ def descr_get__type_params__(space, w_type):
         return space.newtuple([])  # Default is empty tuple
     return w_result
 
+def descr_del__type_params__(space, w_type):
+    w_type = _check(space, w_type)
+    # CPython refuses this with TypeError.  Leaving the descriptor without a
+    # deleter gets the wording right but raises AttributeError, and
+    # test_builtin's test_type_typeparams asserts the exception type.
+    raise oefmt(space.w_TypeError,
+                "cannot delete '__type_params__' attribute of immutable "
+                "type '%N'", w_type)
+
 def descr_set__type_params__(space, w_type, w_value):
     w_type = _check(space, w_type)
     if not w_type.is_heaptype():
@@ -1104,8 +1113,7 @@ def descr_set__type_params__(space, w_type, w_value):
                     "can't set %N.__type_params__", w_type)
     # NB: no type check.  CPython stores whatever it is given here -- see
     # test_builtin's test_type_typeparams, which sets it to a string and
-    # reads it back unchanged.  Only deleting it is refused, which falls out
-    # of there being no deleter on the descriptor.
+    # reads it back unchanged.  Deleting it is refused, by the deleter above.
     #
     # setdictvalue (rather than assigning w_type.dict_w directly) is what
     # keeps the type's caches coherent, but it also means the value may end
@@ -1343,7 +1351,8 @@ W_TypeObject.typedef = TypeDef("type",
     __base__ = GetSetProperty(descr__base),
     __mro__ = GetSetProperty(descr_get__mro__),
     __type_params__ = GetSetProperty(descr_get__type_params__,
-                                     descr_set__type_params__),
+                                     descr_set__type_params__,
+                                     descr_del__type_params__),
     __dict__=GetSetProperty(type_get_dict),
     __doc__ = GetSetProperty(descr__doc, descr_set__doc, cls=W_TypeObject, name='__doc__'),
     __text_signature__=GetSetProperty(type_get_text_signature),
