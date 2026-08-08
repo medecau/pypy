@@ -1099,10 +1099,11 @@ def descr_set__type_params__(space, w_type, w_value):
     if not w_type.is_heaptype():
         raise oefmt(space.w_TypeError,
                     "can't set %N.__type_params__", w_type)
-    if not space.isinstance_w(w_value, space.w_tuple):
-        raise oefmt(space.w_TypeError,
-                    "__type_params__ must be set to a tuple")
-    w_type.dict_w['__type_params__'] = w_value
+    # NB: no type check.  CPython stores whatever it is given here -- see
+    # test_builtin's test_type_typeparams, which sets it to a string and
+    # reads it back unchanged.  Only deleting it is refused, which falls out
+    # of there being no deleter on the descriptor.
+    w_type.setdictvalue(space, '__type_params__', w_value)
 
 def descr_mro(space, w_type):
     """Return a type's method resolution order."""

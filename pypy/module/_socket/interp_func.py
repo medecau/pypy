@@ -314,7 +314,12 @@ def getaddrinfo(space, w_host, w_port,
     if space.is_w(w_port, space.w_None):
         port = None
     elif space.isinstance_w(w_port, space.w_int):
-        port = str(space.int_w(w_port))
+        # 3.12: don't push the value through a C long.  An out-of-range port
+        # is not an OverflowError any more, it is passed on as a string and
+        # left for the platform's getaddrinfo to reject (test_socket's
+        # test_getaddrinfo_int_port_overflow).  space.int() keeps bools
+        # rendering as "1"/"0" the way they did before.
+        port = space.text_w(space.str(space.int(w_port)))
     elif space.isinstance_w(w_port, space.w_bytes):
         port = space.bytes_w(w_port)
     elif space.isinstance_w(w_port, space.w_unicode):

@@ -962,10 +962,12 @@ def tee(space, w_iterable, n=2):
         # We just rely on doing repeated __copy__().  This case
         # includes the situation where w_iterable is already
         # a W_TeeIterable itself.
+        # gh-123884: every result is a fresh copy, including the first.
+        # Handing back w_iterator itself made tee(a) share an object with
+        # its argument, so nested tee()s did not yield independent
+        # iterators (test_itertools' test_tee).
         iterators_w = [None] * n
-        if n > 0:
-            iterators_w[0] = w_iterator
-        for i in range(1, n):
+        for i in range(n):
             iterators_w[i] = space.call_method(w_iterator, "__copy__")
     else:
         w_chained_list = W_TeeChainedListNode(space)

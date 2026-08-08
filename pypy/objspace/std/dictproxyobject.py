@@ -41,6 +41,12 @@ class W_DictProxyObject(W_Root):
     def descr_iter(self, space):
         return space.iter(self.w_mapping)
 
+    def descr_hash(self, space):
+        # 3.12 (gh-87995): a mappingproxy hashes as whatever it wraps, so it
+        # is hashable exactly when the underlying mapping is.  A proxy over a
+        # plain dict still raises TypeError, via the dict.
+        return space.hash(self.w_mapping)
+
     def descr_str(self, space):
         return space.str(self.w_mapping)
 
@@ -108,6 +114,7 @@ W_DictProxyObject.typedef = TypeDef(
     __getitem__=interp2app(W_DictProxyObject.descr_getitem),
     __contains__=interp2app(W_DictProxyObject.descr_contains),
     __iter__=interp2app(W_DictProxyObject.descr_iter),
+    __hash__=interp2app(W_DictProxyObject.descr_hash),
     __str__=interp2app(W_DictProxyObject.descr_str),
     __repr__=interp2app(W_DictProxyObject.descr_repr),
     __or__=interp2app(W_DictProxyObject.descr_or),
