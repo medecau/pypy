@@ -66,6 +66,9 @@ class Scope(object):
         self._in_try_body_depth = 0
         self.comp_iter_target = False
         self.comp_iter_expr = 0
+        # first global/nonlocal statement per name, for error reporting
+        # (CPython's ste_directives / error_at_directive)
+        self.directives = {}
 
     def error(self, msg, ast_node):
         if ast_node is None:
@@ -128,6 +131,17 @@ class Scope(object):
     def note_try_end(self, try_node):
         """Called after visiting a try body."""
         self._in_try_body_depth -= 1
+
+    def note_directive(self, name, node):
+        """Remember the first global/nonlocal statement naming 'name'."""
+        if name not in self.directives:
+            self.directives[name] = node
+
+    def directive_node(self, name, default):
+        node = self.directives.get(name, None)
+        if node is None:
+            return default
+        return node
 
     def note_yield(self, yield_node):
         """Called when a yield is found."""
@@ -714,6 +728,7 @@ class SymtableBuilder(ast.GenericASTVisitor):
     def visit_Global(self, glob):
         for name in glob.names:
             old_role = self.scope.lookup_role(name)
+            self.scope.note_directive(name, glob)
             if (self.scope._hide_bound_from_nested_scopes and
                    name == '__class__'):
                 msg = ("'global __class__' inside a class statement is not "
@@ -724,7 +739,7 @@ class SymtableBuilder(ast.GenericASTVisitor):
                 self.error(msg, glob)
             if old_role & SYM_NONLOCAL:
                 msg = "name '%s' is nonlocal and global" % (name,)
-                self.error(msg, glob)
+                self.error(msg, self.scope.directive_node(name, glob))
 
             if old_role & (SYM_USED | SYM_ASSIGNED | SYM_ANNOTATED):
                 if old_role & SYM_ASSIGNED:
@@ -742,9 +757,13 @@ class SymtableBuilder(ast.GenericASTVisitor):
     def visit_Nonlocal(self, nonl):
         for name in nonl.names:
             old_role = self.scope.lookup_role(name)
+            self.scope.note_directive(name, nonl)
+            error_node = nonl
             msg = ""
             if old_role & SYM_GLOBAL:
                 msg = "name '%s' is nonlocal and global" % (name,)
+                # CPython reports this at the first directive for the name
+                error_node = self.scope.directive_node(name, nonl)
             if old_role & SYM_PARAM:
                 msg = "name '%s' is parameter and nonlocal" % (name,)
             if isinstance(self.scope, ModuleScope):
@@ -753,7 +772,7 @@ class SymtableBuilder(ast.GenericASTVisitor):
                 msg = "annotated name '%s' can't be nonlocal" \
                     % (name,)
             if msg is not "":
-                self.error(msg, nonl)
+                self.error(msg, error_node)
 
             if (old_role & (SYM_USED | SYM_ASSIGNED) and not
                     (name == '__class__' and
