@@ -194,18 +194,36 @@ class W_Property(W_Root):
         self.w_fget = w_fget
         self.w_fset = w_fset
         self.w_fdel = w_fdel
-        self.w_doc = w_doc
         self.getter_doc = False
-        # our __doc__ comes from the getter if we don't have an explicit one
-        if (space.is_w(self.w_doc, space.w_None) and
+        w_prop_doc = w_doc
+        # our __doc__ comes from the getter if we don't have an explicit one.
+        # An undocumented getter (__doc__ is None) does not count -- see
+        # test_property's case 5, where a doc assigned afterwards survives
+        # being copied precisely because getter_doc stayed false.
+        if (space.is_w(w_prop_doc, space.w_None) and
             not space.is_w(self.w_fget, space.w_None)):
             w_getter_doc = space.findattr(self.w_fget, space.newtext('__doc__'))
-            if w_getter_doc is not None:
-                if type(self) is W_Property:
-                    self.w_doc = w_getter_doc
-                else:
-                    space.setattr(self, space.newtext('__doc__'), w_getter_doc)
+            if (w_getter_doc is not None and
+                    not space.is_w(w_getter_doc, space.w_None)):
+                w_prop_doc = w_getter_doc
                 self.getter_doc = True
+        if type(self) is W_Property:
+            self.w_doc = w_prop_doc
+        else:
+            # For a property subclass __doc__ goes into the instance dict
+            # instead: the subclass's own class docstring sits in its type
+            # dict and would otherwise shadow the descriptor.  3.12
+            # (gh-98963) made a read-only __doc__ -- a subclass using
+            # __slots__ without a '__doc__' slot -- silently drop the doc
+            # rather than raise.  A doc taken from the getter still raises,
+            # which is the historical behaviour the tests pin down.
+            self.w_doc = space.w_None
+            try:
+                space.setattr(self, space.newtext('__doc__'), w_prop_doc)
+            except OperationError as e:
+                if (self.getter_doc or
+                        not e.match(space, space.w_AttributeError)):
+                    raise
 
     def _properror(self, space, w_obj, kind):
         qualname = space.type(w_obj).qualname
@@ -254,8 +272,11 @@ class W_Property(W_Root):
         return self.w_doc
 
     def set_doc(self, space, w_doc):
+        # NB: does not clear getter_doc.  CPython exposes __doc__ as a plain
+        # member, so assigning to it has no effect on whether a later
+        # .getter()/.setter() copy re-derives the doc from its new getter
+        # (test_property's test_docstring_copy2, cases 4 and 5).
         self.w_doc = w_doc
-        self.getter_doc = False
 
     def _copy(self, space, w_getter=None, w_setter=None, w_deleter=None):
         if w_getter is None:
