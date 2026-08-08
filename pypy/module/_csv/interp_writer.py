@@ -63,6 +63,12 @@ class W_Writer(W_Root):
                     if e.async(space):
                         raise
                     quoted = True
+            elif dialect.quoting == QUOTE_STRINGS:
+                # 3.12: quote only str fields
+                quoted = space.isinstance_w(w_field, space.w_unicode)
+            elif dialect.quoting == QUOTE_NOTNULL:
+                # 3.12: quote everything except None
+                quoted = not space.is_w(w_field, space.w_None)
             elif dialect.quoting == QUOTE_ALL:
                 quoted = True
             elif dialect.quoting == QUOTE_MINIMAL:
@@ -83,7 +89,13 @@ class W_Writer(W_Root):
                 quoted = False
             if len(field) == 0:
                 if dialect.delimiter == ord(' ') and dialect.skipinitialspace:
-                    if dialect.quoting == QUOTE_NONE:
+                    # 3.12: a None field under QUOTE_STRINGS/QUOTE_NOTNULL is
+                    # written unquoted, so it hits the same ambiguity as
+                    # QUOTE_NONE
+                    if (dialect.quoting == QUOTE_NONE or
+                            (space.is_w(w_field, space.w_None) and
+                             (dialect.quoting == QUOTE_STRINGS or
+                              dialect.quoting == QUOTE_NOTNULL))):
                         raise self.error(
                              "empty field must be quoted if delimiter is a space "
                              "and skipinitialspace is true")

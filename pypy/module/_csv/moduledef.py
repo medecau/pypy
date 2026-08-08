@@ -76,6 +76,8 @@ SETTINGS:
         'QUOTE_MINIMAL':    'space.wrap(interp_csv.QUOTE_MINIMAL)',
         'QUOTE_ALL':        'space.wrap(interp_csv.QUOTE_ALL)',
         'QUOTE_NONNUMERIC': 'space.wrap(interp_csv.QUOTE_NONNUMERIC)',
+        'QUOTE_STRINGS': 'space.wrap(interp_csv.QUOTE_STRINGS)',
+        'QUOTE_NOTNULL': 'space.wrap(interp_csv.QUOTE_NOTNULL)',
         'QUOTE_NONE':       'space.wrap(interp_csv.QUOTE_NONE)',
 
         'Dialect': 'interp_csv.W_Dialect',

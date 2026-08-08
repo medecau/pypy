@@ -8,7 +8,8 @@ from pypy.interpreter.typedef import TypeDef, interp2app
 from pypy.interpreter.typedef import interp_attrproperty_w, interp_attrproperty
 from pypy.module._csv.interp_csv import _build_dialect
 from pypy.module._csv.interp_csv import (QUOTE_MINIMAL, QUOTE_ALL,
-                                         QUOTE_NONNUMERIC, QUOTE_NONE)
+                                         QUOTE_NONNUMERIC, QUOTE_NONE,
+                                         QUOTE_STRINGS, QUOTE_NOTNULL)
 
 (START_RECORD, START_FIELD, ESCAPED_CHAR, IN_FIELD,
  IN_QUOTED_FIELD, ESCAPE_IN_QUOTED_FIELD, QUOTE_IN_QUOTED_FIELD,
