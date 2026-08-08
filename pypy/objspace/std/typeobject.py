@@ -1088,8 +1088,11 @@ def descr_get__type_params__(space, w_type):
         # cases PyType_Type the same way); functools.update_wrapper copies
         # this attribute and requires a tuple
         return space.newtuple([])
-    # Look up __type_params__ in the type's dict
-    w_result = w_type.dict_w.get('__type_params__', None)
+    # NB: getdictvalue, not a bare dict_w lookup.  Values written through
+    # setdictvalue can be stored inside a MutableCell, and handing that cell
+    # out as the attribute value corrupts things badly -- see the segfault
+    # described in descr_set__type_params__ below.
+    w_result = w_type.getdictvalue(space, '__type_params__')
     if w_result is None:
         return space.newtuple([])  # Default is empty tuple
     return w_result
@@ -1103,6 +1106,16 @@ def descr_set__type_params__(space, w_type, w_value):
     # test_builtin's test_type_typeparams, which sets it to a string and
     # reads it back unchanged.  Only deleting it is refused, which falls out
     # of there being no deleter on the descriptor.
+    #
+    # setdictvalue (rather than assigning w_type.dict_w directly) is what
+    # keeps the type's caches coherent, but it also means the value may end
+    # up inside a MutableCell: write_cell only wraps when the attribute
+    # already exists, which for __type_params__ is exactly the PEP 695
+    # generic-class case.  The getter above must therefore unwrap.  Reading
+    # the cell out raw segfaulted on three lines of plain Python:
+    #     class C[A]: pass
+    #     C.__type_params__ = ()
+    #     repr(C.__type_params__)
     w_type.setdictvalue(space, '__type_params__', w_value)
 
 def descr_mro(space, w_type):
