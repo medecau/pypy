@@ -51,6 +51,13 @@ class W_AbstractIntObject(W_Root):
         y = space.bigint_w(w_other, allow_conversion=False)
         return x.eq(y)
 
+    def descr_is_integer(self, space):
+        """Returns True.  Exists for duck type compatibility with float.is_integer."""
+        # 3.12 addition; the answer does not depend on the representation,
+        # so this is shared by the machine-int and bigint implementations
+        # rather than being dispatched like bit_length/bit_count.
+        return space.w_True
+
     def immutable_unique_id(self, space):
         if self.user_overridden_class:
             return None
@@ -1149,6 +1156,7 @@ Base 0 means to interpret the base from the string as an integer literal.
     conjugate = interpindirect2app(W_AbstractIntObject.descr_conjugate),
     bit_length = interpindirect2app(W_AbstractIntObject.descr_bit_length),
     bit_count = interpindirect2app(W_AbstractIntObject.descr_bit_count),
+    is_integer = interp2app(W_AbstractIntObject.descr_is_integer),
     __format__ = interpindirect2app(W_AbstractIntObject.descr_format),
     __hash__ = interpindirect2app(W_AbstractIntObject.descr_hash),
     __getnewargs__ = interpindirect2app(W_AbstractIntObject.descr_getnewargs),
