@@ -710,7 +710,9 @@ class W_LongRangeIterator(W_AbstractRangeIterator):
         w_mod = space.getbuiltinmodule('_pickle_support')
         mod = space.interp_w(MixedModule, w_mod)
         w_args = space.newtuple([self.w_start, self.w_step, self.w_len, self.w_index])
-        return space.newtuple([mod.get('longrangeiter_new'), w_args, self.w_index])
+        # state 0: as above, the args already carry the index
+        return space.newtuple([mod.get('longrangeiter_new'), w_args,
+                               space.newint(0)])
 
     def descr_setstate(self, space, w_index):
         # relative to the current position, as for the int iterators
@@ -751,7 +753,12 @@ class W_IntRangeIterator(W_AbstractRangeIterator):
         nt = space.newtuple
 
         tup = [space.newint(self.current), self.get_remaining(space), space.newint(self.step)]
-        return nt([new_inst, nt(tup), self.get_remaining(space)])
+        # The args above already restore the position completely, so the
+        # pickle state has nothing left to do.  It used to be the remaining
+        # count, which paired with a __setstate__ that *set* that count;
+        # __setstate__ now advances instead (as CPython's does), so passing
+        # anything non-zero here would skip that many items on unpickling.
+        return nt([new_inst, nt(tup), space.newint(0)])
 
     def get_remaining(self, space):
         return space.newint(self.remaining)
