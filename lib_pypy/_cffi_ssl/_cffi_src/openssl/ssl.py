@@ -573,6 +573,7 @@ int SSL_CTX_set_min_proto_version(SSL_CTX *ctx, int version);
 int SSL_CTX_set_max_proto_version(SSL_CTX *ctx, int version);
 int SSL_CTX_get_min_proto_version(SSL_CTX *ctx);
 int SSL_CTX_get_max_proto_version(SSL_CTX *ctx);
+int SSL_CTX_get_security_level(const SSL_CTX *ctx);
 
 int SSL_set_min_proto_version(SSL *ssl, int version);
 int SSL_set_max_proto_version(SSL *ssl, int version);

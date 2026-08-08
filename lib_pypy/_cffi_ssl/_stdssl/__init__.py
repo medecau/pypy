@@ -1417,6 +1417,11 @@ class _SSLContext(object):
         @maximum_version.setter
         def maximum_version(self, arg):
             return self.set_min_max_proto_version(arg, 1);
+
+    @property
+    def security_level(self):
+        """The current security level"""
+        return lib.SSL_CTX_get_security_level(self.ctx)
          
 
     @property
