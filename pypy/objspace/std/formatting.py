@@ -14,6 +14,13 @@ from pypy.interpreter.error import OperationError, oefmt
 
 
 class BaseStringFormatter(object):
+    # How the %i conversion names itself when it has to complain about its
+    # argument.  CPython's bytesobject maps 'i' to 'd' there while
+    # unicodeobject reports it literally, so b'%i' % 3j says "%d format: a
+    # real number is required" but '%i' % 3j says "%i format: ...".  Both
+    # leave 'u' alone.  The bytes subclass overrides this below.
+    _fmt_i_for_error = "%i"
+
     def __init__(self, space, values_w, w_valuedict):
         self.space = space
         self.fmtpos = 0
@@ -64,10 +71,8 @@ class BaseStringFormatter(object):
 
     def fmt_i(self, w_value):
         "i% formatting"
-        # CPython reports this conversion as %d -- it maps 'i' to 'd' when
-        # building the message, though it leaves 'u' alone (test_bytes'
-        # test_mod expects '%d format: ...' for both b'%i' and b'%d')
-        r = int_num_helper(self.space, w_value, fmt_for_error="%d")
+        r = int_num_helper(self.space, w_value,
+                           fmt_for_error=self._fmt_i_for_error)
         self.std_wp_int(r)
 
     def fmt_u(self, w_value):
@@ -159,6 +164,9 @@ def make_formatter_subclass(do_unicode):
     # each one getting its own subtle differences and RPython types.
 
     class StringFormatter(BaseStringFormatter):
+        if not do_unicode:
+            _fmt_i_for_error = "%d"      # see BaseStringFormatter
+
         def __init__(self, space, fmt, values_w, w_valuedict):
             BaseStringFormatter.__init__(self, space, values_w, w_valuedict)
             self.fmt = fmt    # always a string, if unicode, utf8 encoded
