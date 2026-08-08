@@ -118,7 +118,20 @@ class OrderedDict(dict):
 
         '''
         if isinstance(other, OrderedDict):
-            return dict.__eq__(self, other) and all(map(_eq, self, other))
+            # gh-119004: a key whose __eq__ mutates the dict is detected
+            # during this comparison, and CPython reports it with
+            # OrderedDict's own wording rather than the plain dict one --
+            # its odict_richcompare walks the ordered linked list and
+            # notices the state change.  Either half can notice it here, so
+            # both are covered.  Only the size-change error is rewritten; a
+            # RuntimeError raised by the user's own __eq__ propagates as-is.
+            try:
+                return dict.__eq__(self, other) and all(map(_eq, self, other))
+            except RuntimeError as e:
+                if 'changed size during iteration' in str(e):
+                    raise RuntimeError(
+                        "OrderedDict mutated during iteration") from None
+                raise
         return dict.__eq__(self, other)
 
     def __or__(self, other):
