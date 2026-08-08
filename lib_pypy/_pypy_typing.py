@@ -338,7 +338,25 @@ class TypeVarTuple(_Immutable, _PickleUsingNameMixin):
         raise TypeError("Cannot subclass an instance of TypeVarTuple")
 
 
-class TypeAliasType(_PickleUsingNameMixin):
+class _ImmutableTypeMeta(type):
+    """Refuse attribute assignment on the class itself.
+
+    CPython's TypeAliasType is a static C type, so setting or deleting an
+    attribute on the class -- as opposed to on an alias -- is a TypeError.
+    Ours is an ordinary Python class, which is writable by default.  The
+    wording matches CPython's, which builds it from the type's tp_name.
+    """
+
+    def __setattr__(cls, name, value):
+        raise TypeError("cannot set %r attribute of immutable type '%s.%s'"
+                        % (name, cls.__module__, cls.__qualname__))
+
+    def __delattr__(cls, name):
+        raise TypeError("cannot delete %r attribute of immutable type '%s.%s'"
+                        % (name, cls.__module__, cls.__qualname__))
+
+
+class TypeAliasType(_PickleUsingNameMixin, metaclass=_ImmutableTypeMeta):
     """Runtime representation of a type alias created with PEP 695 syntax.
 
     The __value__ is lazily evaluated - the evaluate_func is called
@@ -350,6 +368,10 @@ class TypeAliasType(_PickleUsingNameMixin):
         # Point is a TypeAliasType with __name__ = 'Point'
         # and __value__ = tuple[float, float]
     """
+
+    # Set here rather than by typing.py's fixup loop, which assigns to the
+    # class and so is refused by the metaclass above.
+    __module__ = 'typing'
 
     def __init__(self, name, value, *, type_params=()):
         """Initialize a TypeAliasType.

@@ -59,8 +59,10 @@ from _pypy_typing import (
     Generic,
 )
 # Fix __module__ so these appear as typing.X, not _pypy_typing.X
+# NB: TypeAliasType is not in this list -- it refuses attribute assignment
+# on the class, as CPython's static type does, and sets __module__ itself.
 for _cls in (TypeVar, ParamSpec, TypeVarTuple, ParamSpecArgs,
-             ParamSpecKwargs, TypeAliasType, Generic):
+             ParamSpecKwargs, Generic):
     _cls.__module__ = __name__
 del _cls
 
