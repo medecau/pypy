@@ -145,10 +145,15 @@ def unpackcomplex(space, w_complex, allow_subclass=False, firstarg=True):
         return (w_complex.realval, w_complex.imagval)
     #
     # test for a '__complex__' method, and call it if found.
+    # 3.12 stopped consulting __complex__ for complex()'s *second* argument:
+    # that one has to be an actual number.  A real complex (or a subclass of
+    # one) is still fine -- it is handled above -- so this only rejects
+    # objects whose only claim to being a number is __complex__.
     w_z = None
-    w_method = space.lookup(w_complex, '__complex__')
-    if w_method is not None:
-        w_z = space.get_and_call_function(w_method, w_complex)
+    if firstarg:
+        w_method = space.lookup(w_complex, '__complex__')
+        if w_method is not None:
+            w_z = space.get_and_call_function(w_method, w_complex)
     #
     if w_z is not None:
         # __complex__() must return a complex

@@ -168,4 +168,15 @@ function).  Note that classes are callable."""
 @unwrap_spec(w_format_spec = WrappedDefault(u""))
 def format(space, w_obj, w_format_spec):
     """Format a obj according to format_spec"""
+    # CPython checks the spec here rather than leaving it to __format__, so
+    # the error is the same whatever is being formatted.  Without this, only
+    # types whose __format__ unwraps a str rejected a bad spec, and anything
+    # with a Python-level __format__ -- Fraction, say -- silently accepted
+    # it (test_fractions' test_invalid_formats).
+    if not space.isinstance_w(w_format_spec, space.w_unicode):
+        if space.is_w(w_format_spec, space.w_None):
+            raise oefmt(space.w_TypeError,
+                        "format() argument 2 must be str, not None")
+        raise oefmt(space.w_TypeError,
+                    "format() argument 2 must be str, not %T", w_format_spec)
     return space.format(w_obj, w_format_spec)
