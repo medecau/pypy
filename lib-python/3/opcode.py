@@ -4,9 +4,10 @@ opcode module - potentially shared between dis and other modules which
 operate on bytecodes (e.g. peephole optimizers).
 """
 
-__all__ = ["cmp_op", "hasconst", "hasname", "hasjrel", "hasjabs",
-           "haslocal", "hascompare", "hasfree", "opname", "opmap",
-           "HAVE_ARGUMENT", "EXTENDED_ARG", "hasnargs"]
+__all__ = ["cmp_op", "hasarg", "hasconst", "hasname", "hasjrel", "hasjabs",
+           "haslocal", "hascompare", "hasfree", "hasexc", "opname", "opmap",
+           "HAVE_ARGUMENT", "EXTENDED_ARG", "hasnargs",
+           "MIN_INSTRUMENTED_OPCODE"]
 
 # It's a chicken-and-egg I'm afraid:
 # We're imported before _opcode's made.
@@ -31,6 +32,20 @@ haslocal = []
 hascompare = []
 hasfree = []
 hasnargs = [] # unused
+
+# 3.12 exposes these two through dis.  PyPy still uses the classic
+# HAVE_ARGUMENT threshold, so hasarg is filled in below once opmap is
+# complete rather than tracked per def_op.
+hasarg = []
+# CPython lists the opcodes that push an exception handler here.  PyPy's
+# handler-pushing opcodes (SETUP_FINALLY, SETUP_EXCEPT, SETUP_WITH,
+# SETUP_ASYNC_WITH) are all relative jumps and so are already in hasjrel,
+# which is what consumers pair this list with.
+hasexc = []
+# CPython reserves the opcodes from here up for the instrumented variants
+# its specialising interpreter swaps in.  PyPy has none, so nothing is
+# above the range of real opcodes.
+MIN_INSTRUMENTED_OPCODE = 256
 
 opmap = {}
 opname = ['<%r>' % (op,) for op in range(256)]
@@ -436,3 +451,5 @@ _cache_format = {
 #]
 
 _inline_cache_entries = [0] * 256 # pypy has no inline caches
+
+hasarg.extend(op for op in opmap.values() if op >= HAVE_ARGUMENT)
