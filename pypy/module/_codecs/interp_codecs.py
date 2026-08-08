@@ -569,10 +569,23 @@ def register_builtin_error_handlers(space):
 
 
 def _wrap_codec_error(space, operr, action, encoding):
-    # Note that UnicodeErrors are not wrapped and returned as is,
-    # "thanks to" a limitation of try_set_from_cause.
+    from pypy.module.exceptions.interp_exceptions import W_BaseException
+    # 3.11 stopped rewriting the failing exception's message ("decoding with
+    # 'x' codec failed (Error: ...)") and records the context as a PEP 678
+    # note on the original exception instead -- CPython's _PyErr_FormatNote.
+    # The exception object, its type and its message all come through
+    # untouched now, whatever its args or attributes are.  That retires the
+    # old OperationError.try_set_from_cause helper, whose limitations were
+    # the reason some exceptions were left unwrapped; it is gone with this.
+    w_value = operr.normalize_exception(space)
+    if not isinstance(w_value, W_BaseException):
+        return operr
     message = "%s with '%s' codec failed" % (action, encoding)
-    return operr.try_set_from_cause(space, message)
+    try:
+        space.call_method(w_value, "add_note", space.newtext(message))
+    except OperationError:
+        pass    # a failure to annotate must not replace the real error
+    return operr
 
 def _call_codec(space, w_coder, w_obj, action, encoding, errors):
     try:

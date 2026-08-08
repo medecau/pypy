@@ -784,7 +784,12 @@ class AppTestPartialEvaluation:
         # Make sure the function was actually unregistered
         raises(LookupError, u"abc".encode, "test.mytestenc")
 
-    def test_codec_wrapped_exception(self):
+    def test_codec_exception_gets_a_note(self):
+        # 3.11 stopped rewriting the message of an exception raised by a
+        # codec and attaches a PEP 678 note instead, so the exception now
+        # arrives as the very object that was raised.  That also retires the
+        # old cases where wrapping was skipped because the exception had
+        # attributes or several args.
         import _codecs
         def search_function(encoding):
             def f(input, errors="strict"):
@@ -793,23 +798,30 @@ class AppTestPartialEvaluation:
                 return (f, f, None, None)
             return None
         _codecs.register(search_function)
-        to_raise = RuntimeError('should be wrapped')
+        to_raise = RuntimeError('should be noted')
         exc = raises(RuntimeError, b"hello".decode, "test.failingenc")
-        assert str(exc.value) == (
-            "decoding with 'test.failingenc' codec failed "
-            "(RuntimeError: should be wrapped)")
+        assert exc.value is to_raise
+        assert str(exc.value) == 'should be noted'
+        assert to_raise.__notes__ == [
+            "decoding with 'test.failingenc' codec failed"]
         exc = raises(RuntimeError, u"hello".encode, "test.failingenc")
-        assert str(exc.value) == (
-            "encoding with 'test.failingenc' codec failed "
-            "(RuntimeError: should be wrapped)")
+        assert exc.value is to_raise
+        assert to_raise.__notes__ == [
+            "decoding with 'test.failingenc' codec failed",
+            "encoding with 'test.failingenc' codec failed"]
         #
-        to_raise.attr = "don't wrap"
+        to_raise = RuntimeError('noted too')
+        to_raise.attr = "used to skip wrapping"
         exc = raises(RuntimeError, u"hello".encode, "test.failingenc")
-        assert exc.value == to_raise
+        assert exc.value is to_raise
+        assert to_raise.__notes__ == [
+            "encoding with 'test.failingenc' codec failed"]
         #
-        to_raise = RuntimeError("Should", "Not", "Wrap")
+        to_raise = RuntimeError("Several", "args")
         exc = raises(RuntimeError, u"hello".encode, "test.failingenc")
-        assert exc.value == to_raise
+        assert exc.value is to_raise
+        assert to_raise.__notes__ == [
+            "encoding with 'test.failingenc' codec failed"]
 
     def test_one_arg_encoder(self):
         import _codecs
