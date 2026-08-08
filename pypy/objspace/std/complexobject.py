@@ -546,6 +546,12 @@ class W_ComplexObject(W_Root):
                         "0.0 to a negative or complex power")
         except OverflowError:
             raise oefmt(space.w_OverflowError, "complex exponentiation")
+        if math.isinf(w_p.realval) or math.isinf(w_p.imagval):
+            # CPython's _Py_ADJUST_ERANGE2: an infinite component means the
+            # computation went out of range, whatever the inputs were, and
+            # complex_pow reports that as OverflowError.  The rule is about
+            # the *result* only -- (inf+0j) ** 1 raises there too.
+            raise oefmt(space.w_OverflowError, "complex exponentiation")
         return w_p
 
     @unwrap_spec(w_third_arg=WrappedDefault(None))
