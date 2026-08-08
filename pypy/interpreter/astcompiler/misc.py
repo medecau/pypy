@@ -49,7 +49,11 @@ def parse_future(space, tree, feature_flags):
                 else:
                     have_docstring = True
         elif isinstance(stmt, ast.ImportFrom):
-            if stmt.module == "__future__":
+            # NB: level 0 only.  'from .__future__ import x' is an ordinary
+            # relative import of a module that happens to be called
+            # __future__, not a future statement -- CPython's future_parse
+            # tests ImportFrom.level the same way.
+            if stmt.module == "__future__" and stmt.level == 0:
                 future_lineno = stmt.lineno
                 future_column = stmt.col_offset
                 for alias in stmt.names:
