@@ -858,6 +858,9 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         # self.emit_jump(ops.SETUP_LOOP, end)
         self.push_frame_block(F_FOR_LOOP, start, end)
         fr.iter.walkabout(self)
+        # PEP 657: GET_ITER/FOR_ITER belong to the iterable expression, not
+        # to the whole 'for' statement (test_iter test_exception_locations)
+        self.update_position(fr.iter)
         self.emit_op(ops.GET_ITER)
         self.use_next_block(start)
         self.emit_jump(ops.FOR_ITER, cleanup)
@@ -878,6 +881,7 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         b_end = self.new_block()
 
         fr.iter.walkabout(self)
+        self.update_position(fr.iter)   # PEP 657, as in visit_For
         self.emit_op(ops.GET_AITER)
 
         self.use_next_block(b_start)
@@ -2063,6 +2067,13 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         first_comp = node.get_generators()[0]
         assert isinstance(first_comp, ast.comprehension)
         first_comp.iter.walkabout(self)
+        # PEP 657: getting the iterator and running the comprehension are
+        # attributed to the outermost iterable expression, not to the whole
+        # comprehension, so a BrokenIter raising from __iter__ or __next__
+        # underlines just the iterable (test_listcomps/test_dictcomps/
+        # test_setcomps test_exception_locations).  walkabout above restores
+        # position_info to the comprehension node, so set it again here.
+        self.update_position(first_comp.iter)
         if first_comp.is_async:
             self.emit_op(ops.GET_AITER)
         else:
