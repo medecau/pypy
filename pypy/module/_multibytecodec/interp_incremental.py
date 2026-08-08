@@ -39,6 +39,16 @@ class MultibyteIncrementalBase(W_Root):
 
 
 class MultibyteIncrementalDecoder(MultibyteIncrementalBase):
+    # 'state' is only ever written by setstate(); without a default here it
+    # is read uninitialised by getstate(), which returned whatever happened
+    # to be in the field -- in practice leftover heap addresses, e.g.
+    # codecs.getincrementaldecoder('euc_jp')().getstate() giving
+    # (b'', 140261434065024).  Besides disclosing pointers, a value that
+    # happened to be negative made _pyio's TextIOWrapper.tell() build a
+    # negative seek cookie, which is the intermittent
+    # test_io.PyTextIOWrapperTest.test_multibyte_seek_and_tell failure.
+    # CPython returns 0 for a decoder that has not had setstate() called.
+    state = 0
 
     def _initialize(self):
         self.decodebuf = c_codecs.pypy_cjk_dec_new(self.codec)
