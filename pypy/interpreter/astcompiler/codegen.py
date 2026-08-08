@@ -1669,10 +1669,20 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
                     operator, replacement = "is", "=="
                 else:
                     operator, replacement = "is not", "!="
+                # Name the literal's type, as CPython does.  When both sides
+                # are literals it reports the left one.
+                if self._is_literal(left):
+                    literal = left
+                else:
+                    literal = right
+                # _is_literal only says yes for ast.Constant, but the
+                # annotator cannot see that through the call.
+                assert isinstance(literal, ast.Constant)
+                typename = self.space.type(literal.value).name
                 misc.syntax_warning(
                     self.space,
-                    '"%s" with a literal. Did you mean "%s"?'
-                    % (operator, replacement),
+                    '"%s" with \'%s\' literal. Did you mean "%s"?'
+                    % (operator, typename, replacement),
                     self.compile_info.filename,
                     node.lineno,
                     node.col_offset
