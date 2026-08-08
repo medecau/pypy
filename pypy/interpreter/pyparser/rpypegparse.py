@@ -5940,7 +5940,7 @@ class PythonParser(Parser):
         a = self.expression()
         if a:
             if self.negative_lookahead(PythonParser.expect_type, 14):
-                return self . _raise_syntax_error ( "':' expected after dictionary key" , a . lineno , a . col_offset - 1 , a . end_lineno , a . end_col_offset - 1 , )
+                return self . _raise_syntax_error ( "':' expected after dictionary key" , a . lineno , a . end_col_offset - 1 , a . end_lineno , - 1 , )
         self._index = mark
         expression = self.expression()
         if expression:

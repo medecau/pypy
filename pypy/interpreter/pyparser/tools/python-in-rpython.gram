@@ -1701,8 +1701,11 @@ invalid_kvpair[None]:
     | a=expression !(':') {
         self._raise_syntax_error(
             "':' expected after dictionary key",
-            a.lineno, a.col_offset - 1,
-            a.end_lineno, a.end_col_offset - 1,
+            # CPython anchors this at the END of the key expression
+            # (RAISE_ERROR_KNOWN_LOCATION with a->end_col_offset - 1) and
+            # leaves the end column unset
+            a.lineno, a.end_col_offset - 1,
+            a.end_lineno, -1,
         )
      }
     | expression ':' a='*' bitwise_or {
