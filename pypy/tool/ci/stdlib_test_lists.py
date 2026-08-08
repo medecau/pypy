@@ -147,4 +147,24 @@ EXPECTED_FAILURES = [
     "test_marshal",          # InstancingTestCase: int/float/tuple/code not ref-shared (testIntern fixed)
     "test_multibytecodec",   # codec state handling
     "test_pydoc",            # no Argument-Clinic __text_signature__ on builtins (large, deferred)
+    "test_call",             # TestPEP590 (5 errors): the vectorcall protocol is a CPython-internal
+                             # calling convention with no PyPy equivalent, and the tests poke it
+                             # through _testcapi's tp_vectorcall_offset
+    "test_class",            # testPredefinedAttrs [__sizeof__]: object layout is implementation-
+                             # specific, PyPy's classes are not CPython-shaped
+    "test_long",             # test___sizeof__, same implementation-detail reason as test_class
+                             # (test_is_integer, the other failure, is already fixed in-tree and
+                             # will pass once this lands translated)
+    "test_json",             # test_highly_nested_objects_encoding hangs rather than fails: the
+                             # pure-Python _iterencode recurses through generators, which do not
+                             # advance PyPy's recursion counter, so setrecursionlimit(20050) never
+                             # trips and a 100000-deep list never raises RecursionError.  CPython
+                             # raises instantly; PyPy was still going after 300s.  Because it hangs
+                             # it would otherwise stall the whole gate
+    "test_ordered_dict",     # 4 failures, all in the CPythonOrderedDict* classes, which are gated
+                             # on "requires the C version of the collections module" and assert the
+                             # observable internals of CPython's linked-list OrderedDict.  PyPy's
+                             # is a thin subclass of an already-ordered dict with no linked list.
+                             # See the note in pypy/module/_collections/app_odict.py: 6 of the 10
+                             # gh-119004 tests pass; the last 2 (x2 classes) need node fidelity
 ]

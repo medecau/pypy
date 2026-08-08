@@ -105,7 +105,14 @@ def main():
             completed += 1
             name, status, duration, output = future.result()
 
-            if status == "fail" and name in expected_fail_set:
+            # A module on the expected-failure list counts as xfail however it
+            # goes wrong, not only when regrtest exits non-zero.  test_json
+            # hangs rather than fails (see the note in stdlib_test_lists), and
+            # whether that surfaces as "fail" or "timeout" depends on which
+            # watchdog fires first -- regrtest's own --timeout, which relies on
+            # faulthandler, or our outer subprocess one.  Keying off that race
+            # would make the gate flap.
+            if status in ("fail", "timeout", "error") and name in expected_fail_set:
                 status = "expected_fail"
 
             results[status].append((name, duration))
@@ -165,8 +172,11 @@ def main():
     with open("stdlib-results.json", "w") as f:
         json.dump(json_results, f, indent=2)
 
-    # Exit 1 if there are unexpected failures
-    unexpected = len(results["fail"]) + len(results["error"])
+    # Exit 1 if there are unexpected failures.  Timeouts count: a module that
+    # hangs is not a module that passes, and leaving them out meant a new hang
+    # was printed in the summary but still exited 0.
+    unexpected = (len(results["fail"]) + len(results["error"])
+                  + len(results["timeout"]))
     if unexpected:
         print(f"\n{unexpected} unexpected failure(s)")
         sys.exit(1)

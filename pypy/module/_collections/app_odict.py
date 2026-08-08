@@ -125,6 +125,24 @@ class OrderedDict(dict):
             # notices the state change.  Either half can notice it here, so
             # both are covered.  Only the size-change error is rewritten; a
             # RuntimeError raised by the user's own __eq__ propagates as-is.
+            #
+            # This gets 6 of the 10 gh-119004 tests in test_ordered_dict.  The
+            # other 4 (2 test names x CPythonOrderedDictTests and its subclass
+            # variant) want the observable internals of CPython's linked list,
+            # which PyPy does not have -- our order is a property of the dict
+            # itself, so there are no nodes to invalidate:
+            #
+            #  - change_linked_list_by_delete_key deletes one key and adds
+            #    another, leaving the size unchanged.  CPython notices because
+            #    the walk's node was unlinked; our only mutation signal is the
+            #    size counter, so we do not raise where CPython does.
+            #  - change_size_by_delete_key_in_dict_eq fires its side effect
+            #    inside dict.__eq__ itself.  CPython's dict_equal has no
+            #    mutation guard there and just returns a result; PyPy's
+            #    interp-level comparison raises.  Matching would mean making
+            #    every dict == tolerate mutation mid-comparison.
+            #
+            # test_ordered_dict is on EXPECTED_FAILURES for those 4.
             try:
                 return dict.__eq__(self, other) and all(map(_eq, self, other))
             except RuntimeError as e:
