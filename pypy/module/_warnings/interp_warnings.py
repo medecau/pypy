@@ -372,7 +372,12 @@ def do_warn_explicit(space, w_category, w_message, context_w,
     space.call_function(w_show_fn, w_msg)
 
 
-@unwrap_spec(stacklevel=int)
+# NB: WrappedDefault, not a bare None.  A keyword-only argument's default is
+# stored in a wrapped dict (Function.init_kwdefaults_dict does
+# space.setitem), so an interp-level None cannot go there and the argument
+# comes out with no default at all -- 'warn() missing 1 required keyword-only
+# argument' at translation time.  Positional w_ arguments do take a bare None.
+@unwrap_spec(stacklevel=int, w_skip_file_prefixes=WrappedDefault(None))
 def warn(space, w_message, w_category=None, stacklevel=1, w_source=None,
          __kwonly__=None, w_skip_file_prefixes=None):
     "Issue a warning, or maybe ignore it or raise an exception."
@@ -391,7 +396,10 @@ def _unpack_skip_file_prefixes(space, w_prefixes):
     CPython insists on a tuple of str here rather than any sequence, for the
     sake of the C implementation, and reports either mistake as TypeError.
     """
-    if w_prefixes is None:
+    # Not given at all arrives as w_None, per the WrappedDefault above.
+    # CPython defaults this to an empty tuple and so rejects an explicit
+    # None; we cannot tell the two apart, and treat both as 'no prefixes'.
+    if w_prefixes is None or space.is_none(w_prefixes):
         return None
     if not space.isinstance_w(w_prefixes, space.w_tuple):
         raise oefmt(space.w_TypeError,
