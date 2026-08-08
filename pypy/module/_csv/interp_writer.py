@@ -6,7 +6,8 @@ from pypy.interpreter.typedef import TypeDef, interp2app
 from pypy.interpreter.typedef import interp_attrproperty_w
 from pypy.module._csv.interp_csv import _build_dialect, NOT_SET
 from pypy.module._csv.interp_csv import (QUOTE_MINIMAL, QUOTE_ALL,
-                                         QUOTE_NONNUMERIC, QUOTE_NONE)
+                                         QUOTE_NONNUMERIC, QUOTE_NONE,
+                                         QUOTE_STRINGS, QUOTE_NOTNULL)
 
 
 class W_Writer(W_Root):
