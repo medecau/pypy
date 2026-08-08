@@ -120,6 +120,15 @@ class W_SliceObject(W_Root):
             space.text_w(space.repr(self.w_stop)),
             space.text_w(space.repr(self.w_step))))
 
+    def descr_hash(self, space):
+        # 3.12 (gh-101264) made slices hashable.  CPython perturbs the
+        # components rather than hashing the plain tuple, but the exact
+        # value is an implementation detail; what matters is that equal
+        # slices hash equal and that an unhashable component still raises
+        # TypeError, which hashing the tuple gives us for free.
+        return space.hash(
+            space.newtuple([self.w_start, self.w_stop, self.w_step]))
+
     def descr__reduce__(self, space):
         from pypy.objspace.std.sliceobject import W_SliceObject
         assert isinstance(self, W_SliceObject)
@@ -202,7 +211,7 @@ W_SliceObject.typedef = TypeDef("slice",
 Create a slice object.  This is used for extended slicing (e.g. a[0:10:2]).''',
     __new__ = gateway.interp2app(W_SliceObject.descr__new__),
     __repr__ = gateway.interp2app(W_SliceObject.descr_repr),
-    __hash__ = None,
+    __hash__ = gateway.interp2app(W_SliceObject.descr_hash),
     __reduce__ = gateway.interp2app(W_SliceObject.descr__reduce__),
 
     __eq__ = gateway.interp2app(W_SliceObject.descr_eq),
