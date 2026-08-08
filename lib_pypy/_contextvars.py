@@ -110,6 +110,11 @@ class ContextVar(metaclass=Unsubclassable):
     def __init__(self, name, *, default=_NO_DEFAULT):
         if not isinstance(name, str):
             raise TypeError("context variable name must be a str")
+        # gh-132002: CPython caches hash(name) when the variable is built, so
+        # a str subclass that is not hashable -- one defining __eq__ without
+        # __hash__ -- is rejected here rather than blowing up later.  We have
+        # no use for the cached value, but the check has to happen.
+        hash(name)
         self._name = name
         self._default = default
 
