@@ -180,11 +180,25 @@ def unpackcomplex(space, w_complex, allow_subclass=False, firstarg=True):
         imag = space.float(space.getattr(w_complex, space.newtext("imag")))
         return (space.float_w(real), space.float_w(imag))
     #
-    # Check that it is not a string (on which space.float() would succeed).
-    if (space.isinstance_w(w_complex, space.w_bytes) or
-        space.isinstance_w(w_complex, space.w_unicode)):
+    # Check that it is not a string (on which space.float() would succeed --
+    # float(b'1.5') parses, so bytes has to be caught here too).  CPython
+    # words the three cases differently.
+    if space.isinstance_w(w_complex, space.w_unicode):
+        if not firstarg:
+            raise oefmt(space.w_TypeError,
+                        "complex() second arg can't be a string")
         raise oefmt(space.w_TypeError,
-                    "complex number expected, got '%T'", w_complex)
+                    "complex() first argument must be a string or a number, "
+                    "not '%T'", w_complex)
+    if space.isinstance_w(w_complex, space.w_bytes):
+        # bytes gets the same wording as any other rejected type
+        if firstarg:
+            raise oefmt(space.w_TypeError,
+                        "complex() first argument must be a string or a "
+                        "number, not '%T'", w_complex)
+        raise oefmt(space.w_TypeError,
+                    "complex() second argument must be a number, not '%T'",
+                    w_complex)
     #
     try:
         return (space.float_w(space.float(w_complex)), 0.0)
