@@ -597,6 +597,17 @@ def _generate_tokens_from_c_tokenizer(source, encoding=None, extra_tokens=False)
         raise TokenError(msg, (e.lineno, e.offset)) from None
 
 
+def _tab_error(lnum, line):
+    """The TabError CPython's tokenizer raises for ambiguous indentation.
+
+    tabnanny re-raises this one's .msg and .text verbatim, so both the
+    wording and the newline-stripped line matter.
+    """
+    text = line.rstrip('\r\n')
+    return TabError("inconsistent use of tabs and spaces in indentation",
+                    ("<string>", lnum, len(text) + 1, text))
+
+
 def _py_tokenize(source, encoding=None, extra_tokens=False):
     """Pure-Python tokenizer used on PyPy when the _tokenize C extension is unavailable.
     Implements the CPython 3.11 generate_tokens() algorithm using the regex patterns
@@ -607,6 +618,7 @@ def _py_tokenize(source, encoding=None, extra_tokens=False):
     needcont = 0
     contline = None
     indents = [0]
+    altindents = [0]
     strstart = endprog = None
     last_line = line = ''
 
@@ -644,15 +656,28 @@ def _py_tokenize(source, encoding=None, extra_tokens=False):
         elif parenlev == 0 and not bs_continued:    # new logical statement
             if not line:
                 break
-            column = 0
+            # 'altcolumn' measures the same indentation with a tab stop of 1.
+            # CPython's tokenizer carries both and calls the indentation
+            # ambiguous whenever the two disagree about how this line relates
+            # to the enclosing block -- that is what raises TabError.
+            column = altcolumn = 0
             while pos < max_:
                 c = line[pos]
-                if c == ' ':      column += 1
-                elif c == '\t':   column = (column // tabsize + 1) * tabsize
-                elif c == '\f':   column = 0
+                if c == ' ':      column += 1; altcolumn += 1
+                elif c == '\t':
+                    column = (column // tabsize + 1) * tabsize
+                    altcolumn += 1
+                elif c == '\f':   column = altcolumn = 0
                 else:             break
                 pos += 1
             if pos == max_:
+                # Only reachable for a final line that is all whitespace and
+                # has no newline ('a\n '): a line ending in \n leaves pos on
+                # the \n and is handled just below.  3.12 still reports the
+                # implicit line ending, at the end of that whitespace, and
+                # still counts the line, so ENDMARKER lands on the next one.
+                yield TokenInfo(NL, '', (lnum, pos), (lnum, pos + 1), line)
+                lnum += 1
                 break
             if line[pos] in '#\r\n':
                 if line[pos] == '#':
@@ -661,18 +686,33 @@ def _py_tokenize(source, encoding=None, extra_tokens=False):
                         yield TokenInfo(COMMENT, comment,
                                (lnum, pos), (lnum, pos + len(comment)), line)
                     pos += len(comment)
-                yield TokenInfo(NL, line[pos:], (lnum, pos), (lnum, len(line)), line)
+                # When the line has no trailing newline the NL is still a
+                # one-column token, so do not let len(line) collapse it to
+                # zero width.
+                yield TokenInfo(NL, line[pos:], (lnum, pos),
+                                (lnum, max(len(line), pos + 1)), line)
                 continue
             if column > indents[-1]:
+                if altcolumn <= altindents[-1]:
+                    raise _tab_error(lnum, line)
                 indents.append(column)
+                altindents.append(altcolumn)
                 yield TokenInfo(INDENT, line[:pos], (lnum, 0), (lnum, pos), line)
             while column < indents[-1]:
                 if column not in indents:
                     raise IndentationError(
                         "unindent does not match any outer indentation level",
-                        ("<tokenize>", lnum, pos, line))
+                        # 3.12 raises this from the C tokenizer, which names
+                        # the source "<string>"; tabnanny prints the filename
+                        # verbatim, so the difference is user-visible.
+                        ("<string>", lnum, pos, line))
                 indents.pop()
+                altindents.pop()
                 yield TokenInfo(DEDENT, '', (lnum, pos), (lnum, pos), line)
+            # Having settled on a block, the tab-1 measurement has to agree
+            # that this line sits at that level too.
+            if column == indents[-1] and altcolumn != altindents[-1]:
+                raise _tab_error(lnum, line)
         else:
             if not line:
                 raise TokenError("EOF in multi-line statement", (lnum, 0))
@@ -727,13 +767,19 @@ def _py_tokenize(source, encoding=None, extra_tokens=False):
                 bs_continued = 1; break
             else:
                 if initial in '([{':   parenlev += 1
-                elif initial in ')]}': parenlev -= 1
+                elif initial in ')]}':
+                    # A closing bracket with nothing open is just an OP.
+                    # Letting parenlev go negative made everything after it
+                    # look bracketed, so '); x' died with TokenError("EOF in
+                    # multi-line statement") instead of tokenizing.
+                    parenlev = max(0, parenlev - 1)
                 yield TokenInfo(OP, token, spos, epos, line)
 
     # Add an implicit NEWLINE if the input doesn't end in one
     if last_line and last_line[-1] not in '\r\n' and not last_line.strip().startswith("#"):
+        # The implicit NEWLINE carries the line it was synthesised for, not ''.
         yield TokenInfo(NEWLINE, '', (lnum - 1, len(last_line)),
-                        (lnum - 1, len(last_line) + 1), '')
+                        (lnum - 1, len(last_line) + 1), last_line)
     for _ in indents[1:]:
         yield TokenInfo(DEDENT, '', (lnum, 0), (lnum, 0), '')
     yield TokenInfo(ENDMARKER, '', (lnum, 0), (lnum, 0), '')
