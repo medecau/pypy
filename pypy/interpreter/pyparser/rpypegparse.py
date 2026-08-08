@@ -5558,7 +5558,7 @@ class PythonParser(Parser):
             if literal:
                 _tmp_225 = self._tmp_225()
                 if _tmp_225:
-                    return self . raise_syntax_error ( "expected one or more exception types" )
+                    return self . raise_syntax_error_known_location ( "expected one or more exception types" , self . get_last_non_whitespace_token ( ) )
         self._index = mark
         return None
 
