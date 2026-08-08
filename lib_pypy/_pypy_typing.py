@@ -67,6 +67,8 @@ class _BoundVarianceMixin:
         """
         if covariant and contravariant:
             raise ValueError("Bivariant types are not supported.")
+        if (covariant or contravariant) and infer_variance:
+            raise ValueError("Variance cannot be specified with infer_variance.")
         self.__covariant__ = bool(covariant)
         self.__contravariant__ = bool(contravariant)
         self.__infer_variance__ = bool(infer_variance)
@@ -139,12 +141,14 @@ class TypeVar(_Immutable, _PickleUsingNameMixin, _BoundVarianceMixin):
         else:
             self.__constraints__ = ()
 
-        module = _caller_module_name()
-        if module is not None:
-            self.__module__ = module
+        # Set unconditionally: with no calling module -- exec() with a bare
+        # namespace -- CPython stores None rather than inheriting the class's
+        # 'typing'.
+        self.__module__ = _caller_module_name()
 
     def __init_subclass__(cls, *args, **kwargs):
-        raise TypeError(f"type '{TypeVar.__qualname__}' is not an acceptable base type")
+        raise TypeError(
+            f"type 'typing.{TypeVar.__qualname__}' is not an acceptable base type")
 
     __bound__ = _LazyEvaluator()
     __constraints__ = _LazyEvaluator()
@@ -208,16 +212,18 @@ class ParamSpec(_Immutable, _PickleUsingNameMixin, _BoundVarianceMixin):
         self.__name__ = name
         super().__init__(bound, covariant, contravariant, infer_variance)
 
-        module = _caller_module_name()
-        if module is not None:
-            self.__module__ = module
+        # Set unconditionally: with no calling module -- exec() with a bare
+        # namespace -- CPython stores None rather than inheriting the class's
+        # 'typing'.
+        self.__module__ = _caller_module_name()
 
         # Create args and kwargs attributes
         self.args = ParamSpecArgs(self)
         self.kwargs = ParamSpecKwargs(self)
 
     def __init_subclass__(cls, *args, **kwargs):
-        raise TypeError(f"type '{ParamSpec.__qualname__}' is not an acceptable base type")
+        raise TypeError(
+            f"type 'typing.{ParamSpec.__qualname__}' is not an acceptable base type")
 
     def __typing_subst__(self, arg):
         import typing
@@ -237,6 +243,11 @@ class ParamSpecArgs:
     Given P = ParamSpec('P'), P.args is an instance of ParamSpecArgs.
     """
     __slots__ = ('__origin__',)
+
+    def __init_subclass__(cls, *args, **kwargs):
+        # CPython's are static C types named typing.ParamSpecArgs
+        raise TypeError(
+            f"type 'typing.{ParamSpecArgs.__qualname__}' is not an acceptable base type")
 
     def __init__(self, origin):
         self.__origin__ = origin
@@ -262,6 +273,11 @@ class ParamSpecKwargs:
     Given P = ParamSpec('P'), P.kwargs is an instance of ParamSpecKwargs.
     """
     __slots__ = ('__origin__',)
+
+    def __init_subclass__(cls, *args, **kwargs):
+        # CPython's are static C types named typing.ParamSpecKwargs
+        raise TypeError(
+            f"type 'typing.{ParamSpecKwargs.__qualname__}' is not an acceptable base type")
 
     def __init__(self, origin):
         self.__origin__ = origin
@@ -295,12 +311,14 @@ class TypeVarTuple(_Immutable, _PickleUsingNameMixin):
 
     def __init__(self, name):
         self.__name__ = name
-        module = _caller_module_name()
-        if module is not None:
-            self.__module__ = module
+        # Set unconditionally: with no calling module -- exec() with a bare
+        # namespace -- CPython stores None rather than inheriting the class's
+        # 'typing'.
+        self.__module__ = _caller_module_name()
 
     def __init_subclass__(cls, *args, **kwargs):
-        raise TypeError(f"type '{TypeVarTuple.__qualname__}' is not an acceptable base type")
+        raise TypeError(
+            f"type 'typing.{TypeVarTuple.__qualname__}' is not an acceptable base type")
 
     def __repr__(self):
         return self.__name__
