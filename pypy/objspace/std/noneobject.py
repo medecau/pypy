@@ -22,7 +22,6 @@ class W_NoneObject(W_Root):
         w_builtins = space.getbuiltinmodule('builtins')
         w_mod = space.call_method(w_builtins, '__import__', space.newtext("_pypy_generic_alias"))
         w_union = space.getattr(w_mod, space.newtext("_create_union"))
-        w_union = space.getattr(w_mod, space.newtext("_create_union"))
         return space.call_function(w_union, self, w_other)
 
 
