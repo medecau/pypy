@@ -12,6 +12,15 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from stdlib_test_lists import SMOKE_TESTS, SKIP_TESTS, EXPECTED_FAILURES
 
 
+def _as_text(data):
+    """Coerce subprocess output to str, whatever we were handed."""
+    if data is None:
+        return ""
+    if isinstance(data, bytes):
+        return data.decode("utf-8", "replace")
+    return data
+
+
 def run_test(args):
     """Run a single test module. Returns (test_name, status, duration, output)."""
     pypy, test_name, timeout = args
@@ -28,7 +37,11 @@ def run_test(args):
             return (test_name, "fail", duration, output)
     except subprocess.TimeoutExpired as e:
         duration = time.monotonic() - start
-        output = (e.stdout or "") + (e.stderr or "")
+        # NB: TimeoutExpired carries raw bytes even when text=True was passed
+        # to subprocess.run.  Left undecoded, these reach json.dump at the end
+        # of the run and blow up with "Object of type bytes is not JSON
+        # serializable", losing the results of the whole run.
+        output = _as_text(e.stdout) + _as_text(e.stderr)
         return (test_name, "timeout", duration, output)
     except Exception as e:
         duration = time.monotonic() - start
