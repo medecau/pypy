@@ -437,6 +437,25 @@ def _make_typevartuple(name):
     return t
 
 
+def _subscript_generic(params):
+    """Build the implicit Generic[...] base of a PEP 695 generic class.
+
+    Mirror of CPython's INTRINSIC_SUBSCRIPT_GENERIC / _Py_subscript_generic.
+    A TypeVarTuple must be *unpacked* in the Generic subscript -- CPython
+    produces Generic[Unpack[Ts]] for `class A[*Ts]` -- because
+    typing._is_typevar_like rejects a bare TypeVarTuple.  The class's
+    __type_params__ keeps the bare TypeVarTuple, so the unpacking is done
+    here rather than when the type params tuple is built.
+    """
+    unpacked = []
+    for param in params:
+        if isinstance(param, TypeVarTuple):
+            unpacked.extend(param)
+        else:
+            unpacked.append(param)
+    return Generic[tuple(unpacked)]
+
+
 def _make_typealiastype(name, evaluate_value, type_params):
     t = TypeAliasType(name, None, type_params=type_params)
     # Fix __module__: we're one extra frame away from the real caller

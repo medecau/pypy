@@ -3094,11 +3094,15 @@ class GenericClassTypeParamsCodeGenerator(AnnotationScopeCodeGenerator):
         self.emit_op_arg(ops.BUILD_TUPLE, len(type_param_names))
 
         # 3. Create Generic[T, ...] base (mirrors CPython's INTRINSIC_SUBSCRIPT_GENERIC)
+        # This goes through the _subscript_generic helper rather than
+        # subscripting Generic directly, because a TypeVarTuple has to be
+        # unpacked in the Generic subscript (Generic[Unpack[Ts]]) while
+        # __type_params__ keeps the bare TypeVarTuple.
         # Stack: [type_params_tuple]
         self.emit_op(ops.DUP_TOP)                       # [tuple, tuple]
-        self._load_pypy_typing_attr('Generic')          # [tuple, tuple, Generic]
-        self.emit_op(ops.ROT_TWO)                       # [tuple, Generic, tuple]
-        self.emit_op(ops.BINARY_SUBSCR)                 # [tuple, Generic[T, ...]]
+        self._load_pypy_typing_attr('_subscript_generic')  # [tuple, tuple, fn]
+        self.emit_op(ops.ROT_TWO)                       # [tuple, fn, tuple]
+        self.emit_op_arg(ops.CALL_FUNCTION, 1)          # [tuple, Generic[T, ...]]
         self.name_op('.generic_base', ast.Store, cls)   # [tuple]
 
         # 4. Create the inner class with .generic_base appended to bases
