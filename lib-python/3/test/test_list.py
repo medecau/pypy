@@ -103,8 +103,6 @@ class ListTest(list_tests.CommonTest):
         del lst[1:]
         self.assertEqual(len(lst), 1)
 
-        # No tuple.__itemsize__ on PyPy, the replacement is equivalent
-        # size = ((2 ** (tuple.__itemsize__ * 8) - 1) // 2)
         size = sys.maxsize
         with self.assertRaises((MemoryError, OverflowError)):
             lst * size
@@ -209,6 +207,10 @@ class ListTest(list_tests.CommonTest):
     @cpython_only
     def test_equal_operator_modifying_operand(self):
         # test fix for seg fault reported in bpo-38588 part 2.
+        # PyPy: this asserts an artifact of CPython's own fix -- its list
+        # comparison caches the lengths and item pointers up front, so the
+        # comparison still reports equal after __eq__ has cleared both
+        # lists.  PyPy cannot segfault here and sees the cleared lists.
         class X:
             def __eq__(self,other) :
                 list2.clear()
@@ -231,6 +233,31 @@ class ListTest(list_tests.CommonTest):
         list3 = [Z()]
         list4 = [1]
         self.assertFalse(list3 == list4)
+
+    def test_lt_operator_modifying_operand(self):
+        # See gh-120298
+        class evil:
+            def __lt__(self, other):
+                other.clear()
+                return NotImplemented
+
+        a = [[evil()]]
+        with self.assertRaises(TypeError):
+            a[0] < a
+
+    def test_list_index_modifing_operand(self):
+        # See gh-120384
+        class evil:
+            def __init__(self, lst):
+                self.lst = lst
+            def __iter__(self):
+                yield from self.lst
+                self.lst.clear()
+
+        lst = list(range(5))
+        operand = evil(lst)
+        with self.assertRaises(ValueError):
+            lst[::-1] = operand
 
     @cpython_only
     def test_preallocation(self):

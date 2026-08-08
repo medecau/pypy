@@ -10,6 +10,7 @@ import datetime
 from enum import IntEnum, global_enum
 import locale as _locale
 from itertools import repeat
+import warnings
 
 __all__ = ["IllegalMonthError", "IllegalWeekdayError", "setfirstweekday",
            "firstweekday", "isleap", "leapdays", "weekday", "monthrange",
@@ -27,7 +28,9 @@ __all__ = ["IllegalMonthError", "IllegalWeekdayError", "setfirstweekday",
 error = ValueError
 
 # Exceptions raised for bad input
-class IllegalMonthError(ValueError):
+# This is trick for backward compatibility. Since 3.13, we will raise IllegalMonthError instead of
+# IndexError for bad month number(out of 1-12). But we can't remove IndexError for backward compatibility.
+class IllegalMonthError(ValueError, IndexError):
     def __init__(self, month):
         self.month = month
     def __str__(self):
@@ -43,7 +46,6 @@ class IllegalWeekdayError(ValueError):
 
 def __getattr__(name):
     if name in ('January', 'February'):
-        import warnings
         warnings.warn(f"The '{name}' attribute is deprecated, use '{name.upper()}' instead",
                       DeprecationWarning, stacklevel=2)
         if name == 'January':
@@ -69,6 +71,19 @@ class Month(IntEnum):
     OCTOBER = 10
     NOVEMBER = 11
     DECEMBER = 12
+
+
+# Constants for days
+@global_enum
+class Day(IntEnum):
+    MONDAY = 0
+    TUESDAY = 1
+    WEDNESDAY = 2
+    THURSDAY = 3
+    FRIDAY = 4
+    SATURDAY = 5
+    SUNDAY = 6
+
 
 # Number of days per month (except for February in leap years)
 mdays = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
@@ -124,17 +139,6 @@ day_abbr = _localized_day('%a')
 month_name = _localized_month('%B')
 month_abbr = _localized_month('%b')
 
-# Constants for weekdays
-@global_enum
-class Day(IntEnum):
-    MONDAY = 0
-    TUESDAY = 1
-    WEDNESDAY = 2
-    THURSDAY = 3
-    FRIDAY = 4
-    SATURDAY = 5
-    SUNDAY = 6
-
 
 def isleap(year):
     """Return True for leap years, False for non-leap years."""
@@ -153,14 +157,17 @@ def weekday(year, month, day):
     """Return weekday (0-6 ~ Mon-Sun) for year, month (1-12), day (1-31)."""
     if not datetime.MINYEAR <= year <= datetime.MAXYEAR:
         year = 2000 + year % 400
-    return datetime.date(year, month, day).weekday()
+    return Day(datetime.date(year, month, day).weekday())
 
 
-def monthrange(year, month):
-    """Return weekday (0-6 ~ Mon-Sun) and number of days (28-31) for
-       year, month."""
+def _validate_month(month):
     if not 1 <= month <= 12:
         raise IllegalMonthError(month)
+
+def monthrange(year, month):
+    """Return weekday of first day of month (0-6 ~ Mon-Sun)
+       and number of days (28-31) for year, month."""
+    _validate_month(month)
     day1 = weekday(year, month, 1)
     ndays = mdays[month] + (month == FEBRUARY and isleap(year))
     return day1, ndays
@@ -297,10 +304,7 @@ class Calendar(object):
         Each month contains between 4 and 6 weeks and each week contains 1-7
         days. Days are datetime.date objects.
         """
-        months = [
-            self.monthdatescalendar(year, i)
-            for i in range(JANUARY, JANUARY+12)
-        ]
+        months = [self.monthdatescalendar(year, m) for m in Month]
         return [months[i:i+width] for i in range(0, len(months), width) ]
 
     def yeardays2calendar(self, year, width=3):
@@ -310,10 +314,7 @@ class Calendar(object):
         (day number, weekday number) tuples. Day numbers outside this month are
         zero.
         """
-        months = [
-            self.monthdays2calendar(year, i)
-            for i in range(JANUARY, JANUARY+12)
-        ]
+        months = [self.monthdays2calendar(year, m) for m in Month]
         return [months[i:i+width] for i in range(0, len(months), width) ]
 
     def yeardayscalendar(self, year, width=3):
@@ -322,10 +323,7 @@ class Calendar(object):
         yeardatescalendar()). Entries in the week lists are day numbers.
         Day numbers outside this month are zero.
         """
-        months = [
-            self.monthdayscalendar(year, i)
-            for i in range(JANUARY, JANUARY+12)
-        ]
+        months = [self.monthdayscalendar(year, m) for m in Month]
         return [months[i:i+width] for i in range(0, len(months), width) ]
 
 
@@ -377,6 +375,8 @@ class TextCalendar(Calendar):
         """
         Return a formatted month name.
         """
+        _validate_month(themonth)
+
         s = month_name[themonth]
         if withyear:
             s = "%s %r" % (s, theyear)
@@ -507,6 +507,7 @@ class HTMLCalendar(Calendar):
         """
         Return a month name as a table row.
         """
+        _validate_month(themonth)
         if withyear:
             s = '%s %s' % (month_name[themonth], theyear)
         else:
@@ -788,6 +789,8 @@ def main(args):
         if options.month is None:
             optdict["c"] = options.spacing
             optdict["m"] = options.months
+        if options.month is not None:
+            _validate_month(options.month)
         if options.year is None:
             result = cal.formatyear(datetime.date.today().year, **optdict)
         elif options.month is None:

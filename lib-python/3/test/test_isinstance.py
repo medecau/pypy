@@ -8,6 +8,7 @@ import typing
 from test import support
 
 
+
 class TestIsInstanceExceptions(unittest.TestCase):
     # Test to make sure that an AttributeError when accessing the instance's
     # class's bases is masked.  This was actually a bug in Python 2.2 and
@@ -144,6 +145,7 @@ class TestIsSubclassExceptions(unittest.TestCase):
             __bases__ = property(getbases)
 
         self.assertRaises(TypeError, issubclass, B, C())
+
 
 
 # meta classes for creating abstract classes and instances
@@ -351,8 +353,12 @@ def blowstack(fxn, arg, compare_to):
     # Make sure that calling isinstance with a deeply nested tuple for its
     # argument will raise RecursionError eventually.
     tuple_arg = (compare_to,)
-    # pypy change: need much deeper nested tuples to check this
-    for cnt in range(sys.getrecursionlimit() * 100):
+    if support.check_impl_detail(pypy=True):
+        # pypy change: need much deeper nested tuples to check this
+        depth = sys.getrecursionlimit() * 100
+    else:
+        depth = support.C_RECURSION_LIMIT * 2
+    for cnt in range(depth):
         tuple_arg = (tuple_arg,)
         fxn(arg, tuple_arg)
 

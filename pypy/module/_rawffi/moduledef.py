@@ -47,6 +47,13 @@ class Module(MixedModule):
         if hasattr(interp_rawffi, 'check_HRESULT'):
             Module.interpleveldefs['check_HRESULT'] = 'interp_rawffi.check_HRESULT'
 
+        # 3.12 added ctypes.c_time_t, which is picked from c_int32/c_int64
+        # according to _ctypes.SIZEOF_TIME_T.  lib_pypy/_ctypes re-exports
+        # this; there is no time_t entry in TYPEMAP to derive it from.
+        from rpython.rtyper.lltypesystem import rffi
+        Module.interpleveldefs['SIZEOF_TIME_T'] = (
+            "space.wrap(%r)" % rffi.sizeof(rffi.TIME_T))
+
         from rpython.rlib import clibffi
         for name in ['FUNCFLAG_STDCALL', 'FUNCFLAG_CDECL', 'FUNCFLAG_PYTHONAPI',
                      'FUNCFLAG_USE_ERRNO', 'FUNCFLAG_USE_LASTERROR',

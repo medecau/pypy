@@ -75,6 +75,21 @@ class W_BoolObject(W_IntObject):
     descr_or, descr_ror = _make_bitwise_binop('or')
     descr_xor, descr_rxor = _make_bitwise_binop('xor')
 
+    def descr_invert(self, space):
+        # 3.12 (gh-103487) deprecated ~bool: it returns the bitwise
+        # inversion of the underlying int, which is almost never what the
+        # caller means.
+        space.warn(
+            space.newtext(
+                "Bitwise inversion '~' on bool is deprecated. This "
+                "returns the bitwise inversion of the underlying int "
+                "object and is usually not what you expect from negating "
+                "a bool. Use the 'not' operator for boolean negation or "
+                "~int(x) if you really want the bitwise inversion of the "
+                "underlying int."),
+            space.w_DeprecationWarning)
+        return W_IntObject.descr_invert(self, space)
+
 
 W_BoolObject.w_False = W_BoolObject(False)
 W_BoolObject.w_True = W_BoolObject(True)
@@ -91,6 +106,8 @@ The class bool is a subclass of the class int, and cannot be subclassed.""",
                           doc=W_AbstractIntObject.descr_repr.__doc__),
     __str__ = interp2app(W_BoolObject.descr_str,
                          doc=W_AbstractIntObject.descr_str.__doc__),
+    __invert__ = interp2app(W_BoolObject.descr_invert,
+                            doc=W_AbstractIntObject.descr_invert.__doc__),
     __bool__ = interp2app(W_BoolObject.descr_bool,
                              doc=W_AbstractIntObject.descr_bool.__doc__),
 

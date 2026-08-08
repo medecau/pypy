@@ -13,6 +13,19 @@ from _ctypes.builtin import (
     _string_at_addr, _wstring_at_addr, set_conversion_mode)
 from _ctypes.union import Union
 
+# 3.12 added ctypes.c_time_t, which ctypes/__init__.py derives from this.
+# CPython's C _ctypes reports sizeof(time_t) directly; _rawffi computes the
+# same value at build time (see pypy/module/_rawffi/moduledef.py).
+try:
+    from _rawffi import SIZEOF_TIME_T
+except ImportError:
+    # _rawffi predating the SIZEOF_TIME_T export (e.g. a binary built before
+    # the 3.12 port).  time_t is 64-bit everywhere PyPy supports except
+    # 32-bit builds, where it follows the C long.
+    from _rawffi import sizeof as _sizeof
+    SIZEOF_TIME_T = 8 if _sizeof('P') == 8 else _sizeof('l')
+    del _sizeof
+
 try: from __pypy__ import builtinify
 except ImportError: builtinify = lambda f: f
 
