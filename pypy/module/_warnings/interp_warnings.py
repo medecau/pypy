@@ -110,7 +110,11 @@ def next_external_frame(space, frame, skip_prefixes=None):
 
 @jit.look_inside_iff(
     lambda space, stacklevel, skip_prefixes: jit.isconstant(stacklevel))
-def _get_frame(space, stacklevel, skip_prefixes=None):
+# NB: no default for skip_prefixes.  look_inside_iff runs _get_args over the
+# function at import time, and that asserts the function has no defaults at
+# all; giving one made this module fail to build, which took every object
+# space with it.  setup_context is the only caller and always passes it.
+def _get_frame(space, stacklevel, skip_prefixes):
     ec = space.getexecutioncontext()
 
     # Direct copy of CPython's logic, which has grown its own notion of
