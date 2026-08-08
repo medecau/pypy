@@ -646,9 +646,9 @@ class CmdLineTest(unittest.TestCase):
             self.assertEqual(
                 stderr.splitlines()[-3:],
                 [
-                    b'    foo"""',
-                    b'          ^',
-                    b'SyntaxError: f-string: empty expression not allowed',
+                    b'    foo = f"""{}',
+                    b'               ^',
+                    b'SyntaxError: f-string: valid expression required before \'}\'',
                 ],
             )
 
@@ -662,7 +662,7 @@ class CmdLineTest(unittest.TestCase):
             self.assertEqual(
                 stderr.splitlines()[-3:],
                 [   b'    foo = """\\q"""',
-                    b'          ^^^^^^^^',
+                    b'             ^^',
                     b'SyntaxError: invalid escape sequence \'\\q\''
                 ],
             )
