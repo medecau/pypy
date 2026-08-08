@@ -9,8 +9,14 @@ from _csv import Error, __version__, writer, reader, register_dialect, \
                  unregister_dialect, get_dialect, list_dialects, \
                  field_size_limit, \
                  QUOTE_MINIMAL, QUOTE_ALL, QUOTE_NONNUMERIC, QUOTE_NONE, \
-                 QUOTE_STRINGS, QUOTE_NOTNULL, \
                  __doc__
+try:
+    from _csv import QUOTE_STRINGS, QUOTE_NOTNULL
+except ImportError:
+    # PyPy: _csv gained these in 3.12; keep csv importable on interpreters
+    # built before that so pip/ensurepip still bootstrap (the values match
+    # the interp-level definitions).
+    QUOTE_STRINGS, QUOTE_NOTNULL = 4, 5
 from _csv import Dialect as _Dialect
 
 from io import StringIO
