@@ -228,7 +228,15 @@ def fork_exec(space, w_process_args, w_executable_list,
             l_groups = lltype.malloc(rffi.CArrayPtr(gid_t).TO,
                                      len(groups_w), flavor='raw')
             for i, w_group in enumerate(groups_w):
-                l_groups[i] = rffi.cast(gid_t, space.c_uid_t_w(w_group))
+                try:
+                    gid_value = space.c_uid_t_w(w_group)
+                except OperationError as e:
+                    if not e.match(space, space.w_OverflowError):
+                        raise
+                    # CPython turns a failed gid conversion into
+                    # ValueError("invalid group id") (_posixsubprocess.c)
+                    raise oefmt(space.w_ValueError, "invalid group id")
+                l_groups[i] = rffi.cast(gid_t, gid_value)
             num_groups = len(groups_w)
             call_setgroups = 1
 
