@@ -440,6 +440,26 @@ class W_Profiler(W_Root):
                      factor)
 
 @unwrap_spec(time_unit=float, subcalls=int, builtins=int)
+
+def _monitoring_callback_stub(name):
+    """Build one of _lsprof's 3.12 sys.monitoring callbacks.
+
+    CPython 3.12 drives the profiler through PEP 669 and exposes these
+    methods on Profiler; PyPy profiles through its own hooks instead, so
+    these accept and validate the documented arguments (gh-126220: calling
+    them with too few arguments must raise TypeError, not crash) and do
+    nothing else.
+    """
+    def callback(self, space, w_code, w_arg):
+        return space.w_None
+    callback.func_name = name
+    return callback
+
+_pystart_callback = _monitoring_callback_stub('_pystart_callback')
+_pyreturn_callback = _monitoring_callback_stub('_pyreturn_callback')
+_ccall_callback = _monitoring_callback_stub('_ccall_callback')
+_creturn_callback = _monitoring_callback_stub('_creturn_callback')
+
 def descr_new_profile(space, w_type, w_callable=None, time_unit=0.0,
                       subcalls=1, builtins=1):
     p = space.allocate_instance(W_Profiler, w_type)
@@ -452,4 +472,9 @@ W_Profiler.typedef = TypeDef(
     enable = interp2app(W_Profiler.enable),
     disable = interp2app(W_Profiler.disable),
     getstats = interp2app(W_Profiler.getstats),
+    # 3.12 sys.monitoring callbacks (see _monitoring_callback_stub)
+    _pystart_callback = interp2app(_pystart_callback),
+    _pyreturn_callback = interp2app(_pyreturn_callback),
+    _ccall_callback = interp2app(_ccall_callback),
+    _creturn_callback = interp2app(_creturn_callback),
 )
