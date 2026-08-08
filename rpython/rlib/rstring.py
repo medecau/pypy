@@ -489,6 +489,104 @@ def _search(value, other, start, end, mode):
 def _search_elidable(value, other, start, end, mode):
     return _search_normal(value, other, start, end, mode)
 
+@specialize.argtype(0)
+def _lex_search(needle, invert_alphabet):
+    """Position of max(needle[i:] for i in range(len(needle)+1)), together
+    with the period of the right half.  Half of the critical factorization
+    used by the two-way algorithm; invert_alphabet reverses the ordering."""
+    n = len(needle)
+    max_suffix = 0
+    candidate = 1
+    k = 0
+    period = 1
+    while candidate + k < n:
+        a = needle[candidate + k]
+        b = needle[max_suffix + k]
+        if b < a if invert_alphabet else a < b:
+            # fell short of max_suffix: the next k+1 characters cannot
+            # start a maximal suffix either
+            candidate += k + 1
+            k = 0
+            period = candidate - max_suffix
+        elif a == b:
+            if k + 1 != period:
+                k += 1
+            else:
+                # matched a whole period, start on the next one
+                candidate += period
+                k = 0
+        else:
+            # better than max_suffix, so replace it
+            max_suffix = candidate
+            candidate += 1
+            k = 0
+            period = 1
+    return max_suffix, period
+
+@specialize.argtype(0)
+def _factorize(needle):
+    cut1, period1 = _lex_search(needle, False)
+    cut2, period2 = _lex_search(needle, True)
+    if cut1 > cut2:
+        return cut1, period1
+    return cut2, period2
+
+@specialize.argtype(0, 1)
+def _two_way_search(value, other, start, end, mode):
+    """Crochemore-Perrin two-way string matching: O(n + m) rather than the
+    O(n * m) worst case of the Boyer-Moore-Horspool loop below.  Only used
+    for large problems -- see the threshold in _search_normal -- because it
+    pays an O(m) startup cost to factorize the needle.
+
+    Ported from CPython's stringlib/fastsearch.h, which grew this for the
+    same reason (bpo-41972): 'a'*N + 'b'*N style inputs make BMH quadratic,
+    which is what string_tests' test_adaptive_find pins down.
+    """
+    m = len(other)
+    cut, period = _factorize(other)
+    # a needle whose prefix reappears one period into the right half lets us
+    # remember how much of it already matched after a shift
+    periodic = True
+    for k in range(cut):
+        if other[k] != other[period + k]:
+            periodic = False
+            break
+
+    count = 0
+    i = start
+    memory = 0
+    while i <= end - m:
+        # right half, forwards
+        j = cut
+        if memory > j:
+            j = memory
+        while j < m and other[j] == value[i + j]:
+            j += 1
+        if j < m:
+            i += j - cut + 1
+            memory = 0
+            continue
+        # left half, backwards
+        j = cut
+        while j > memory and other[j - 1] == value[i + j - 1]:
+            j -= 1
+        if j <= memory:
+            if mode != SEARCH_COUNT:
+                return i
+            count += 1
+            # a match cannot overlap itself by less than one period
+            i += m
+            memory = 0
+            continue
+        i += period
+        if periodic:
+            memory = m - period
+        else:
+            memory = 0
+    if mode != SEARCH_COUNT:
+        return -1
+    return count
+
 @specialize.argtype(0, 1)
 def _search_normal(value, other, start, end, mode):
     assert value is not None
@@ -528,6 +626,15 @@ def _search_normal(value, other, start, end, mode):
     skip = mlast
     mask = 0
 
+    # A big problem whose needle is a small fraction of the haystack goes
+    # straight to the two-way algorithm: it is O(n + m) where the loop below
+    # is O(n * m) worst case, and the O(m) factorization pays for itself.
+    # When the needle is a large fraction instead, the loop below escalates
+    # adaptively.  Thresholds and split as in CPython's FASTSEARCH.
+    if (mode != SEARCH_RFIND and m >= 6 and n >= 2500 and
+            not (m < 100 and n < 30000) and (m >> 2) * 3 < (n >> 2)):
+        return _two_way_search(value, other, start, end, mode)
+
     if mode != SEARCH_RFIND:
         for i in range(mlast):
             mask = bloom_add(mask, other[i])
@@ -536,9 +643,11 @@ def _search_normal(value, other, start, end, mode):
         mask = bloom_add(mask, other[mlast])
 
         i = start - 1
+        hits = 0
         while i + 1 <= start + w:
             i += 1
             if value[i + mlast] == other[mlast]:
+                j = 0
                 for j in range(mlast):
                     if value[i + j] != other[j]:
                         break
@@ -548,6 +657,19 @@ def _search_normal(value, other, start, end, mode):
                     count += 1
                     i += mlast
                     continue
+
+                # Adaptive escalation, as in CPython's default_find: a
+                # candidate that keeps matching a long way before failing is
+                # the signature of the quadratic case, so once we have done
+                # more character comparisons than a quarter of the needle,
+                # hand the rest to the two-way algorithm.  Without this,
+                # 'a'*N + 'b'*N inputs take O(n * m) -- string_tests'
+                # test_adaptive_find.
+                hits += j + 1
+                if hits > (m >> 2) and start + w - i > 2000:
+                    if mode != SEARCH_COUNT:
+                        return _two_way_search(value, other, i, end, mode)
+                    return count + _two_way_search(value, other, i, end, mode)
 
                 if i + m < len(value):
                     c = value[i + m]
