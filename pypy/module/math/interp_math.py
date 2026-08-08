@@ -3,7 +3,7 @@ import sys
 
 from rpython.rlib import rfloat
 from rpython.rlib.objectmodel import specialize
-from rpython.rlib.rarithmetic import r_longlong
+from rpython.rlib.rarithmetic import r_int64
 from rpython.rlib.longlong2float import float2longlong, longlong2float
 from pypy.interpreter.error import OperationError, oefmt
 from pypy.interpreter.gateway import unwrap_spec, WrappedDefault
@@ -765,8 +765,12 @@ def gcd_two(space, w_a, w_b):
         g = rbigint.gcd_binary(a, b)
         return space.newint(g)
 
-_FLOAT_MAGNITUDE_MASK = r_longlong(0x7FFFFFFFFFFFFFFF)
-_FLOAT_SIGN_BIT = r_longlong(-0x8000000000000000)
+# r_int64 is what float2longlong returns and what longlong2float requires.
+# NB: not r_longlong -- on a 64-bit build r_longlong is r_int, so
+# rarithmetic sets r_int64 = int, and an r_longlong-typed value annotates as
+# SignedLongLong, which longlong2float's compute_result_annotation rejects.
+_FLOAT_MAGNITUDE_MASK = r_int64(0x7FFFFFFFFFFFFFFF)
+_FLOAT_SIGN_BIT = r_int64(-0x8000000000000000)
 
 def _float_index(x):
     """Index of x in the ordered sequence of representable doubles.
@@ -796,10 +800,10 @@ def nextafter(space, w_a, w_b, __kwonly__, w_steps):
         return space.newfloat(rfloat.nextafter(a, b))
     # 3.12 added the 'steps' keyword: move that many representable values
     # towards y at once.
-    # NB: r_longlong(), not a plain int.  index_a below comes from
-    # float2longlong, and unioning it with a Signed annotation makes
-    # longlong2float's compute_result_annotation assert during translation.
-    steps = r_longlong(space.int_w(space.index(w_steps)))
+    # NB: coerced to r_int64, the type float2longlong yields -- index_a
+    # below comes from there, and mixing in a differently-typed integer
+    # makes longlong2float's compute_result_annotation assert.
+    steps = r_int64(space.int_w(space.index(w_steps)))
     if steps < 0:
         raise oefmt(space.w_ValueError,
                     "steps must be a non-negative integer")
