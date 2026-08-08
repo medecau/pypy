@@ -1046,7 +1046,8 @@ def unicode_escape_decode(space, w_string, errors="strict", w_final=None):
     unicode_name_handler = state.get_unicodedata_handler(space)
 
     w_s = space.newbytes(string)
-    result, u_len, lgt, first_escape_error_char = unicodehelper.str_decode_unicode_escape(
+    (result, u_len, lgt, first_escape_error_char,
+     _pos) = unicodehelper.str_decode_unicode_escape(
         space, string, w_s, errors,
         final, state.decode_error_handler,
         unicode_name_handler)

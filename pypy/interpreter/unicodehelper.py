@@ -605,6 +605,7 @@ def str_decode_unicode_escape(space, s, w_s, errors, final, errorhandler, ud_han
     builder = rutf8.Utf8StringBuilder(len(s))
     pos = 0
     first_escape_error_char = None
+    first_escape_error_pos = -1
     pos_delta = 0
     while pos < len(s):
         ch = s[pos]
@@ -672,6 +673,8 @@ def str_decode_unicode_escape(space, s, w_s, errors, final, errorhandler, ud_han
                             pos += 1
                             x = (x << 3) + ord(ch) - ord('0')
             if x > 0o377:
+                if first_escape_error_char is None:
+                    first_escape_error_pos = pos - len(span) - 1
                 first_escape_error_char = "\\" + span
             # append_code() (not append_char) so 0x80..0xFF octal escapes such
             # as '\202' are UTF-8-encoded as the code point U+0082 rather than
@@ -757,9 +760,12 @@ def str_decode_unicode_escape(space, s, w_s, errors, final, errorhandler, ud_han
         else:
             builder.append_char('\\')
             builder.append_code(ord(ch))
+            if first_escape_error_char is None:
+                first_escape_error_pos = pos - 2
             first_escape_error_char = "\\" + ch
 
-    return builder.build(), builder.getlength(), pos + pos_delta, first_escape_error_char
+    return (builder.build(), builder.getlength(), pos + pos_delta,
+            first_escape_error_char, first_escape_error_pos)
 
 def wcharpsize2utf8(space, wcharp, size):
     """Safe version of rffi.wcharpsize2utf8.

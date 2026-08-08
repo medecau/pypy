@@ -95,7 +95,7 @@ def parsestr(space, encoding, s, token=None, astbuilder=None):
     if rawmode or '\\' not in substr:
         return space.newbytes(substr)
 
-    v, first_escape_error_char = _PyString_DecodeEscape(
+    v, first_escape_error_char, first_escape_error_pos = _PyString_DecodeEscape(
         space, substr, 'strict', encoding)
     if first_escape_error_char != '':
         if astbuilder:
@@ -105,7 +105,7 @@ def parsestr(space, encoding, s, token=None, astbuilder=None):
             # SyntaxWarning (the default category deprecation_warn picks
             # from feature_version); the runtime codec path below stays
             # DeprecationWarning.
-            astbuilder.deprecation_warn(msg, token)
+            astbuilder.escape_warn(msg, token, substr, first_escape_error_pos)
 
     return space.newbytes(v)
 
@@ -183,6 +183,7 @@ def _PyString_DecodeEscape(space, s, errors, recode_encoding):
     ps = 0
     end = len(s)
     first_escape_error_char = ''
+    first_escape_error_pos = -1
     while ps < end:
         if s[ps] != '\\':
             # note that the C code has a label here.
@@ -235,6 +236,8 @@ def _PyString_DecodeEscape(space, s, errors, recode_encoding):
             # \400 is the same as \000 because 0400 == 256
             raw = int(octal, 8)
             if raw >= 256:
+                if first_escape_error_char == '':
+                    first_escape_error_pos = prevps - 1
                 first_escape_error_char = "\\" + octal
             num = raw & 0xFF
             builder.append(chr(num))
@@ -267,15 +270,17 @@ def _PyString_DecodeEscape(space, s, errors, recode_encoding):
             assert ps >= 0
             if first_escape_error_char == '':
                 first_escape_error_char = "\\" + ch
+                first_escape_error_pos = ps
             continue
             # an arbitrary number of unescaped UTF-8 bytes may follow.
 
     buf = builder.build()
-    return buf, first_escape_error_char
+    return buf, first_escape_error_char, first_escape_error_pos
 
 
 def PyString_DecodeEscape(space, s, errors, recode_encoding):
-    buf, first_escape_error_char = _PyString_DecodeEscape(space, s, errors, recode_encoding)
+    buf, first_escape_error_char, _pos = _PyString_DecodeEscape(
+        space, s, errors, recode_encoding)
     if first_escape_error_char != '':
         # first_escape_error_char may contain a raw byte >= 0x80 (escape_decode
         # accepts arbitrary bytes, unlike bytes literals); build the warning
@@ -292,7 +297,8 @@ def decode_unicode_escape(space, string, astbuilder, token):
     state = space.fromcache(interp_codecs.CodecState)
     unicodedata_handler = state.get_unicodedata_handler(space)
     w_s = space.newbytes(string)
-    s, ulen, blen, first_escape_error_char = str_decode_unicode_escape(
+    (s, ulen, blen, first_escape_error_char,
+     first_escape_error_pos) = str_decode_unicode_escape(
         space, string, w_s, "strict",
         final=True,
         errorhandler=state.decode_error_handler,
@@ -300,7 +306,7 @@ def decode_unicode_escape(space, string, astbuilder, token):
     if first_escape_error_char is not None and astbuilder is not None:
         msg, _ = unicodehelper.format_invalid_escape_message(
             first_escape_error_char, distinguish_octal=True)
-        astbuilder.deprecation_warn(msg, token)
+        astbuilder.escape_warn(msg, token, s, first_escape_error_pos)
     return s, ulen, blen
 
 def isxdigit(ch):

@@ -102,10 +102,10 @@ def test_unicode_escape_incremental_bug(space):
     for i in range(1, len(data)):
         s = data[:i]
         w_s = space.newtext(s)
-        result1, _, lgt1, _ = str_decode_unicode_escape(space, s, w_s, 'strict', False, None, unicodedata_handler)
+        result1, _, lgt1, _, _ = str_decode_unicode_escape(space, s, w_s, 'strict', False, None, unicodedata_handler)
         s1 = data[lgt1:i] + data[i:]
         w_s1 = space.newtext(s1)
-        result2, _, lgt2, _ = str_decode_unicode_escape(space, s1, w_s1, 'strict', True, None, unicodedata_handler)
+        result2, _, lgt2, _, _ = str_decode_unicode_escape(space, s1, w_s1, 'strict', True, None, unicodedata_handler)
         assert lgt1 + lgt2 == len(data)
         assert input == (result1 + result2).decode("utf-8")
 

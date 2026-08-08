@@ -306,10 +306,36 @@ class Parser:
             self.raise_indentation_error("unexpected indent")
         self.raise_syntax_error_known_location("invalid syntax", tok)
 
-    def deprecation_warn(self, msg, tok, w_category=None):
+    def escape_warn(self, msg, tok, literal, error_pos, w_category=None):
+        """Warn about an invalid escape at 'error_pos' inside 'literal'.
+
+        CPython computes the warning's position by walking the literal up
+        to the offending escape (string_parser.c's
+        warn_invalid_escape_sequence), so a multi-line literal reports the
+        line the escape is on rather than the line the token starts on.
+        """
+        lineno = tok.lineno
+        column = tok.column
+        if error_pos >= 0:
+            i = 0
+            while i < error_pos and i < len(literal):
+                if literal[i] == '\n':
+                    lineno += 1
+                    column = 0
+                else:
+                    column += 1
+                i += 1
+        self.deprecation_warn(msg, tok, w_category=w_category, lineno=lineno)
+
+    def deprecation_warn(self, msg, tok, w_category=None, lineno=-1):
         from pypy.interpreter import error
         from pypy.module._warnings.interp_warnings import warn_explicit
         space = self.space
+        if self.call_invalid_rules:
+            # second parser pass (invalid rules): the warning was already
+            # emitted by the first pass, and CPython suppresses it here too
+            # (string_parser.c's warn_invalid_escape_sequence)
+            return
         if w_category is None:
             # 3.12 upgraded compile-time escape-sequence warnings from
             # DeprecationWarning to SyntaxWarning (test_string_literals,
@@ -325,7 +351,7 @@ class Parser:
                 space, space.newtext(msg),
                 w_category,
                 space.newtext(self.compile_info.filename),
-                tok.lineno,
+                lineno if lineno >= 0 else tok.lineno,
                 space.w_None,
                 space.w_None,
                 space.w_None,
