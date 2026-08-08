@@ -462,6 +462,20 @@ class LZMADecompressor(object):
 
     For one-shot decompression, use the decompress() function instead.
     """
+
+    # CPython's Decompressor keeps its state in a C struct that tp_alloc has
+    # already zeroed by the time __new__ returns, so
+    # LZMADecompressor.__new__(LZMADecompressor) is inert rather than broken:
+    # its attributes read back as an empty stream and decompress(b'') gives
+    # b''.  Ours built every attribute in __init__, so the same object raised
+    # AttributeError on self.lock.  See test_uninitialized_LZMADecompressor_
+    # crash in test_lzma, which is named for the crash this used to be.
+    lzs = None
+    eof = False
+    needs_input = True
+    check = CHECK_UNKNOWN
+    unused_data = b''
+
     def __init__(self, format=FORMAT_AUTO, memlimit=None, filters=None,
                  header=None, check=None, unpadded_size=None):
         decoder_flags = m.LZMA_TELL_ANY_CHECK | m.LZMA_TELL_NO_CHECK
@@ -592,6 +606,14 @@ class LZMADecompressor(object):
         """
         if not isinstance(max_length, int):
             raise TypeError("max_length parameter object cannot be interpreted as an integer")
+        if self.lzs is None:
+            # __new__ without __init__, so there is no decoder and no lock.
+            # CPython runs its all-zero lzma_stream through lzma_code, which
+            # yields nothing for empty input and LZMA_PROG_ERROR for anything
+            # else; reproduce both without touching self.lock.
+            if not to_bytes(data):
+                return b''
+            raise LZMAError("Internal error")
         with self.lock:
             if self.eof:
                 raise EOFError("Already at end of stream")
