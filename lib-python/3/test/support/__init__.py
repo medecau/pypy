@@ -1233,8 +1233,14 @@ def requires_limited_api(test):
         import _testcapi
     except ImportError:
         return unittest.skip('needs _testcapi module')(test)
+    # PyPy: this decorator is applied at class-definition time, so reading
+    # LIMITED_API_AVAILABLE directly makes the whole module fail to import
+    # rather than skipping the few tests concerned -- test_call ran zero
+    # tests for this reason.  PyPy's _testcapimodule.c predates the flag and
+    # cpyext does not implement the Limited API, so treat it as unavailable.
     return unittest.skipUnless(
-        _testcapi.LIMITED_API_AVAILABLE, 'needs Limited API support')(test)
+        getattr(_testcapi, 'LIMITED_API_AVAILABLE', False),
+        'needs Limited API support')(test)
 
 def requires_specialization(test):
     return unittest.skipUnless(

@@ -277,6 +277,13 @@ _deprecated_version = "2.6.0"
 PARSE_COLNAMES = 1
 PARSE_DECLTYPES = 2
 
+# 3.12 added Connection.autocommit (PEP 249 transaction control) with this
+# sentinel for "keep using isolation_level".  The attribute itself is not
+# implemented yet; the constant is exported because test_sqlite3 reads it at
+# class-definition time, which otherwise stops the whole package from being
+# collected -- run=0 instead of ~190 tests.
+LEGACY_TRANSACTION_CONTROL = -1
+
 # SQLite version information
 sqlite_version = str(_ffi.string(_lib.sqlite3_libversion()).decode('ascii'))
 _sqlite_version_triple = tuple(int(x) for x in sqlite_version.split('.'))
