@@ -9,6 +9,7 @@ from rpython.rtyper.lltypesystem import lltype, rffi
 from rpython.rtyper.lltypesystem.rstr import copy_string_to_raw
 
 from pypy.interpreter.buffer import BufferView
+from pypy.objspace.std.util import generic_alias_class_getitem
 from pypy.interpreter.baseobjspace import W_Root
 from pypy.interpreter.error import OperationError, oefmt
 from pypy.interpreter.gateway import (
@@ -788,6 +789,9 @@ class W_ArrayBase(W_Root):
 W_ArrayBase.typedef = TypeDef(
     'array.array', None, None, 'read-write',
     __new__ = interp2app(w_array),
+    # PEP 585: array.array[int] is valid in 3.12
+    __class_getitem__ = interp2app(
+        generic_alias_class_getitem, as_classmethod=True),
 
     __len__ = interp2app(W_ArrayBase.descr_len),
     __eq__ = interp2app(W_ArrayBase.descr_eq),

@@ -4,6 +4,7 @@ from pypy.interpreter.mixedmodule import MixedModule
 class Module(MixedModule):
     interpleveldefs = {
         'collect': 'interp_gc.collect',
+        'is_tracked': 'interp_gc.is_tracked',
         'enable': 'interp_gc.enable',
         'disable': 'interp_gc.disable',
         'isenabled': 'interp_gc.isenabled',

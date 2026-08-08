@@ -4,6 +4,36 @@ from rpython.rlib import rgc
 from pypy.module.gc.hook import W_GcCollectStepStats
 
 
+def is_tracked(space, w_obj):
+    """Return True if the object is tracked by the garbage collector.
+
+    CPython means something narrow by this: an object is tracked if its
+    type allocates from the cycle collector, so instances of the atomic
+    built-in types are untracked, and so are the statically allocated type
+    objects like int and object.
+
+    PyPy's GC traces every heap object it allocates, so the only reading of
+    the question that carries information here is the one CPython's docs
+    give as the rationale: can this object hold references to others?  The
+    atomic built-ins below cannot, and answer False as they do on CPython.
+    Everything else answers True.
+
+    This does diverge for the built-in type objects themselves -- CPython
+    says int and object are untracked because they are static C structs,
+    which is a distinction PyPy simply does not have, and every PyPy type
+    holds references to its bases and its dict.
+    """
+    if space.is_w(w_obj, space.w_None):
+        return space.w_False
+    w_type = space.type(w_obj)
+    for w_atomic in [space.w_int, space.w_float, space.w_bool,
+                     space.w_complex, space.w_bytes, space.w_unicode,
+                     space.w_bytearray]:
+        if space.is_w(w_type, w_atomic):
+            return space.w_False
+    return space.w_True
+
+
 @unwrap_spec(generation=int)
 def collect(space, generation=0):
     "Run a full collection.  The optional argument is ignored."
