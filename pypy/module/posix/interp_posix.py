@@ -185,18 +185,10 @@ def _unwrap_path(space, w_value, allow_fd=True, nullable=False):
     elif space.isinstance_w(w_value, space.w_bytes):
         return _path_from_bytes(space, w_value)
 
-    # Bytes-like case
-    try:
-        space._try_buffer_w(w_value, space.BUF_FULL_RO)
-    except BufferInterfaceNotFound:
-        pass
-    else:
-        tp = space.type(w_value).name
-        space.warn(space.newtext(
-            "path should be %s, not %s" % (allowed_types, tp,)),
-            space.w_DeprecationWarning)
-        path_b = space.bytesbuf0_w(w_value)
-        return Path(-1, path_b, None, w_value)
+    # NB: no bytes-like case.  Accepting any buffer as a path, with a
+    # DeprecationWarning, is what CPython did up to 3.8; 3.9 removed it and
+    # a bytearray or memoryview path is a plain TypeError now.  test_posix's
+    # test_stat and test_listdir_bytes_like check for that.
 
     # File descriptor case
     if allow_fd:
@@ -2538,9 +2530,12 @@ def getloadavg(space):
                            space.newfloat(load[1]),
                            space.newfloat(load[2])])
 
-@unwrap_spec(major=c_int, minor=c_int)
+@unwrap_spec(major="c_uint", minor="c_uint")
 def makedev(space, major, minor):
-    result = os.makedev(major, minor)
+    # c_uint, not c_int, to match major() and minor() just below: a device
+    # number is unsigned, and CPython rejects a negative one.  With c_int,
+    # makedev(-2, minor) quietly produced a device number instead of raising.
+    result = os.makedev(intmask(major), intmask(minor))
     return space.newint(result)
 
 @unwrap_spec(device="c_uint")

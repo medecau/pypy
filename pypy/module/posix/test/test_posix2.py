@@ -210,8 +210,9 @@ class AppTestPosix:
         assert stat.S_ISDIR(st.st_mode)
         st = self.posix.stat(b".")
         assert stat.S_ISDIR(st.st_mode)
-        st = self.posix.stat(bytearray(b"."))
-        assert stat.S_ISDIR(st.st_mode)
+        # 3.9 removed the DeprecationWarning-ed acceptance of arbitrary
+        # buffers as paths; a bytearray is a TypeError now.
+        raises(TypeError, self.posix.stat, bytearray(b"."))
         st = self.posix.lstat(".")
         assert stat.S_ISDIR(st.st_mode)
 
@@ -441,26 +442,15 @@ class AppTestPosix:
         assert u'ca\u2014f\xe9' in result
         raises(OSError, posix.listdir, self.dir_unicode + "NONEXISTENT")
 
-    def test_listdir_memoryview_returns_unicode(self):
-        import sys
-        # XXX unknown why CPython has this behaviour
-
-        # avoid importing stdlib os, copy fsencode instead
-        def fsencode(filename):
-            encoding = sys.getfilesystemencoding()
-            errors = sys.getfilesystemencodeerrors()
-            filename = posix.fspath(filename)  # Does type-checking of `filename`.
-            if isinstance(filename, str):
-                return filename.encode(encoding, errors)
-            else:
-                return filename
-
-
-        bytes_dir = self.bytes_dir
+    def test_listdir_memoryview_is_rejected(self):
+        # Up to 3.8 a memoryview was accepted as a path, with a
+        # DeprecationWarning, and listdir then returned str rather than
+        # bytes.  3.9 removed that; see test_posix.test_listdir_bytes_like.
         posix = self.posix
-        result1 = posix.listdir(bytes_dir)              # -> list of bytes
-        result2 = posix.listdir(memoryview(bytes_dir))  # -> list of unicodes
-        assert [fsencode(x) for x in result2] == result1
+        bytes_dir = self.bytes_dir
+        assert posix.listdir(bytes_dir)                 # bytes still fine
+        raises(TypeError, posix.listdir, memoryview(bytes_dir))
+        raises(TypeError, posix.listdir, bytearray(bytes_dir))
 
     @py.test.mark.skipif("sys.platform == 'win32'")
     def test_fdlistdir(self):
@@ -1231,7 +1221,7 @@ class AppTestPosix:
                 assert data == "who cares?"
         finally:
             posix.unlink(dest)
-        posix.symlink(memoryview(bytes_dir + b"/somefile"), dest)
+        posix.symlink(bytes_dir + b"/somefile", dest)
         try:
             assert islink(dest)
             with open(dest) as f:
@@ -1472,14 +1462,14 @@ class AppTestPosix:
             s2.close()
             s1.close()
 
-        def test_filename_can_be_a_buffer(self):
+        def test_filename_can_be_bytes(self):
             import posix, sys
             fsencoding = sys.getfilesystemencoding()
             pdir = (self.pdir + '/file1').encode(fsencoding)
             fd = posix.open(pdir, posix.O_RDONLY)
             posix.close(fd)
-            fd = posix.open(memoryview(pdir), posix.O_RDONLY)
-            posix.close(fd)
+            # a memoryview is no longer a valid path (3.9 removed that)
+            raises(TypeError, posix.open, memoryview(pdir), posix.O_RDONLY)
 
         def test_getgrouplist(self):
             import posix, getpass
