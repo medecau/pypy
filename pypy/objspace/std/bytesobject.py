@@ -10,7 +10,7 @@ from pypy.interpreter.buffer import SimpleView, StringBuffer
 from pypy.interpreter.error import OperationError, oefmt
 from pypy.interpreter.gateway import (
     WrappedDefault, interp2app, interpindirect2app, unwrap_spec)
-from pypy.interpreter.typedef import TypeDef
+from pypy.interpreter.typedef import TypeDef, buffer_descr
 from pypy.objspace.std.stringmethods import StringMethods
 from pypy.objspace.std.util import IDTAG_SPECIAL, IDTAG_SHIFT
 from pypy.objspace.std.formatting import mod_format, FORMAT_BYTES
@@ -870,6 +870,7 @@ def _from_byte_sequence_loop(space, w_iter, builder):
 W_BytesObject.typedef = TypeDef(
     "bytes", None, None, "read",
     __new__ = interp2app(W_BytesObject.descr_new),
+    __buffer__ = buffer_descr,
     __doc__ = """bytes(iterable_of_ints) -> bytes
     bytes(string, encoding[, errors]) -> bytes
     bytes(bytes_or_buffer) -> immutable copy of bytes_or_buffer

@@ -554,6 +554,27 @@ def generic_new_descr(W_Type):
 
 # ____________________________________________________________
 #
+# PEP 688 (3.12): the app-level __buffer__ method of the built-in buffer
+# types.  CPython grows a slot wrapper for every static type that fills
+# tp_as_buffer.bf_getbuffer; PyPy has no equivalent auto-generation, so the
+# equivalent is added to the relevant TypeDefs by hand.  Without it
+# collections.abc.Buffer, whose __subclasshook__ checks for __buffer__,
+# does not recognise bytes and friends.
+#
+# NB: only add this to the TypeDef of a class that really overrides
+# buffer_w().  W_Root's default buffer_w() looks '__buffer__' up at
+# app-level, so putting it on a TypeDef whose class does not override
+# buffer_w() would recurse forever.
+
+@unwrap_spec(flags='index')
+def descr__buffer__(space, w_self, flags):
+    """Return a buffer object that exposes the underlying memory of the object."""
+    return space.buffer_w(w_self, flags).wrap(space)
+
+buffer_descr = interp2app(descr__buffer__, app_name='__buffer__')
+
+# ____________________________________________________________
+#
 # Definition of the type's descriptors for all the internal types
 
 from pypy.interpreter.eval import Code

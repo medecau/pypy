@@ -8,7 +8,8 @@ from pypy.interpreter.baseobjspace import W_Root
 from pypy.interpreter.buffer import BufferView, SubBuffer, ReadonlyWrapper
 from pypy.interpreter.error import OperationError, oefmt
 from pypy.interpreter.gateway import interp2app, unwrap_spec
-from pypy.interpreter.typedef import TypeDef, GetSetProperty,  make_weakref_descr
+from pypy.interpreter.typedef import (TypeDef, GetSetProperty,
+    make_weakref_descr, buffer_descr)
 from rpython.rlib.unroll import unrolling_iterable
 
 MEMORYVIEW_MAX_DIM = 64
@@ -699,6 +700,7 @@ W_MemoryView.typedef = TypeDef(
 Create a new memoryview object which references the given object.
 """,
     __new__     = interp2app(W_MemoryView.descr_new_memoryview),
+    __buffer__  = buffer_descr,
     __eq__      = interp2app(W_MemoryView.descr_eq),
     __getitem__ = interp2app(W_MemoryView.descr_getitem),
     __len__     = interp2app(W_MemoryView.descr_len),

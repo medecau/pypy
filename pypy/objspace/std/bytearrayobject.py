@@ -18,7 +18,7 @@ from pypy.interpreter.baseobjspace import W_Root
 from pypy.interpreter.error import OperationError, oefmt
 from pypy.objspace.std.bytesobject import makebytesdata_w, newbytesdata_w
 from pypy.interpreter.gateway import WrappedDefault, interp2app, unwrap_spec
-from pypy.interpreter.typedef import TypeDef
+from pypy.interpreter.typedef import TypeDef, buffer_descr
 from pypy.interpreter.buffer import SimpleView
 from pypy.objspace.std.sliceobject import W_SliceObject, unwrap_start_stop
 from pypy.objspace.std.stringmethods import StringMethods
@@ -1204,6 +1204,7 @@ W_BytearrayObject.typedef = TypeDef(
     "bytearray", None, None, "read-write",
     __doc__ = BytearrayDocstrings.__doc__,
     __new__ = interp2app(W_BytearrayObject.descr_new),
+    __buffer__ = buffer_descr,
     __hash__ = None,
     __reduce__ = interp2app(W_BytearrayObject.descr_reduce,
                             doc=BytearrayDocstrings.__reduce__.__doc__),
