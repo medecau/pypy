@@ -113,7 +113,13 @@ class Scope(object):
                 err = "duplicate type parameter '%s'" % (identifier,)
                 self.error(err, ast_node)
             new_role |= old_role
-        if self.comp_iter_target:
+        if self.comp_iter_target and role & SYM_BOUND:
+            # Only names the target actually *binds* are iteration
+            # variables.  A name that merely appears inside the target --
+            # 'c' in 'for a, c[i] in j', which is loaded, not bound -- is
+            # not one, and rebinding it with := is legal
+            # (test_named_expressions'
+            # test_named_expression_valid_rebinding_iteration_variable).
             if new_role & (SYM_GLOBAL | SYM_NONLOCAL):
                 self.error(
                     "comprehension inner loop cannot rebind assignment expression target '%s'" % identifier,
