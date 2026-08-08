@@ -46,6 +46,11 @@ class SyntaxError(Exception):
         self.filename = filename
         self.end_lineno = end_lineno
         self.end_offset = end_offset
+        # When the source cannot be decoded at all, the offset is a byte
+        # index that must be reported as-is (CPython does the same for its
+        # "Non-UTF-8 code ..." error); the usual byte->codepoint adjustment
+        # would shift it.
+        self.offset_is_bytes = False
 
     @staticmethod
     def fromast(msg, node, filename=None):
@@ -82,7 +87,14 @@ class SyntaxError(Exception):
                         return None""")
         offset = self.offset
         end_offset = self.end_offset
-        if text is not None:
+        if text is not None and self.offset_is_bytes:
+            # keep the raw byte offset, but still provide the (replacement-
+            # decoded) text so a caret can be drawn
+            replacedtext, unilength, _ = _str_decode_utf8_slowpath(space,
+                    text, space.newbytes(text), 'replace', False,
+                    make_replace_error_handler(space), True)
+            w_text = space.newutf8(replacedtext, unilength)
+        elif text is not None:
             # text may not be UTF-8 in case of decoding errors.
             # adjust the encoded text offset to a decoded offset
             # XXX do the right thing about continuation lines, which

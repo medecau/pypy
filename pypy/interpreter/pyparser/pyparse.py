@@ -51,8 +51,11 @@ def _check_valid_utf8_source(bytessrc, compile_info, explicit_encoding):
             msg += (", but no encoding declared; see "
                     "https://peps.python.org/pep-0263/ for details")
         # 1-based byte column of the offending byte, like CPython's tokenizer
-        raise error.SyntaxError(msg, lineno, pos - line_start + 1,
+        exc = error.SyntaxError(msg, lineno, pos - line_start + 1,
                                 filename=compile_info.filename)
+        # the source cannot be decoded, so report the byte offset verbatim
+        exc.offset_is_bytes = True
+        raise exc
 
 def _normalize_encoding(encoding):
     """returns normalized name for <encoding>
