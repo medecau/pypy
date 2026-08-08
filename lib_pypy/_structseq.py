@@ -80,7 +80,12 @@ class structseqtype(type):
                 dict['__new__'] = structseq_new_forbidden
             else:
                 dict['__new__'] = structseq_new
-        dict['__reduce__'] = structseq_reduce
+        if '__reduce__' not in dict:
+            # Same courtesy as __new__ above: a structseq whose constructor
+            # does not take the generic (sequence, dict) pair -- posix's
+            # sched_param takes a bare priority -- has to be able to supply
+            # a matching __reduce__, or it cannot be pickled at all.
+            dict['__reduce__'] = structseq_reduce
         dict['__setattr__'] = structseq_setattr
         dict['__repr__'] = structseq_repr
         dict['__str__'] = structseq_repr
