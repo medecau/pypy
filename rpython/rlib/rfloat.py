@@ -454,7 +454,12 @@ def gamma(x):
         return r
     if absx > 200.:
         if x < 0.:
-            return 0. / -_sinpi(x)
+            # NB: no extra negation.  CPython's mathmodule.c returns
+            # 0.0/sinpi(x) here, and the sign of that zero is observable
+            # (test_math's gam0128..gam0132 in the mtestfile check it).
+            # _sinpi follows CPython's sinpi sign convention -- see the
+            # x < 0 branch below, which matches -pi/sinpi(absx)/absx.
+            return 0. / _sinpi(x)
         else:
             raise OverflowError("math range error")
     y = absx + _lanczos_g_minus_half

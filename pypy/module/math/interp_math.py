@@ -3,6 +3,8 @@ import sys
 
 from rpython.rlib import rfloat
 from rpython.rlib.objectmodel import specialize
+from rpython.rlib.rarithmetic import r_longlong
+from rpython.rlib.longlong2float import float2longlong, longlong2float
 from pypy.interpreter.error import OperationError, oefmt
 from pypy.interpreter.gateway import unwrap_spec, WrappedDefault
 
@@ -763,11 +765,63 @@ def gcd_two(space, w_a, w_b):
         g = rbigint.gcd_binary(a, b)
         return space.newint(g)
 
-def nextafter(space, w_a, w_b):
+_FLOAT_MAGNITUDE_MASK = r_longlong(0x7FFFFFFFFFFFFFFF)
+_FLOAT_SIGN_BIT = r_longlong(-0x8000000000000000)
+
+def _float_index(x):
+    """Index of x in the ordered sequence of representable doubles.
+
+    +0.0 and -0.0 both map to 0, which is exactly how nextafter sees them:
+    stepping up from either lands on the smallest positive subnormal.
+    """
+    bits = float2longlong(x)
+    magnitude = bits & _FLOAT_MAGNITUDE_MASK
+    if bits < 0:
+        return -magnitude
+    return magnitude
+
+def _float_from_index(index, negative_zero):
+    if index == 0:
+        return -0.0 if negative_zero else 0.0
+    if index < 0:
+        return longlong2float((-index) | _FLOAT_SIGN_BIT)
+    return longlong2float(index)
+
+@unwrap_spec(w_steps=WrappedDefault(None))
+def nextafter(space, w_a, w_b, __kwonly__, w_steps):
     """ Return the next floating-point value after x towards y. """
     a = _get_double(space, w_a)
     b = _get_double(space, w_b)
-    return space.newfloat(rfloat.nextafter(a, b))
+    if space.is_w(w_steps, space.w_None):
+        return space.newfloat(rfloat.nextafter(a, b))
+    # 3.12 added the 'steps' keyword: move that many representable values
+    # towards y at once.
+    steps = space.int_w(space.index(w_steps))
+    if steps < 0:
+        raise oefmt(space.w_ValueError,
+                    "steps must be a non-negative integer")
+    if math.isnan(a):
+        return space.newfloat(a)
+    if math.isnan(b):
+        return space.newfloat(b)
+    if steps == 0:
+        return space.newfloat(a)
+    if a == b:
+        # returns y, which also settles the sign of a zero result
+        return space.newfloat(b)
+    index_a = _float_index(a)
+    index_b = _float_index(b)
+    distance = index_b - index_a
+    if distance < 0:
+        distance = -distance
+    if steps > distance:
+        # y is reached with steps to spare; every further step is a no-op
+        # returning y, so y's own sign wins
+        return space.newfloat(b)
+    if index_b > index_a:
+        # arriving at zero from below keeps it negative
+        return space.newfloat(_float_from_index(index_a + steps, True))
+    return space.newfloat(_float_from_index(index_a - steps, False))
 
 def ulp(space, w_x):
     """Return the value of the least significant bit of the
