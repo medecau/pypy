@@ -1033,12 +1033,13 @@ class TracebackException:
                 # Convert 1-based column offset to 0-based index into stripped text
                 colno = offset - 1 - spaces
                 end_colno = end_offset - 1 - spaces
-                # Clamp a reversed/negative end offset to a single-char
-                # caret, and an end offset past the end of the line to the
-                # line's length, mirroring CPython's C excepthook.
+                # A reversed/degenerate range still gets a one-char caret
+                # (test_exceptions' invalid-position cases).  Do NOT clamp
+                # to len(ltext): an error at end-of-line legitimately has
+                # colno == len(ltext), and clamping erases its caret
+                # (test_traceback.test_caret, "1 +").
                 if end_colno <= colno:
                     end_colno = colno + 1
-                end_colno = min(end_colno, len(ltext))
                 if colno >= 0:
                     caretspace = ((c if c.isspace() else ' ') for c in ltext[:colno])
                     start_color = end_color = ""
