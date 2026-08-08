@@ -532,6 +532,10 @@ class PyCode(eval.Code):
         return W_LineIterator(self.space, self)
 
     def fget_co_lnotab(self, space):
+        # 3.12 (gh-101549) deprecated co_lnotab in favour of co_lines()
+        space.warn(
+            space.newtext("co_lnotab is deprecated, use co_lines instead."),
+            space.w_DeprecationWarning)
         return space.newbytes(
             self.get_co_lnotab())
 
