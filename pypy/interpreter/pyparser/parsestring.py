@@ -81,9 +81,14 @@ def parsestr(space, encoding, s, token=None, astbuilder=None):
     # Disallow non-ascii characters (but not escapes)
     for i, c in enumerate(substr):
         if ord(c) > 0x80:
-            raise SyntaxError("bytes can only contain ASCII literal characters.",
+            # CPython reports this over the whole literal token
+            # (RAISE_SYNTAX_ERROR_KNOWN_LOCATION), not at the offending
+            # character, and without a trailing period
+            raise SyntaxError("bytes can only contain ASCII literal characters",
                 token.lineno,
-                token.column + ps + i + 1)
+                token.column + 1,
+                end_lineno=token.end_lineno,
+                end_offset=token.end_column + 1)
             raise oefmt(space.w_SyntaxError,
                         )
 
