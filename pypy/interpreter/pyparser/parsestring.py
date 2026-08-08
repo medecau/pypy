@@ -96,8 +96,11 @@ def parsestr(space, encoding, s, token=None, astbuilder=None):
         if astbuilder:
             msg, _ = unicodehelper.format_invalid_escape_message(
                 first_escape_error_char, distinguish_octal=True)
-            astbuilder.deprecation_warn(
-                msg, token, w_category=space.w_DeprecationWarning)
+            # 3.12 upgraded compile-time literal escape warnings to
+            # SyntaxWarning (the default category deprecation_warn picks
+            # from feature_version); the runtime codec path below stays
+            # DeprecationWarning.
+            astbuilder.deprecation_warn(msg, token)
 
     return space.newbytes(v)
 
@@ -292,8 +295,7 @@ def decode_unicode_escape(space, string, astbuilder, token):
     if first_escape_error_char is not None and astbuilder is not None:
         msg, _ = unicodehelper.format_invalid_escape_message(
             first_escape_error_char, distinguish_octal=True)
-        astbuilder.deprecation_warn(msg, token,
-                                     w_category=space.w_DeprecationWarning)
+        astbuilder.deprecation_warn(msg, token)
     return s, ulen, blen
 
 def isxdigit(ch):

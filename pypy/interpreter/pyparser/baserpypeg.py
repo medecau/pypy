@@ -311,10 +311,11 @@ class Parser:
         from pypy.module._warnings.interp_warnings import warn_explicit
         space = self.space
         if w_category is None:
-            # Only f-string (and other tokenizer-level) escape warnings were
-            # upgraded to SyntaxWarning in 3.12; regular str/bytes literal
-            # escape warnings stay DeprecationWarning and pass an explicit
-            # w_category (see parsestring.py).
+            # 3.12 upgraded compile-time escape-sequence warnings from
+            # DeprecationWarning to SyntaxWarning (test_string_literals,
+            # test_codeop).  The runtime codecs.escape_decode /
+            # unicode_escape path keeps DeprecationWarning and warns
+            # directly rather than coming through here (test_codecs).
             if self.compile_info.feature_version >= 12:
                 w_category = space.w_SyntaxWarning
             else:
