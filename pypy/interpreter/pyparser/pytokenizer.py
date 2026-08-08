@@ -1243,6 +1243,16 @@ def _maybe_raise_number_error(token, line, lnum, start, end, token_list):
         if ch == "_":
             raise TokenError("invalid decimal literal",
                     line, lnum, end + 1, token_list)
+        if ch == "e" or ch == "E":
+            # The DFA stops before a malformed exponent (e.g. "32e-+4"),
+            # leaving the 'e' to start a NAME and the parser to report a
+            # vague "invalid syntax" at the number.  CPython's tokenizer
+            # consumes the sign and reports "invalid decimal literal" there.
+            signch = _get_next_or_nul(line, end + 1)
+            if signch == "+" or signch == "-":
+                if not _get_next_or_nul(line, end + 2).isdigit():
+                    raise TokenError("invalid decimal literal",
+                            line, lnum, end + 2, token_list)
 
     # now that we've covered the actual error cases, let's see whether we need
     # to insert a WARNING token
