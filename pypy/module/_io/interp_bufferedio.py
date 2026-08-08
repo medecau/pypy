@@ -401,6 +401,12 @@ class BufferedMixin:
 
     def simple_flush_w(self, space):
         self._check_init(space)
+        # A read-only buffered object has nothing of its own to flush, but
+        # flushing a closed one is still an error -- CPython raises
+        # ValueError here and test_io's test_read_on_closed checks it.
+        # Delegating to the raw stream is not enough: a closed BytesIO
+        # accepts flush().
+        self._check_closed(space)
         return space.call_method(self.w_raw, "flush")
 
     def _writer_flush_unlocked(self, space):
