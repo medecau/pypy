@@ -126,6 +126,11 @@ def _repr_item(it):
         return "..."
     if isinstance(it, GenericAlias):
         return repr(it)
+    if type(it) is list:
+        # A list argument comes from a ParamSpec substitution; CPython's
+        # ga_repr_item renders its elements the same way, so a class shows
+        # as 'float' rather than "<class 'float'>".
+        return "[%s]" % ", ".join([_repr_item(x) for x in it])
     try:
         import typing as _typing
         if isinstance(it, _typing._GenericAlias):

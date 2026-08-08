@@ -516,8 +516,8 @@ class __extend__(pyframe.PyFrame):
     def _load_fast_failed(self, varindex):
         varname = self.getlocalvarname(varindex)
         raise oefmt(self.space.w_UnboundLocalError,
-                    "local variable '%s' referenced before assignment",
-                    varname)
+                    "cannot access local variable '%s' where it is not"
+                    " associated with a value", varname)
 
     def LOAD_CONST(self, constindex, next_instr):
         w_const = self.getconstant_w(constindex)
@@ -634,14 +634,15 @@ class __extend__(pyframe.PyFrame):
 
     def raise_exc_unbound(self, varindex):
         varname = self.getfreevarname(varindex)
+        # 3.12 reworded both of these (gh-98274)
         if self.iscellvar(varindex):
             raise oefmt(self.space.w_UnboundLocalError,
-                        "local variable '%s' referenced before assignment",
-                        varname)
+                        "cannot access local variable '%s' where it is not"
+                        " associated with a value", varname)
         else:
             raise oefmt(self.space.w_NameError,
-                        "free variable '%s' referenced before assignment"
-                        " in enclosing scope", varname)
+                        "cannot access free variable '%s' where it is not"
+                        " associated with a value in enclosing scope", varname)
 
     def LOAD_CLOSURE(self, varindex, next_instr):
         # nested scopes: access the cell object
@@ -1005,8 +1006,8 @@ class __extend__(pyframe.PyFrame):
         if self.locals_cells_stack_w[varindex] is None:
             varname = self.getlocalvarname(varindex)
             raise oefmt(self.space.w_UnboundLocalError,
-                        "local variable '%s' referenced before assignment",
-                        varname)
+                        "cannot access local variable '%s' where it is not"
+                        " associated with a value", varname)
         self.locals_cells_stack_w[varindex] = None
 
     def SETUP_ANNOTATIONS(self, oparg, next_instr):

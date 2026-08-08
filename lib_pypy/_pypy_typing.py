@@ -17,6 +17,9 @@ parity with CPython's implementation around introspection, immutability, etc.
 """
 
 import sys as _sys
+# GenericAlias/UnionType come from the same place types.py gets them; using
+# 'types' here would be a circular import during bootstrap.
+import _pypy_generic_alias as _types
 
 __all__ = [
     'TypeVar', 'ParamSpec', 'TypeVarTuple', 'TypeAliasType',
@@ -27,7 +30,7 @@ __all__ = [
 def _caller_module_name():
     """Get the module name of the caller's caller (2 frames up)."""
     try:
-        return _sys._getframe(2).f_globals.get('__name__', '__main__')
+        return _sys._getframe(2).f_globals.get('__name__')
     except (AttributeError, ValueError):
         return None
 
@@ -341,9 +344,10 @@ class TypeAliasType(_PickleUsingNameMixin):
         self._name = name
         self._type_params = tuple(type_params) if type_params else ()
         self.__value__ = value
-        module = _caller_module_name()
-        if module is not None:
-            self.__module__ = module
+        # Set unconditionally: when there is no calling module -- e.g. the
+        # alias came from exec() with a bare namespace -- CPython leaves
+        # __module__ as None rather than falling back to the class's.
+        self.__module__ = _caller_module_name()
 
     def __init_subclass__(cls, *args, **kwargs):
         raise TypeError(f"type '{TypeAliasType.__qualname__}' is not an acceptable base type")
@@ -378,20 +382,23 @@ class TypeAliasType(_PickleUsingNameMixin):
         """Support generic type alias subscripting: Alias[T]."""
         if not self._type_params:
             raise TypeError("Only generic type aliases are subscriptable")
-        from typing import _GenericAlias
+        # CPython's C implementation calls Py_GenericAlias here, so the
+        # result is a types.GenericAlias -- not a typing._GenericAlias.
+        # That is observable: test_type_aliases asserts the type, and the
+        # two repr differently (types.GenericAlias prints 'float' where
+        # typing's prints "<class 'float'>").
         if not isinstance(parameters, tuple):
             parameters = (parameters,)
-        return _GenericAlias(self, parameters)
+        return _types.GenericAlias(self, parameters)
 
     def __or__(self, other):
         """Support | for Union types."""
-        from typing import Union
-        return Union[self, other]
+        # again as CPython: a real types.UnionType, not typing.Union
+        return _types.UnionType((self, other))
 
     def __ror__(self, other):
         """Support | for Union types (reverse)."""
-        from typing import Union
-        return Union[other, self]
+        return _types.UnionType((other, self))
 
 
 # Factory functions for the compiler
@@ -458,8 +465,11 @@ def _subscript_generic(params):
 
 def _make_typealiastype(name, evaluate_value, type_params):
     t = TypeAliasType(name, None, type_params=type_params)
-    # Fix __module__: we're one extra frame away from the real caller
-    t.__module__ = _sys._getframe(1).f_globals.get('__name__', '__main__')
+    # Fix __module__: we're one extra frame away from the real caller.
+    # No '__main__' default -- when the alias is built somewhere without a
+    # module name, e.g. exec() with a bare namespace, CPython leaves
+    # __module__ as None.
+    t.__module__ = _sys._getframe(1).f_globals.get('__name__')
     del t.__value__
     t.__evaluate_value__ = evaluate_value
     return t
