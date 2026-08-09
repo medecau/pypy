@@ -2280,11 +2280,16 @@ def exception_group_match(space, w_eg, w_typ):
                         "%N.split must return a tuple, not %T",
                         space.type(w_eg), w_tup)
         length = space.len_w(w_tup)
-        if length != 2:
+        if length < 2:
             raise oefmt(space.w_TypeError,
                         "%N.split must return a 2-tuple, got tuple of size %d",
                         space.type(w_eg), length)
-        w_match, w_rest = space.unpackiterable(w_tup, 2)
+        # Only too-short is refused.  A longer tuple is accepted and the extra
+        # items ignored, which CPython keeps for backwards compatibility --
+        # test_except_star's WeirdEG returns super().split(...) + three more
+        # items and expects it to work.
+        w_match = space.getitem(w_tup, space.newint(0))
+        w_rest = space.getitem(w_tup, space.newint(1))
         return w_match, w_rest
     else:
         return space.w_None, space.w_None

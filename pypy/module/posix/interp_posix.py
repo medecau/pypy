@@ -2530,22 +2530,39 @@ def getloadavg(space):
                            space.newfloat(load[1]),
                            space.newfloat(load[2])])
 
-@unwrap_spec(major="c_uint", minor="c_uint")
-def makedev(space, major, minor):
-    # c_uint, not c_int, to match major() and minor() just below: a device
-    # number is unsigned, and CPython rejects a negative one.  With c_int,
-    # makedev(-2, minor) quietly produced a device number instead of raising.
-    result = os.makedev(intmask(major), intmask(minor))
+def _unwrap_dev(space, w_value):
+    """Convert a device number the way CPython's dev_t converter does.
+
+    A device number is unsigned, so a negative one is refused -- with one
+    exception: -1 is NODEV, and major(), minor() and makedev() all round it
+    trip unchanged.  test_posix checks both halves: -2 has to raise while
+    NODEV has to come back as -1.
+    """
+    # allow_conversion=False: CPython wants a real int here and refuses even
+    # an object with __index__ ("an integer is required"), which is what
+    # test_makedev's float() cases check.  bool passes, being an int subclass.
+    value = space.int_w(w_value, allow_conversion=False)
+    if value < -1:
+        raise oefmt(space.w_ValueError,
+                    "cannot convert negative integer to unsigned")
+    return value
+
+def makedev(space, w_major, w_minor):
+    major = _unwrap_dev(space, w_major)
+    minor = _unwrap_dev(space, w_minor)
+    # The two halves of a device number are 32-bit fields, unlike the
+    # combined value, so these are bounded more tightly than major()/minor().
+    if major > 0xffffffff or minor > 0xffffffff:
+        raise oefmt(space.w_OverflowError, "expected a 32-bit integer")
+    result = os.makedev(major, minor)
     return space.newint(result)
 
-@unwrap_spec(device="c_uint")
-def major(space, device):
-    result = os.major(intmask(device))
+def major(space, w_device):
+    result = os.major(_unwrap_dev(space, w_device))
     return space.newint(result)
 
-@unwrap_spec(device="c_uint")
-def minor(space, device):
-    result = os.minor(intmask(device))
+def minor(space, w_device):
+    result = os.minor(_unwrap_dev(space, w_device))
     return space.newint(result)
 
 @unwrap_spec(increment=c_int)
