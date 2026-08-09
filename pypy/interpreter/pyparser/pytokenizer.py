@@ -456,8 +456,8 @@ class Tokenizer(object):
             # tokens before the backslash it stays the EOF error, which
             # test_eof pins for 'x = 5\\'.
             empty_logical_line = True
-            if len(self.tokens) > 0:
-                last_type = self.tokens[len(self.tokens) - 1].token_type
+            if self.token_list:
+                last_type = self.token_list[-1].token_type
                 if (last_type != tokens.NEWLINE and
                         last_type != tokens.NL and
                         last_type != tokens.INDENT and
