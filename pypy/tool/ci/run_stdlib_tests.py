@@ -21,6 +21,19 @@ def _as_text(data):
     return data
 
 
+def _is_resource_denied(output):
+    """Did regrtest decline to run the module for want of a resource?
+
+    test_ttk needs the 'gui' resource, which CI does not enable, so regrtest
+    skips it, reports NO TESTS RAN and exits non-zero -- which we were
+    counting as a failure.  Nothing is wrong and there is nothing to fix; the
+    module would run normally if the resource were available, so it does not
+    belong in SKIP_TESTS either.  Matching on both markers keeps this narrow:
+    a module that runs no tests for any other reason still counts as failed.
+    """
+    return "Result: NO TESTS RAN" in output and "resource_denied=" in output
+
+
 def run_test(args):
     """Run a single test module. Returns (test_name, status, duration, output)."""
     pypy, test_name, timeout = args
@@ -33,6 +46,8 @@ def run_test(args):
         output = result.stdout + result.stderr
         if result.returncode == 0:
             return (test_name, "pass", duration, output)
+        elif _is_resource_denied(output):
+            return (test_name, "skipped", duration, output)
         else:
             return (test_name, "fail", duration, output)
     except subprocess.TimeoutExpired as e:
@@ -90,7 +105,7 @@ def main():
     expected_fail_set = set(EXPECTED_FAILURES)
 
     results = {"pass": [], "fail": [], "timeout": [], "error": [],
-               "expected_fail": []}
+               "expected_fail": [], "skipped": []}
     failure_outputs = {}
 
     test_args = [(args.pypy, t, args.timeout) for t in tests if t not in skip_set]
@@ -120,7 +135,8 @@ def main():
                 failure_outputs[name] = output
 
             label = {"pass": "ok", "fail": "FAIL", "timeout": "TIMEOUT",
-                     "error": "ERROR", "expected_fail": "xfail"}[status]
+                     "error": "ERROR", "expected_fail": "xfail",
+                     "skipped": "skip"}[status]
             elapsed = time.monotonic() - start_time
             print(f"[{completed}/{total}] {name} ... {label} ({duration:.1f}s) [{elapsed:.0f}s elapsed]")
             sys.stdout.flush()
@@ -135,6 +151,7 @@ def main():
     print(f"  Expected failures:{len(results['expected_fail'])}")
     print(f"  Timeouts:         {len(results['timeout'])}")
     print(f"  Errors:           {len(results['error'])}")
+    print(f"  Skipped:          {len(results['skipped'])}")
 
     if results["fail"]:
         print("\nUnexpected failures:")
@@ -167,6 +184,7 @@ def main():
         "expected_fail": [n for n, _ in results["expected_fail"]],
         "timeout": [n for n, _ in results["timeout"]],
         "error": [n for n, _ in results["error"]],
+        "skipped": [n for n, _ in results["skipped"]],
         "failure_details": {n: o[-2000:] for n, o in failure_outputs.items()},
     }
     with open("stdlib-results.json", "w") as f:
