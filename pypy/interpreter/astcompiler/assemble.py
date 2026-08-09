@@ -1022,6 +1022,8 @@ _static_opcode_stack_effects = {
     ops.NOP: 0,
 
     ops.POP_TOP: -1,
+    ops.LOAD_FAST_AND_CLEAR: 1,
+    ops.STORE_FAST_MAYBE_NULL: -1,
     ops.ROT_TWO: 0,
     ops.ROT_THREE: 0,
     ops.ROT_FOUR: 0,

@@ -12,6 +12,7 @@ from rpython.rlib.objectmodel import specialize, we_are_translated
 from pypy.interpreter.astcompiler import ast, assemble, symtable, consts, misc
 from pypy.interpreter.astcompiler import optimize # For side effects
 from pypy.interpreter.pyparser.error import SyntaxError
+from pypy.interpreter.miscutils import string_sort
 from pypy.tool import stdlib_opcode as ops
 
 C_INT_MAX = (2 ** (struct.calcsize('i') * 8)) / 2 - 1
@@ -249,6 +250,14 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         self.temporary_name_counter = 1
         self.qualname = qualname
         self._allow_top_level_await = compile_info.flags & consts.PyCF_ALLOW_TOP_LEVEL_AWAIT
+        # PEP 709 bookkeeping for inlined comprehensions.  All three must be
+        # set before _compile runs; _active_inlined_names maps the (mangled)
+        # names bound by the inlined comprehensions currently being emitted
+        # to a nesting count, _inlined_iter_names stacks the hidden slot
+        # holding each one's iterator.
+        self._active_inlined_names = {}
+        self._inlined_iter_names = []
+        self._inlined_comp_counter = 0
         self._compile(tree)
 
     def _compile(self, tree):
@@ -381,6 +390,12 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         self.check_forbidden_name(identifier, node, ctx)
 
         scope = self.scope.lookup(identifier)
+        if (self._active_inlined_names and
+                self.scope.mangle(identifier) in self._active_inlined_names):
+            # PEP 709: bound by an enclosing inlined comprehension, so it
+            # lives in a fast local of the enclosing function -- possibly a
+            # hidden one the symbol table does not know about.
+            scope = symtable.SCOPE_LOCAL
         op = ops.NOP
         container = self.names
         if scope == symtable.SCOPE_LOCAL:
@@ -2062,7 +2077,139 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         self.use_next_block(b_except)
         self.emit_op(ops.END_ASYNC_FOR)
 
+    def comprehension_load_iter(self):
+        # Only called while emitting a comprehension body.  In a separate
+        # comprehension code object this is overridden to load the '.0'
+        # argument; for a PEP 709 inlined comprehension the iterator lives
+        # in a hidden fast local of the enclosing function.
+        name = self._inlined_iter_names[-1]
+        self.emit_op_arg(ops.LOAD_FAST, self.add_name(self.var_names, name))
+
+    def _emit_fast(self, op, name):
+        self.emit_op_arg(op, self.add_name(self.var_names, name))
+
+    def _inline_comp_bound_names(self, node, comp_scope):
+        """The sorted names an inlinable comprehension binds, else None.
+
+        PEP 709, deliberately narrower than CPython: only sync list/set/
+        dict comprehensions in optimized function scopes whose bound names
+        are plain locals on both sides.  Everything else -- class and
+        module bodies, async comprehensions, iteration variables closed
+        over by a nested scope or shared with a parent cell/free variable,
+        walrus targets escaping the comprehension -- keeps the separate
+        code object, whose semantics are already right.
+        """
+        if isinstance(node, ast.GeneratorExp):
+            return None
+        assert isinstance(comp_scope, symtable.FunctionScope)
+        if comp_scope.is_coroutine or comp_scope.is_generator:
+            return None
+        if not isinstance(self.scope, symtable.FunctionScope):
+            return None
+        generators = node.get_generators()
+        for i in range(len(generators)):
+            gen = generators[i]
+            assert isinstance(gen, ast.comprehension)
+            if gen.is_async:
+                return None
+        names = []
+        for name, role in comp_scope.roles.iteritems():
+            if name.startswith('.'):
+                continue          # the '.0' argument of the unused old scheme
+            if role & (symtable.SYM_GLOBAL | symtable.SYM_NONLOCAL):
+                return None       # a walrus target escaping the comprehension
+            if role & symtable.SYM_BOUND:
+                if comp_scope.lookup(name) != symtable.SCOPE_LOCAL:
+                    return None   # closed over by something in the body
+                parent_scope = self.scope.lookup(name)
+                if (parent_scope == symtable.SCOPE_CELL or
+                        parent_scope == symtable.SCOPE_FREE):
+                    return None   # sharing would need cell save/restore
+                names.append(name)
+        # deterministic emission order: never iterate a dict for codegen
+        # (untranslated py2 dict order differs from translated).  NB:
+        # list.sort() is not RPython; string_sort is the tree's timsort for
+        # interp-level string lists, same as assemble.py uses.
+        string_sort(names)
+        return names
+
+    def _emit_inlined_comp_restore(self, counter, names, iter_name):
+        for i in range(len(names)):
+            name = names[i]
+            self._emit_fast(ops.LOAD_FAST_AND_CLEAR,
+                            '.%d.save.%s' % (counter, name))
+            self._emit_fast(ops.STORE_FAST_MAYBE_NULL, name)
+        # the iterator slot is never unbound here, so a plain POP_TOP is
+        # safe after the maybe-None push
+        self._emit_fast(ops.LOAD_FAST_AND_CLEAR, iter_name)
+        self.emit_op(ops.POP_TOP)
+
+    def _compile_inlined_comprehension(self, node, names):
+        # PEP 709: emit the comprehension loop directly into this code
+        # object.  The iterator and the saved values of the names the
+        # comprehension binds all live in hidden fast locals, so nothing
+        # possibly-unbound ever travels through generic stack shuffles,
+        # and the restore sequence is identical on the normal path and in
+        # the exception handler.
+        self.update_position(node)
+        first_comp = node.get_generators()[0]
+        assert isinstance(first_comp, ast.comprehension)
+        first_comp.iter.walkabout(self)
+        # PEP 657: the loop machinery is attributed to the outermost
+        # iterable expression, matching the separate-code-object path
+        self.update_position(first_comp.iter)
+        self.emit_op(ops.GET_ITER)
+        counter = self._inlined_comp_counter
+        self._inlined_comp_counter += 1
+        iter_name = '.%d.iter' % counter
+        self._emit_fast(ops.STORE_FAST, iter_name)
+        for i in range(len(names)):
+            name = names[i]
+            self._emit_fast(ops.LOAD_FAST_AND_CLEAR, name)
+            self._emit_fast(ops.STORE_FAST_MAYBE_NULL,
+                            '.%d.save.%s' % (counter, name))
+        handler = self.new_block()
+        end = self.new_block()
+        self.emit_jump(ops.SETUP_EXCEPT, handler)
+        self.use_next_block()
+        self._inlined_iter_names.append(iter_name)
+        for i in range(len(names)):
+            name = names[i]
+            count = self._active_inlined_names.get(name, 0)
+            self._active_inlined_names[name] = count + 1
+        node.build_container_and_load_iter(self)
+        self._comp_generator(node, node.get_generators())
+        self._inlined_iter_names.pop()
+        for i in range(len(names)):
+            name = names[i]
+            count = self._active_inlined_names[name] - 1
+            if count == 0:
+                del self._active_inlined_names[name]
+            else:
+                self._active_inlined_names[name] = count
+        # the restores are artificial instructions: they must not add line
+        # events, or the merged trace count PEP 709 promises is off again
+        self.no_position_info()
+        self.emit_op(ops.POP_BLOCK)
+        self._emit_inlined_comp_restore(counter, names, iter_name)
+        self.emit_jump(ops.JUMP_FORWARD, end)
+        self.use_next_block(handler)
+        # entered with [unroller, w_value]; both restore pairs and the
+        # iterator pop are TOS-neutral, then discard the exception value
+        # and re-raise via the unroller, exactly like an unmatched except
+        self.no_position_info()
+        self._emit_inlined_comp_restore(counter, names, iter_name)
+        self.emit_op(ops.POP_TOP)
+        self.emit_op(ops.RERAISE)
+        self.use_next_block(end)
+
     def _compile_comprehension(self, node, name, sub_scope):
+        comp_scope = self.symbols.find_scope(node)
+        if not isinstance(node, ast.GeneratorExp):
+            inline_names = self._inline_comp_bound_names(node, comp_scope)
+            if inline_names is not None:
+                self._compile_inlined_comprehension(node, inline_names)
+                return
         is_async_function = self.scope.is_coroutine
         code, qualname = self.sub_scope(sub_scope, name, node, node.lineno)
         is_async_comprehension = self.symbols.find_scope(node).is_coroutine
@@ -3160,6 +3307,13 @@ class ComprehensionCodeGenerator(AbstractFunctionCodeGenerator):
         self._end_comp()
 
     def comprehension_load_iter(self):
+        if self._inlined_iter_names:
+            # a PEP 709 inlined comprehension is being emitted INTO this
+            # (non-inlined) comprehension's code object; its iterator lives
+            # in a hidden fast slot, not in the '.0' argument.  Without this
+            # the inner loop consumed the outer comprehension's iterator.
+            PythonCodeGenerator.comprehension_load_iter(self)
+            return
         self.emit_op_arg(ops.LOAD_FAST, 0)
 
     def _end_comp(self):

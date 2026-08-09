@@ -402,6 +402,10 @@ class __extend__(pyframe.PyFrame):
                 self.STORE_DEREF(oparg, next_instr)
             elif opcode == opcodedesc.STORE_FAST.index:
                 self.STORE_FAST(oparg, next_instr)
+            elif opcode == opcodedesc.LOAD_FAST_AND_CLEAR.index:
+                self.LOAD_FAST_AND_CLEAR(oparg, next_instr)
+            elif opcode == opcodedesc.STORE_FAST_MAYBE_NULL.index:
+                self.STORE_FAST_MAYBE_NULL(oparg, next_instr)
             elif opcode == opcodedesc.STORE_GLOBAL.index:
                 self.STORE_GLOBAL(oparg, next_instr)
             elif opcode == opcodedesc.STORE_NAME.index:
@@ -526,6 +530,19 @@ class __extend__(pyframe.PyFrame):
     def STORE_FAST(self, varindex, next_instr):
         w_newvalue = self.popvalue()
         assert w_newvalue is not None
+        self.locals_cells_stack_w[varindex] = w_newvalue
+
+    def LOAD_FAST_AND_CLEAR(self, varindex, next_instr):
+        # PEP 709 inlined comprehensions: capture the current value of the
+        # slot -- unbound included, hence maybe-None -- and clear it
+        w_value = self.locals_cells_stack_w[varindex]
+        self.locals_cells_stack_w[varindex] = None
+        self.pushvalue_maybe_none(w_value)
+
+    def STORE_FAST_MAYBE_NULL(self, varindex, next_instr):
+        # PEP 709: the reverse of LOAD_FAST_AND_CLEAR; None restores the
+        # unbound state
+        w_newvalue = self.popvalue_maybe_none()
         self.locals_cells_stack_w[varindex] = w_newvalue
 
     def getfreevarname(self, index):

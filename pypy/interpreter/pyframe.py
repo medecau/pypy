@@ -581,6 +581,12 @@ class PyFrame(W_Root):
         varnames = self.getcode().getvarnames()
         for i in range(min(len(varnames), self.getcode().co_nlocals)):
             name = varnames[i]
+            if len(name) > 1 and name[0] == '.' and name.find('.', 1) > 0:
+                # a PEP 709 hidden slot ('.0.iter', '.0.save.x'): never
+                # exposed in locals(), like CPython's CO_FAST_HIDDEN.  The
+                # legacy '.0' argument of non-inlined comprehensions has no
+                # second dot and keeps its historical visibility.
+                continue
             w_value = self.locals_cells_stack_w[i]
             if w_value is not None:
                 self.space.setitem_str(w_locals, name, w_value)
@@ -628,6 +634,12 @@ class PyFrame(W_Root):
 
         for i in range(min(len(varnames), numlocals)):
             name = varnames[i]
+            if len(name) > 1 and name[0] == '.' and name.find('.', 1) > 0:
+                # hidden slots are absent from w_locals (see fast2locals);
+                # keep their live values or a debugger writing f_locals
+                # mid-comprehension would wipe the iterator
+                new_fastlocals_w[i] = self.locals_cells_stack_w[i]
+                continue
             w_value = self.space.finditem_str(w_locals, name)
             if w_value is not None:
                 new_fastlocals_w[i] = w_value

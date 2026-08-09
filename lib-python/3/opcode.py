@@ -241,6 +241,10 @@ hasfree.append(170)
 
 # pypy modification, experimental bytecode
 def_op('BUILD_LIST_FROM_ARG', 203)
+def_op('LOAD_FAST_AND_CLEAR', 206)   # PEP 709
+haslocal.append(206)
+def_op('STORE_FAST_MAYBE_NULL', 207) # PEP 709
+haslocal.append(207)
 def_op('CALL_METHOD_KW', 204)
 def_op('LOAD_REVDB_VAR', 205)         # reverse debugger (syntax example: $5)
 

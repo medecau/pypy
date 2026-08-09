@@ -219,6 +219,15 @@ def_op('DICT_MERGE', 166)
 def_op('DICT_UPDATE', 167)
 
 # pypy modification, experimental bytecode
+# PEP 709 (inlined comprehensions): save/restore of the names a
+# comprehension binds.  LOAD_FAST_AND_CLEAR pushes the current value of a
+# fast local -- which may be unbound -- and clears the slot;
+# STORE_FAST_MAYBE_NULL pops a possibly-unbound value back into the slot.
+def_op('LOAD_FAST_AND_CLEAR', 206)
+haslocal.append(206)
+def_op('STORE_FAST_MAYBE_NULL', 207)
+haslocal.append(207)
+
 def_op('BUILD_LIST_FROM_ARG', 203)
 def_op('CALL_METHOD_KW', 204)
 def_op('LOAD_REVDB_VAR', 205)         # reverse debugger (syntax example: $5)
