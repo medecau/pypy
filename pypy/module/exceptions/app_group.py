@@ -65,7 +65,11 @@ def split(self, condition):
     nonmatching_exceptions = []
     for exc in self.exceptions:
         if isinstance(exc, BaseExceptionGroup):
-            matching, nonmatching = exc.split(condition)
+            # Take the first two items rather than unpacking: a subclass may
+            # override split() and return a longer tuple, which CPython
+            # accepts and truncates for backwards compatibility.
+            _split = exc.split(condition)
+            matching, nonmatching = _split[0], _split[1]
             if matching is not None:
                 matching_exceptions.append(matching)
             if nonmatching is not None:
@@ -159,7 +163,8 @@ def _exception_group_projection(eg, keep_list):
         _collect_eg_leafs(keep, resultset)
 
     # TODO: maybe don't construct rest eg
-    split_match, _ = eg.split(lambda element: element in resultset)
+    # [0] rather than unpacking, for the same reason as in split() above.
+    split_match = eg.split(lambda element: element in resultset)[0]
 
     return split_match
 
