@@ -257,6 +257,7 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         # holding each one's iterator.
         self._active_inlined_names = {}
         self._inlined_iter_names = []
+        self._inlined_comp_scopes = []
         self._inlined_comp_counter = 0
         self._compile(tree)
 
@@ -396,6 +397,24 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
             # lives in a fast local of the enclosing function -- possibly a
             # hidden one the symbol table does not know about.
             scope = symtable.SCOPE_LOCAL
+        elif scope == symtable.SCOPE_UNKNOWN and self._inlined_comp_scopes:
+            # A name used only inside the comprehension body is invisible
+            # to the enclosing scope's symbol table: its resolution lives
+            # in the comprehension scope.  Globals (and builtins, which
+            # resolve as implicit globals) are the only case that can
+            # reach here -- a comp-free name always has a binding some
+            # enclosing scope's table knows about, so its parent lookup
+            # is never UNKNOWN.  Without this, 'range' in an inlined
+            # '[i for i in range(3)]' compiled to LOAD_NAME, which
+            # crashes in an optimized frame (no w_locals mapping).
+            for i in range(len(self._inlined_comp_scopes) - 1, -1, -1):
+                cscope = self._inlined_comp_scopes[i]
+                cresolution = cscope.lookup(identifier)
+                if cresolution != symtable.SCOPE_UNKNOWN:
+                    if (cresolution == symtable.SCOPE_GLOBAL_IMPLICIT or
+                            cresolution == symtable.SCOPE_GLOBAL_EXPLICIT):
+                        scope = cresolution
+                    break
         op = ops.NOP
         container = self.names
         if scope == symtable.SCOPE_LOCAL:
@@ -2173,6 +2192,8 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         self.emit_jump(ops.SETUP_EXCEPT, handler)
         self.use_next_block()
         self._inlined_iter_names.append(iter_name)
+        self._inlined_comp_scopes.append(
+            self.symbols.find_scope(node))
         for i in range(len(names)):
             name = names[i]
             count = self._active_inlined_names.get(name, 0)
@@ -2180,6 +2201,7 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         node.build_container_and_load_iter(self)
         self._comp_generator(node, node.get_generators())
         self._inlined_iter_names.pop()
+        self._inlined_comp_scopes.pop()
         for i in range(len(names)):
             name = names[i]
             count = self._active_inlined_names[name] - 1
