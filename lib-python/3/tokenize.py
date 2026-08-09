@@ -614,6 +614,13 @@ def _tab_error(lnum, line):
                     ("<string>", lnum, len(text) + 1, text))
 
 
+# PEP 701: an f-string start is recognised positionally, not from the token
+# the pseudo-regex happened to produce -- that regex cannot know where an
+# f-string ends (nested same-quote strings are legal), and for a string it
+# cannot terminate it falls back to matching a bare NAME.
+_FStringStart = r"([fFbBrRuU]*)(\'\'\'|\"\"\"|\'|\")"
+
+
 def _py_tokenize(source, encoding=None, extra_tokens=False):
     """Pure-Python tokenizer used on PyPy when the _tokenize C extension is unavailable.
     Implements the CPython 3.11 generate_tokens() algorithm using the regex patterns
@@ -627,6 +634,10 @@ def _py_tokenize(source, encoding=None, extra_tokens=False):
     altindents = [0]
     strstart = endprog = None
     last_line = line = ''
+    # PEP 701: stack of open f-strings.  Each entry tracks the quote, rawness,
+    # a mode stack ('lit' at the bottom, then an 'expr'/'spec' entry per open
+    # replacement field), and the FSTRING_MIDDLE accumulator.
+    fstack = []
 
     while True:
         try:
@@ -659,7 +670,7 @@ def _py_tokenize(source, encoding=None, extra_tokens=False):
             else:
                 contstr += line; contline += line
                 continue
-        elif parenlev == 0 and not bs_continued:    # new logical statement
+        elif parenlev == 0 and not bs_continued and not fstack:  # new logical statement
             if not line:
                 break
             # 'altcolumn' measures the same indentation with a tab stop of 1.
@@ -706,12 +717,14 @@ def _py_tokenize(source, encoding=None, extra_tokens=False):
                 yield TokenInfo(INDENT, line[:pos], (lnum, 0), (lnum, pos), line)
             while column < indents[-1]:
                 if column not in indents:
+                    # 3.12 raises this from the C tokenizer, which names the
+                    # source "<string>" (tabnanny prints that verbatim),
+                    # strips the newline from .text, and puts .offset one
+                    # past the end of the stripped line.
+                    _text = line.rstrip('\r\n')
                     raise IndentationError(
                         "unindent does not match any outer indentation level",
-                        # 3.12 raises this from the C tokenizer, which names
-                        # the source "<string>"; tabnanny prints the filename
-                        # verbatim, so the difference is user-visible.
-                        ("<string>", lnum, pos, line))
+                        ("<string>", lnum, len(_text) + 1, _text))
                 indents.pop()
                 altindents.pop()
                 yield TokenInfo(DEDENT, '', (lnum, pos), (lnum, pos), line)
@@ -725,6 +738,270 @@ def _py_tokenize(source, encoding=None, extra_tokens=False):
 
         bs_continued = 0
         while pos < max_:
+            if fstack:
+                ctx = fstack[-1]
+                top = ctx['modes'][-1]
+                if top['m'] != 'expr':
+                    # -- scanning literal text (or a format spec, which only
+                    #    differs in what terminates it and in always flushing
+                    #    a MIDDLE, even an empty one, before the closing '}')
+                    quote = ctx['quote']
+                    in_spec = top['m'] == 'spec'
+                    if ctx['bufstart'] is None:
+                        ctx['bufstart'] = (lnum, pos)
+                    sp = pos
+                    terminated = False
+                    while sp < max_:
+                        c = line[sp]
+                        if c == '\\':
+                            # A backslash never terminates anything: it takes
+                            # the next character along (keeping a quote from
+                            # closing the string, raw mode included), and in
+                            # non-raw strings \N{...} is a named escape whose
+                            # braces are not replacement fields.
+                            if not ctx['raw'] and line.startswith('\\N{', sp):
+                                nend = line.find('}', sp + 3)
+                                if nend >= 0:
+                                    # the named escape's closing brace also
+                                    # closes the MIDDLE: following text opens
+                                    # a fresh one, exactly like after '{{'
+                                    ctx['buf'] += line[sp:nend + 1]
+                                    ln = (ctx['bufline'] + line
+                                          if ctx['bufline'] is not None else line)
+                                    yield TokenInfo(FSTRING_MIDDLE, ctx['buf'],
+                                           ctx['bufstart'], (lnum, nend + 1), ln)
+                                    ctx['buf'] = ''
+                                    ctx['bufstart'] = (lnum, nend + 1)
+                                    ctx['bufline'] = None
+                                    sp = nend + 1
+                                    continue
+                            if sp + 1 < max_ and line[sp + 1] not in '{}':
+                                ctx['buf'] += line[sp:sp + 2]
+                                sp += 2
+                            else:
+                                # a brace is never escapable by backslash --
+                                # that is what doubling is for -- so the
+                                # backslash stands alone and the brace is
+                                # processed normally on the next pass
+                                ctx['buf'] += c
+                                sp += 1
+                            continue
+                        if c == quote[0] and line.startswith(quote, sp):
+                            if in_spec:
+                                raise TokenError(
+                                    "f-string: expecting '}'", (lnum, sp))
+                            if ctx['buf'] or ctx['bufline'] is not None:
+                                ln = (ctx['bufline'] + line
+                                      if ctx['bufline'] is not None else line)
+                                yield TokenInfo(FSTRING_MIDDLE, ctx['buf'],
+                                       ctx['bufstart'], (lnum, sp), ln)
+                            yield TokenInfo(FSTRING_END, quote,
+                                   (lnum, sp), (lnum, sp + len(quote)), line)
+                            pos = sp + len(quote)
+                            fstack.pop()
+                            if fstack:
+                                pctx = fstack[-1]
+                                pctx['buf'] = ''
+                                pctx['bufstart'] = None
+                                pctx['bufline'] = None
+                            terminated = True
+                            break
+                        if c in '{}':
+                            doubled = sp + 1 < max_ and line[sp + 1] == c
+                            if doubled and not in_spec:
+                                # doubled brace in literal text: one brace of
+                                # text; the token ends after the first brace
+                                # and the second is consumed silently.  Spec
+                                # mode has NO doubling: there '}' always
+                                # closes the field, and '{{' is a field open
+                                # followed by a dict/set display.
+                                ctx['buf'] += c
+                                ln = (ctx['bufline'] + line
+                                      if ctx['bufline'] is not None else line)
+                                yield TokenInfo(FSTRING_MIDDLE, ctx['buf'],
+                                       ctx['bufstart'], (lnum, sp + 1), ln)
+                                ctx['buf'] = ''
+                                ctx['bufstart'] = (lnum, sp + 2)
+                                ctx['bufline'] = None
+                                sp += 2
+                                continue
+                            if c == '{':
+                                if (ctx['buf'] or ctx['bufline'] is not None
+                                        or (in_spec and doubled)):
+                                    ln = (ctx['bufline'] + line
+                                          if ctx['bufline'] is not None else line)
+                                    yield TokenInfo(FSTRING_MIDDLE, ctx['buf'],
+                                           ctx['bufstart'], (lnum, sp), ln)
+                                yield TokenInfo(OP, '{',
+                                       (lnum, sp), (lnum, sp + 1), line)
+                                ctx['modes'].append({'m': 'expr', 'd': 0})
+                                ctx['buf'] = ''
+                                ctx['bufstart'] = None
+                                ctx['bufline'] = None
+                                pos = sp + 1
+                                terminated = True
+                                break
+                            # lone '}'
+                            if in_spec:
+                                # closes the replacement field; the spec
+                                # always contributes a MIDDLE here, empty
+                                # included -- except straight after a line
+                                # break, where CPython emits none
+                                if (ctx['buf'] or ctx['bufline'] is not None
+                                        or not top.get('anl')):
+                                    ln = (ctx['bufline'] + line
+                                          if ctx['bufline'] is not None else line)
+                                    yield TokenInfo(FSTRING_MIDDLE, ctx['buf'],
+                                           ctx['bufstart'], (lnum, sp), ln)
+                                ctx['modes'].pop()
+                                yield TokenInfo(OP, '}',
+                                       (lnum, sp), (lnum, sp + 1), line)
+                                ctx['buf'] = ''
+                                ctx['bufstart'] = None
+                                ctx['bufline'] = None
+                                pos = sp + 1
+                                terminated = True
+                                break
+                            raise TokenError(
+                                "f-string: single '}' is not allowed",
+                                (lnum, sp))
+                        if c in '\r\n' and len(quote) == 1:
+                            if in_spec:
+                                # 3.12 allows a single-quoted f-string's
+                                # format spec to continue on the next line:
+                                # the accumulated middle is flushed without
+                                # the newline, which becomes an NL token.
+                                # (3.13 forbids this; the 3.12 suite relies
+                                # on it in test_tokenize's test_string.)
+                                if ctx['buf']:
+                                    yield TokenInfo(FSTRING_MIDDLE, ctx['buf'],
+                                           ctx['bufstart'], (lnum, sp), line)
+                                nl = line[sp:]
+                                if extra_tokens:
+                                    yield TokenInfo(NL, nl, (lnum, sp),
+                                           (lnum, sp + len(nl)), line)
+                                top['anl'] = True
+                                ctx['buf'] = ''
+                                ctx['bufstart'] = None
+                                ctx['bufline'] = None
+                                pos = max_
+                                terminated = True
+                                break
+                            raise TokenError(
+                                "unterminated f-string literal", (lnum, sp))
+                        ctx['buf'] += c
+                        sp += 1
+                    if terminated:
+                        continue
+                    # line exhausted inside a (triple-quoted) f-string
+                    ctx['bufline'] = (ctx['bufline'] + line
+                                      if ctx['bufline'] is not None else line)
+                    pos = max_
+                    continue
+                # -- inside a replacement field: ordinary tokens, plus the
+                #    field bookkeeping for ':', '!' and '}' at depth 0
+                wpos = pos
+                while wpos < max_ and line[wpos] in ' \t\f':
+                    wpos += 1
+                c = line[wpos] if wpos < max_ else ''
+                if top['d'] == 0 and c in '}:!':
+                    if c == '}':
+                        ctx['modes'].pop()
+                        if ctx['modes'][-1]['m'] == 'spec':
+                            # back inside the enclosing spec: a fresh segment
+                            # begins, and the empty-middle-on-close rule is
+                            # live again
+                            ctx['modes'][-1]['anl'] = False
+                        yield TokenInfo(OP, '}', (lnum, wpos), (lnum, wpos + 1), line)
+                        ctx['buf'] = ''
+                        ctx['bufstart'] = None
+                        ctx['bufline'] = None
+                        pos = wpos + 1
+                        continue
+                    if c == ':':
+                        # the format spec of this same field begins
+                        top['m'] = 'spec'
+                        yield TokenInfo(OP, ':', (lnum, wpos), (lnum, wpos + 1), line)
+                        ctx['buf'] = ''
+                        ctx['bufstart'] = None
+                        ctx['bufline'] = None
+                        pos = wpos + 1
+                        continue
+                    if c == '!' and not line.startswith('!=', wpos):
+                        yield TokenInfo(OP, '!', (lnum, wpos), (lnum, wpos + 1), line)
+                        pos = wpos + 1
+                        continue
+                pseudomatch = _compile(PseudoToken).match(line, pos)
+                if not pseudomatch:
+                    yield TokenInfo(ERRORTOKEN, line[pos],
+                           (lnum, pos), (lnum, pos + 1), line)
+                    pos += 1
+                    continue
+                start, end = pseudomatch.span(1)
+                spos, epos, pos = (lnum, start), (lnum, end), end
+                if start == end:
+                    continue
+                token, initial = line[start:end], line[start]
+                fsm = (_compile(_FStringStart).match(line, start)
+                       if initial in 'fFrRbBuU\'\"' else None)
+                if fsm is not None and ('f' in fsm.group(1)
+                                        or 'F' in fsm.group(1)):
+                    slen = fsm.end() - start
+                    yield TokenInfo(FSTRING_START, fsm.group(),
+                           spos, (lnum, start + slen), line)
+                    fstack.append({'quote': fsm.group(2),
+                                   'raw': 'r' in fsm.group(1) or 'R' in fsm.group(1),
+                                   'modes': [{'m': 'lit'}],
+                                   'buf': '', 'bufstart': None,
+                                   'bufline': None})
+                    pos = start + slen
+                elif initial in '0123456789' or (
+                        initial == '.' and token not in ('.', '...')):
+                    yield TokenInfo(NUMBER, token, spos, epos, line)
+                elif initial in '\r\n':
+                    if extra_tokens:
+                        yield TokenInfo(NL, token, spos, epos, line)
+                elif initial == '#':
+                    if extra_tokens:
+                        yield TokenInfo(COMMENT, token, spos, epos, line)
+                elif token in triple_quoted:
+                    endprog = _compile(endpats[token])
+                    endmatch = endprog.match(line, pos)
+                    if endmatch:
+                        pos = endmatch.end(0)
+                        yield TokenInfo(STRING, line[start:pos],
+                               spos, (lnum, pos), line)
+                    else:
+                        strstart = (lnum, start)
+                        contstr = line[start:]
+                        contline = line
+                        continued = 1
+                        break
+                elif (initial in single_quoted or token[:2] in single_quoted
+                      or token[:3] in single_quoted):
+                    if token[-1] == '\n':
+                        strstart = (lnum, start)
+                        endprog = _compile(endpats.get(initial) or
+                                           endpats.get(token[1]) or
+                                           endpats.get(token[2]))
+                        contstr = line[start:]
+                        needcont = 1
+                        contline = line
+                        continued = 1
+                        break
+                    yield TokenInfo(STRING, token, spos, epos, line)
+                elif initial.isidentifier():
+                    yield TokenInfo(NAME, token, spos, epos, line)
+                elif initial == '\\':
+                    bs_continued = 1
+                    break
+                else:
+                    if initial in '([{':
+                        top['d'] += 1
+                    elif initial in ')]}':
+                        top['d'] = max(0, top['d'] - 1)
+                    yield TokenInfo(OP, token, spos, epos, line)
+                continue
             pseudomatch = _compile(PseudoToken).match(line, pos)
             if not pseudomatch:
                 yield TokenInfo(ERRORTOKEN, line[pos], (lnum, pos), (lnum, pos+1), line)
@@ -747,6 +1024,22 @@ def _py_tokenize(source, encoding=None, extra_tokens=False):
             elif initial == '#':
                 if extra_tokens:
                     yield TokenInfo(COMMENT, token, spos, epos, line)
+            elif (initial in 'fFrRbBuU\'\"'
+                  and (fsm := _compile(_FStringStart).match(line, start))
+                  and ('f' in fsm.group(1) or 'F' in fsm.group(1))):
+                # PEP 701: an f-string is not one STRING token; only its
+                # prefix+quote is consumed here, and the fstring machinery
+                # above takes over from the next character.  Whatever the
+                # pseudo-regex matched (a STRING, or just a NAME when the
+                # string does not terminate on this line) is discarded.
+                _slen = fsm.end() - start
+                yield TokenInfo(FSTRING_START, fsm.group(),
+                       spos, (lnum, start + _slen), line)
+                fstack.append({'quote': fsm.group(2),
+                               'raw': 'r' in fsm.group(1) or 'R' in fsm.group(1),
+                               'modes': [{'m': 'lit'}],
+                               'buf': '', 'bufstart': None, 'bufline': None})
+                pos = start + _slen
             elif token in triple_quoted:
                 endprog = _compile(endpats[token])
                 endmatch = endprog.match(line, pos)
