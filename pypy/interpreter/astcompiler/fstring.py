@@ -72,9 +72,10 @@ def concatenate_strings(astbuilder, nodes):
         end_lineno=nodes[-1].end_lineno,
         end_col_offset=nodes[-1].end_col_offset,
     )
-    astbuilder.check_version(
-        (3, 6),
-        "Format strings are",
-        result
-    )
+    # NB: no check_version here.  CPython does not gate f-strings on
+    # feature_version -- ast.parse('f"{a}"', feature_version=(3, 4)) is
+    # accepted there -- while it does gate underscored numeric literals,
+    # which baserpypeg still checks.  We gated both, so test_type_comments'
+    # test_fstring failed: it parses an f-string at every feature_version
+    # from the lowest upwards and expects all of them to succeed.
     return result
