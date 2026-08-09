@@ -5012,9 +5012,10 @@ class PythonParser(Parser):
         return None
 
     def invalid_parameters(self): # type Optional[NoReturn]
-        # invalid_parameters: param_no_default* invalid_parameters_helper param_no_default | param_no_default* '(' param_no_default+ ','? ')' | "/" ',' | (slash_no_default | slash_with_default) param_maybe_default* '/' | [(slash_no_default | slash_with_default)] param_maybe_default* '*' (',' | param_no_default) param_maybe_default* '/' | param_maybe_default+ '/' '*'
+        # invalid_parameters: slash_no_default? param_no_default* invalid_parameters_helper param_no_default | param_no_default* '(' param_no_default+ ','? ')' | "/" ',' | (slash_no_default | slash_with_default) param_maybe_default* '/' | [(slash_no_default | slash_with_default)] param_maybe_default* '*' (',' | param_no_default) param_maybe_default* '/' | param_maybe_default+ '/' '*'
         mark = self._index
         if self._verbose: log_start(self, 'invalid_parameters')
+        opt = self.slash_no_default()
         _loop0_171 = self._loop0_171()
         invalid_parameters_helper = self.invalid_parameters_helper()
         if invalid_parameters_helper:
@@ -5165,9 +5166,10 @@ class PythonParser(Parser):
         return None
 
     def invalid_lambda_parameters(self): # type Optional[NoReturn]
-        # invalid_lambda_parameters: lambda_param_no_default* invalid_lambda_parameters_helper lambda_param_no_default | lambda_param_no_default* '(' ','.lambda_param+ ','? ')' | "/" ',' | (lambda_slash_no_default | lambda_slash_with_default) lambda_param_maybe_default* '/' | [(lambda_slash_no_default | lambda_slash_with_default)] lambda_param_maybe_default* '*' (',' | lambda_param_no_default) lambda_param_maybe_default* '/' | lambda_param_maybe_default+ '/' '*'
+        # invalid_lambda_parameters: lambda_slash_no_default? lambda_param_no_default* invalid_lambda_parameters_helper lambda_param_no_default | lambda_param_no_default* '(' ','.lambda_param+ ','? ')' | "/" ',' | (lambda_slash_no_default | lambda_slash_with_default) lambda_param_maybe_default* '/' | [(lambda_slash_no_default | lambda_slash_with_default)] lambda_param_maybe_default* '*' (',' | lambda_param_no_default) lambda_param_maybe_default* '/' | lambda_param_maybe_default+ '/' '*'
         mark = self._index
         if self._verbose: log_start(self, 'invalid_lambda_parameters')
+        opt = self.lambda_slash_no_default()
         _loop0_188 = self._loop0_188()
         invalid_lambda_parameters_helper = self.invalid_lambda_parameters_helper()
         if invalid_lambda_parameters_helper:
