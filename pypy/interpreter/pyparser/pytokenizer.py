@@ -625,6 +625,14 @@ class Tokenizer(object):
 
             tok = self._add_token(punct, token, self.lnum, start, line, self.lnum, end, level_adjustment=level_adjustment)
             if level_adjustment == 1:
+                if len(self.parenstack) >= 200:
+                    # CPython's tokenizer caps bracket nesting (MAXLEVEL);
+                    # without a cap, deeply nested groups drive the
+                    # recursive-descent parser into RecursionError instead
+                    # of SyntaxError (test_fstring nests 500 parens).
+                    self._raise_token_error(
+                        "too many nested parentheses", line,
+                        self.lnum, start + 1)
                 self.parenstack.append(tok)
             if level_adjustment == -1:
                 if (initial in ')]' and self._in_fstring_interpolation() and
@@ -683,8 +691,16 @@ class Tokenizer(object):
             last_c, next_c = line[match - 1], line[match]
             if last_c in "{}":
                 match_m2 = match - 2  # help the annotator
-                if not mode.raw and match_m2 >= 0 and _odd_backslash_prefix(line, match_m2):
-                    msg = "invalid escape sequence '%s'" % last_c
+                if (not mode.raw and match_m2 >= 0 and
+                        _odd_backslash_prefix(line, match_m2) and
+                        next_c != last_c):
+                    # next_c == last_c is a doubled (literal) brace: the
+                    # backslash and brace both stay in the FSTRING_MIDDLE
+                    # text, whose escape decoding warns about them already
+                    # -- warning here as well doubled the warning count
+                    # (test_fstring_backslash_before_double_bracket_warns_
+                    # once).  CPython's message also includes the backslash.
+                    msg = "invalid escape sequence '\\%s'" % last_c
                     self._add_token(tokens.WARNING, msg, self.lnum, match_m2, line, self.lnum, match)
 
                 if mode.named_unicode_escape:

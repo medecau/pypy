@@ -298,7 +298,23 @@ class PegParser(object):
             return pp.parse_meth_or_raise(meth, token_exc)
         except error.SyntaxError as syntax_exc:
             if token_exc is not None:
+                tmsg = token_exc.msg
+                # A bracket mismatch is raised eagerly by CPython's
+                # tokenizer, before its parser ever gets to run, so it wins
+                # unconditionally -- inside f-strings included
+                # (test_fstring's test_mismatched_parens family).
+                if ("unmatched '" in tmsg or
+                        "does not match opening parenthesis" in tmsg):
+                    raise token_exc
                 if pp.diagnose().token_type == pygram.tokens.ERRORTOKEN:
+                    # ... whereas the unterminated-interpolation error is
+                    # NOT eager there: CPython's lexer closes the string and
+                    # lets the grammar report the more specific invalid-rule
+                    # message, e.g. "f-string: valid expression required
+                    # before '!'" for f'{!' (test_missing_expression).
+                    if (tmsg.startswith("f-string: expecting '}'") and
+                            syntax_exc.msg.startswith("f-string:")):
+                        raise
                     raise token_exc
 
                 # tokenizer error happens later than parser error:
