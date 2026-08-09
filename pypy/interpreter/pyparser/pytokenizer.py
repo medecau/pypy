@@ -449,6 +449,24 @@ class Tokenizer(object):
                 self._raise_token_error("'%s' was never closed" % (parenkind, ), line1,
                                  lnum1, start1 + 1, self.lnum)
             prevline = self.lines[self.lines_index - 1]
+            # A backslash continuation with nothing at all on the logical
+            # line -- eval('\\') -- reports the continuation character
+            # itself, not an unfinished statement (test_fstring's
+            # test_invalid_backslashes_inside_fstring_context).  With any
+            # tokens before the backslash it stays the EOF error, which
+            # test_eof pins for 'x = 5\\'.
+            empty_logical_line = True
+            if len(self.tokens) > 0:
+                last_type = self.tokens[len(self.tokens) - 1].token_type
+                if (last_type != tokens.NEWLINE and
+                        last_type != tokens.NL and
+                        last_type != tokens.INDENT and
+                        last_type != tokens.DEDENT):
+                    empty_logical_line = False
+            if empty_logical_line:
+                self._raise_token_error(
+                    "unexpected character after line continuation character",
+                    prevline, self.lnum - 1, len(prevline) - 1)
             self._raise_token_error(EOF_MULTI_LINE_STATEMENT_ERROR , prevline,
                              self.lnum - 1, len(prevline) - 1) # XXX why is the offset 0 here?
         self.continued = False
