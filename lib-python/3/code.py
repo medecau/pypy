@@ -105,16 +105,14 @@ class InteractiveInterpreter:
         The output is written by self.write(), below.
 
         """
-        typ, value, tb = sys.exc_info()
-        if filename and issubclass(typ, SyntaxError):
-            value.filename = filename
-        if sys.excepthook is sys.__excepthook__:
-            lines = traceback.format_exception_only(type, value)
-            self.write(''.join(lines))
-        else:
-            # If someone has set sys.excepthook, we let that take precedence
-            # over self.write
-            sys.excepthook(type, value, tb)
+        try:
+            typ, value, tb = sys.exc_info()
+            if filename and issubclass(typ, SyntaxError):
+                value.filename = filename
+            source = kwargs.pop('source', "")
+            self._showtraceback(typ, value, None, source)
+        finally:
+            typ = value = tb = None
 
     def showtraceback(self, **kwargs):
         """Display the exception that just occurred.
@@ -141,7 +139,7 @@ class InteractiveInterpreter:
         if (source and typ is SyntaxError
                 and not value.text and len(lines) >= value.lineno):
             value.text = lines[value.lineno - 1]
-        sys.last_exc = sys.last_value = value
+        sys.last_exc = sys.last_value = value = value.with_traceback(tb)
         if sys.excepthook is sys.__excepthook__:
             self._excepthook(typ, value, tb)
         else:
