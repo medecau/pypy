@@ -5020,7 +5020,7 @@ class PythonParser(Parser):
         if invalid_parameters_helper:
             a = self.param_no_default()
             if a:
-                return self . raise_syntax_error_known_location ( "non-default argument follows default argument" , a )
+                return self . raise_syntax_error_known_location ( "parameter without a default follows parameter with a default" , a )
         self._index = mark
         _loop0_172 = self._loop0_172()
         a = self.expect_type(10)
@@ -5173,7 +5173,7 @@ class PythonParser(Parser):
         if invalid_lambda_parameters_helper:
             a = self.lambda_param_no_default()
             if a:
-                return self . raise_syntax_error_known_location ( "non-default argument follows default argument" , a )
+                return self . raise_syntax_error_known_location ( "parameter without a default follows parameter with a default" , a )
         self._index = mark
         _loop0_189 = self._loop0_189()
         a = self.expect_type(10)
