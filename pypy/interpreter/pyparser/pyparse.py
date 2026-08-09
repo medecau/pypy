@@ -307,13 +307,16 @@ class PegParser(object):
                         "does not match opening parenthesis" in tmsg):
                     raise token_exc
                 if pp.diagnose().token_type == pygram.tokens.ERRORTOKEN:
-                    # ... whereas the unterminated-interpolation error is
-                    # NOT eager there: CPython's lexer closes the string and
-                    # lets the grammar report the more specific invalid-rule
-                    # message, e.g. "f-string: valid expression required
-                    # before '!'" for f'{!' (test_missing_expression).
+                    # ... whereas for f'{!' and f'{=' CPython's lexer is
+                    # lenient and its grammar reports "f-string: valid
+                    # expression required before '!'" -- but ONLY that
+                    # wording defers.  A blanket any-f-string-parser-message
+                    # rule broke the whole unterminated family (f'{', f'{x',
+                    # f'{3!', ...), which wants this tokenizer error
+                    # (test_mismatched_braces_fail, test_conversions).
                     if (tmsg.startswith("f-string: expecting '}'") and
-                            syntax_exc.msg.startswith("f-string:")):
+                            syntax_exc.msg.startswith(
+                                "f-string: valid expression required before")):
                         raise
                     raise token_exc
 
