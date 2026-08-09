@@ -299,25 +299,29 @@ class PegParser(object):
         except error.SyntaxError as syntax_exc:
             if token_exc is not None:
                 tmsg = token_exc.msg
-                # A bracket mismatch is raised eagerly by CPython's
-                # tokenizer, before its parser ever gets to run, so it wins
-                # unconditionally -- inside f-strings included
-                # (test_fstring's test_mismatched_parens family).
+                # CPython's parser and tokenizer interleave, so its grammar
+                # can diagnose a missing expression at a field start before
+                # its tokenizer ever reaches a later broken token: the
+                # "valid expression required before" family beats ANY
+                # f-string token error -- "expecting '}'" for f'{!' and
+                # f'{=', and even a bracket mismatch beyond it, as in
+                # F'{[F'{:'}[F'{:'}]]] (test_missing_expression).
+                if syntax_exc.msg.startswith(
+                        "f-string: valid expression required before"):
+                    raise
+                # A bracket mismatch is otherwise raised eagerly by
+                # CPython's tokenizer, before its parser gets to run, so it
+                # wins -- inside f-strings included (test_fstring's
+                # test_mismatched_parens family).
                 if ("unmatched '" in tmsg or
                         "does not match opening parenthesis" in tmsg):
                     raise token_exc
                 if pp.diagnose().token_type == pygram.tokens.ERRORTOKEN:
-                    # ... whereas for f'{!' and f'{=' CPython's lexer is
-                    # lenient and its grammar reports "f-string: valid
-                    # expression required before '!'" -- but ONLY that
-                    # wording defers.  A blanket any-f-string-parser-message
-                    # rule broke the whole unterminated family (f'{', f'{x',
-                    # f'{3!', ...), which wants this tokenizer error
+                    # the parser died on the very ERRORTOKEN the tokenizer
+                    # error produced, so that error is the root cause --
+                    # this keeps the unterminated family (f'{', f'{x',
+                    # f'{3!', ...) on the tokenizer's "expecting '}'"
                     # (test_mismatched_braces_fail, test_conversions).
-                    if (tmsg.startswith("f-string: expecting '}'") and
-                            syntax_exc.msg.startswith(
-                                "f-string: valid expression required before")):
-                        raise
                     raise token_exc
 
                 # tokenizer error happens later than parser error:
