@@ -620,8 +620,12 @@ class W_MemoryView(W_Root):
         else:
             return None
 
+        # 'e' (half float) belongs here as well as in get_native_fmtchar --
+        # there are two tables and cast() consults both.  Adding it to only
+        # the size one got past the format check and then failed here with
+        # "memoryview: internal error".
         chars = ['c', 'b', 'B', 'h', 'H', 'i', 'I', 'l', 'L', 'q',
-                 'Q', 'n', 'N', 'f', 'd', '?', 'P']
+                 'Q', 'n', 'N', 'f', 'd', 'e', '?', 'P']
         for c in unrolling_iterable(chars):
             if c == format:
                 if nat:
