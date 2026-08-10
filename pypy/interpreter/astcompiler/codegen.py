@@ -2088,7 +2088,13 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         if gen_index < len(generators):
             self._comp_generator(node, generators, gen_index, built_object_stackdepth)
         else:
-            node.accept_comp_iteration(self, gen_index)
+            # NB: built_object_stackdepth, not gen_index.  The two agree
+            # unless a 'for t in [expr]' assignment-idiom clause precedes
+            # an async innermost clause; then gen_index overshoots and
+            # LIST_APPEND/SET_ADD/MAP_ADD peeked past the container --
+            # a segfault via the old separate-code-object path, an
+            # enclosing-frame stack read when inlined.
+            node.accept_comp_iteration(self, built_object_stackdepth)
 
         self.use_next_block(b_if_cleanup)
         self.emit_jump(ops.JUMP_ABSOLUTE, b_start)
