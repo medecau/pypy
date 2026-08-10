@@ -2110,27 +2110,28 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
     def _inline_comp_bound_names(self, node, comp_scope):
         """The sorted names an inlinable comprehension binds, else None.
 
-        PEP 709, deliberately narrower than CPython: only sync list/set/
-        dict comprehensions in optimized function scopes whose bound names
-        are plain locals on both sides.  Everything else -- class and
-        module bodies, async comprehensions, iteration variables closed
-        over by a nested scope or shared with a parent cell/free variable,
-        walrus targets escaping the comprehension -- keeps the separate
-        code object, whose semantics are already right.
+        PEP 709, deliberately narrower than CPython: only list/set/dict
+        comprehensions in optimized function scopes whose bound names are
+        plain locals on both sides; async comprehensions (and sync ones
+        containing await) inline only where the enclosing function can
+        await, and their async-for machinery then runs directly on the
+        enclosing coroutine frame.  Everything else -- class and module
+        bodies, iteration variables closed over by a nested scope or
+        shared with a parent cell/free variable, walrus targets escaping
+        the comprehension -- keeps the separate code object, whose
+        semantics are already right.
         """
         if isinstance(node, ast.GeneratorExp):
             return None
         assert isinstance(comp_scope, symtable.FunctionScope)
-        if comp_scope.is_coroutine or comp_scope.is_generator:
+        if comp_scope.is_generator:
+            return None
+        if comp_scope.is_coroutine and not self._check_async_function():
+            # async comprehension (or await inside one) in a scope that
+            # cannot await: the old path owns the error message
             return None
         if not isinstance(self.scope, symtable.FunctionScope):
             return None
-        generators = node.get_generators()
-        for i in range(len(generators)):
-            gen = generators[i]
-            assert isinstance(gen, ast.comprehension)
-            if gen.is_async:
-                return None
         names = []
         for name, role in comp_scope.roles.iteritems():
             if name.startswith('.'):
@@ -2177,7 +2178,10 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         # PEP 657: the loop machinery is attributed to the outermost
         # iterable expression, matching the separate-code-object path
         self.update_position(first_comp.iter)
-        self.emit_op(ops.GET_ITER)
+        if first_comp.is_async:
+            self.emit_op(ops.GET_AITER)
+        else:
+            self.emit_op(ops.GET_ITER)
         counter = self._inlined_comp_counter
         self._inlined_comp_counter += 1
         iter_name = '.%d.iter' % counter
