@@ -144,6 +144,7 @@ Py_TPFLAGS_READY Py_TPFLAGS_READYING Py_TPFLAGS_MANAGED_DICT Py_TPFLAGS_MANAGED_
 METH_COEXIST METH_STATIC METH_CLASS Py_TPFLAGS_BASETYPE
 METH_NOARGS METH_VARARGS METH_KEYWORDS METH_FASTCALL METH_O
 Py_TPFLAGS_HEAPTYPE Py_TPFLAGS_DISALLOW_INSTANTIATION METH_METHOD
+Py_TPFLAGS_HAVE_GC
 Py_LT Py_LE Py_EQ Py_NE Py_GT Py_GE PyBUF_MAX_NDIM
 Py_CLEANUP_SUPPORTED PyBUF_READ
 PyBUF_FORMAT PyBUF_ND PyBUF_STRIDES PyBUF_WRITABLE PyBUF_SIMPLE PyBUF_WRITE
@@ -668,6 +669,7 @@ SYMBOLS_C = [
     'PyVectorcall_Call', 'PyState_FindModule', 'PySlice_AdjustIndices',
     'PyFloat_Pack2', 'PyFloat_Pack4', 'PyFloat_Pack8', 'PyFloat_Unpack2',
     'PyFloat_Unpack4', 'PyFloat_Unpack8', '_PyFloat_InitState',
+    '_PyObject_VisitManagedDict', '_PyObject_ClearManagedDict',
 ]
 if sys.platform == "win32":
     SYMBOLS_C.append('Py_LegacyWindowsStdioFlag')

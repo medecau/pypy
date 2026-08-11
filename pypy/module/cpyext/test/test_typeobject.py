@@ -2609,3 +2609,41 @@ class AppTestFlags(AppTestCpythonExtensionBase):
         assert module.B.__bases__ == (module.A,)
         with raises(TypeError):
             module.B()
+
+    def test_have_gc_flag_inherited(self):
+        # Regression test for issue 5556: Py_TPFLAGS_HAVE_GC (together with
+        # tp_traverse/tp_clear) must be inherited by a subtype that doesn't
+        # define its own tp_traverse/tp_clear.
+        module = self.import_extension('foo_5556', [
+            ("get_type", "METH_NOARGS", """
+                return PyType_FromSpec(&Repro_spec);
+             """),
+            ("is_gc", "METH_O", """
+                return PyBool_FromLong(PyType_IS_GC((PyTypeObject *)args));
+             """)],
+            prologue="""
+            static int
+            Repro_traverse(PyObject *self, visitproc visit, void *arg)
+            {
+                return 0;
+            }
+
+            static PyType_Slot Repro_slots[] = {
+                {Py_tp_traverse, Repro_traverse},
+                {0, 0}
+            };
+
+            static PyType_Spec Repro_spec = {
+                "foo_5556.Repro",
+                sizeof(PyObject),
+                0,
+                Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_GC,
+                Repro_slots
+            };
+            """)
+        Repro = module.get_type()
+        assert module.is_gc(Repro)
+
+        class Sub(Repro):
+            pass
+        assert module.is_gc(Sub)
