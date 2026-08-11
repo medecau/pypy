@@ -115,6 +115,10 @@ class W_BaseException(W_Root):
     w_cause = None
     w_context = None
     w_traceback = None
+    # the traceback OperationError.normalize_exception last mirrored into
+    # w_traceback; when the two differ, the application has assigned
+    # __traceback__ itself and normalizing must not overwrite it
+    w_mirrored_traceback = None
     suppress_context = False
 
     def __init__(self, space):
