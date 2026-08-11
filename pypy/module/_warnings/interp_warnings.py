@@ -416,13 +416,38 @@ def _unpack_skip_file_prefixes(space, w_prefixes):
     return skip_prefixes
 
 
+def bless_my_loader(space, w_globals):
+    """Work out which loader a set of module globals really means.
+
+    This is CPython's _PyImport_BlessMyLoader() (import.c), which is where
+    gh-86298 moved the loader lookup: __spec__.loader wins over __loader__,
+    the two disagreeing (or a __spec__.loader that is missing while
+    __loader__ is not) is a DeprecationWarning, and having no usable loader
+    at all is an error rather than a silent None.
+
+    The protocol itself lives in importlib._bootstrap_external, so that
+    there is exactly one copy of it; we reach it exactly like CPython does,
+    as an attribute of the importlib._bootstrap module.  Compare
+    Module.descr_module__repr__ in pypy/interpreter/module.py, which is the
+    same dance for _PyImport_ImportlibModuleRepr().
+    """
+    w_importlib = space.getbuiltinmodule('_frozen_importlib')
+    w_external = space.getattr(w_importlib,
+                               space.newtext('_bootstrap_external'))
+    return space.call_method(w_external, '_bless_my_loader', w_globals)
+
 def get_source_line(space, w_globals, lineno):
     if space.is_none(w_globals):
         return None
 
-    # Check/get the requisite pieces needed for the loader.
+    # Check/get the requisite pieces needed for the loader.  Note that
+    # bless_my_loader() raises for globals that name no loader at all; only
+    # the "no __loader__ and no __spec__ either" case is a quiet None.
+    w_loader = bless_my_loader(space, w_globals)
+    if space.is_none(w_loader):
+        return None
+
     try:
-        w_loader = space.getitem(w_globals, space.newtext("__loader__"))
         w_module_name = space.getitem(w_globals, space.newtext("__name__"))
     except OperationError as e:
         if not e.match(space, space.w_KeyError):
@@ -457,7 +482,15 @@ def warn_explicit(space, w_message, w_category, w_filename, lineno,
                   w_source=None):
     "Low-level inferface to warnings functionality."
 
-    w_source_line = get_source_line(space, w_module_globals, lineno)
+    w_source_line = None
+    if w_module_globals is not None and not space.is_none(w_module_globals):
+        # CPython insists on a real dict here, and says so before it goes
+        # anywhere near the loader.
+        if not space.isinstance_w(w_module_globals, space.w_dict):
+            raise oefmt(space.w_TypeError,
+                        "module_globals must be a dict, not '%T'",
+                        w_module_globals)
+        w_source_line = get_source_line(space, w_module_globals, lineno)
 
     do_warn_explicit(space, w_category, w_message,
                      (w_filename, lineno, w_module, w_registry),

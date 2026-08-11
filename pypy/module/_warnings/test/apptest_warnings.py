@@ -189,7 +189,11 @@ def test_issue31285():
             'eggs', UserWarning, 'bar', 1,
             module_globals={'__loader__': get_bad_loader(42),
                             '__name__': 'foobar'})
-    assert len(log) == 1
+    # module_globals with a __loader__ but no __spec__ also draws a
+    # DeprecationWarning from the gh-86298 loader resolution, depending on
+    # the filters in force; what this test is about is that the broken
+    # splitlines() does not blow up and the warning still gets through.
+    assert len([entry for entry in log if entry.category is UserWarning]) == 1
 
 def test_once_is_not_broken():
     def f():

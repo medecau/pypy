@@ -182,6 +182,16 @@ else:
         return path.startswith(path_separators)
 
 
+def _path_abspath(path):
+    """Replacement for os.path.abspath."""
+    if not _path_isabs(path):
+        for sep in path_separators:
+            path = path.removeprefix(f".{sep}")
+        return _path_join(_os.getcwd(), path)
+    else:
+        return path
+
+
 def _write_atomic(path, data, mode=0o666):
     """Best-effort function to write data to a path atomically.
     Be prepared to handle a FileExistsError if concurrent writing of the
@@ -859,6 +869,54 @@ def spec_from_file_location(name, location=None, *, loader=None,
             spec.submodule_search_locations.append(dirname)
 
     return spec
+
+
+def _bless_my_loader(module_globals):
+    """Helper function for _warnings.c
+
+    See GH#97850 for details.
+    """
+    # 2022-10-06(warsaw): For now, this helper is only used in _warnings.c and
+    # that use case only has the module globals.  This function could be
+    # extended to accept either that or a module object.  However, in the
+    # latter case, it would be better to raise certain exceptions when looking
+    # at a module, which should have either a __loader__ or __spec__.loader.
+    # For backward compatibility, it is possible that we'll get an empty
+    # dictionary for the module globals, and that cannot raise an exception.
+    if not isinstance(module_globals, dict):
+        return None
+
+    missing = object()
+    loader = module_globals.get('__loader__', None)
+    spec = module_globals.get('__spec__', missing)
+
+    if loader is None:
+        if spec is missing:
+            # If working with a module:
+            # raise AttributeError('Module globals is missing a __spec__')
+            return None
+        elif spec is None:
+            raise ValueError('Module globals is missing a __spec__.loader')
+
+    spec_loader = getattr(spec, 'loader', missing)
+
+    if spec_loader in (missing, None):
+        if loader is None:
+            exc = AttributeError if spec_loader is missing else ValueError
+            raise exc('Module globals is missing a __spec__.loader')
+        _warnings.warn(
+            'Module globals is missing a __spec__.loader',
+            DeprecationWarning)
+        spec_loader = loader
+
+    assert spec_loader is not None
+    if loader is not None and loader != spec_loader:
+        _warnings.warn(
+            'Module globals; __loader__ != __spec__.loader',
+            DeprecationWarning)
+        return loader
+
+    return spec_loader
 
 
 # Loaders #####################################################################
@@ -1738,6 +1796,8 @@ def _fix_up_module(ns, name, pathname, cpathname=None):
             loader = SourceFileLoader(name, pathname)
     if not spec:
         spec = spec_from_file_location(name, pathname, loader=loader)
+        if cpathname:
+            spec.cached = _path_abspath(cpathname)
     try:
         ns['__spec__'] = spec
         ns['__loader__'] = loader
