@@ -721,7 +721,17 @@ def bug93662():
 class CodeLocationTest(unittest.TestCase):
 
     def check_positions(self, func):
-        pos1 = list(func.__code__.co_positions())
+        co = func.__code__
+        pos1 = list(co.co_positions())
+        if sys.implementation.name == 'pypy':
+            # PyPy's co_linetable is its own format, so decoding it with
+            # CPython's location-table reader yields nonsense.  Cross-check
+            # co_positions() against co_lines() instead.
+            lines_from_pos = set(l for (l, _, _, _) in pos1 if l is not None)
+            lines_from_table = set(l for (_, _, l) in co.co_lines()
+                                   if l is not None)
+            self.assertEqual(lines_from_pos, lines_from_table)
+            return
         pos2 = list(positions_from_location_table(func.__code__))
         for l1, l2 in zip(pos1, pos2):
             self.assertEqual(l1, l2)
@@ -736,6 +746,13 @@ class CodeLocationTest(unittest.TestCase):
         co = func.__code__
         lines1 = [line for _, _, line in co.co_lines()]
         self.assertEqual(lines1, list(dedup(lines1)))
+        if sys.implementation.name == 'pypy':
+            # see check_positions above: PyPy's co_linetable format differs
+            lines_from_table = set(l for l in lines1 if l is not None)
+            lines_from_pos = set(l for (l, _, _, _) in co.co_positions()
+                                 if l is not None)
+            self.assertEqual(lines_from_table, lines_from_pos)
+            return
         lines2 = list(lines_from_postions(positions_from_location_table(co)))
         for l1, l2 in zip(lines1, lines2):
             self.assertEqual(l1, l2)
