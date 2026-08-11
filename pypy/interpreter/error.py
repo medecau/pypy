@@ -36,6 +36,10 @@ class OperationError(Exception):
     _w_value = None
     _application_traceback = None
     _context_recorded = False
+    # set while this exception is being normalized only to be recorded as
+    # someone else's __context__; see chain_exceptions and the traceback
+    # mirroring in normalize_exception
+    _normalizing_as_context = False
 
     def __init__(self, w_type, w_value, tb=None):
         self.setup(w_type, w_value)
@@ -235,8 +239,9 @@ class OperationError(Exception):
                 if (isinstance(w_value, W_BaseException) and
                     isinstance(tb, PyTraceback)):
                     # traceback hasn't escaped yet
-                    if (w_value.w_traceback is None or
-                            w_value.w_traceback is
+                    if not (self._normalizing_as_context and
+                            w_value.w_traceback is not None and
+                            w_value.w_traceback is not
                                 w_value.w_mirrored_traceback):
                         w_value.w_traceback = tb
                         w_value.w_mirrored_traceback = tb
@@ -441,7 +446,16 @@ class OperationError(Exception):
         """Attach another OperationError as __context__."""
         from pypy.module.exceptions.interp_exceptions import W_BaseException
         w_value = self.normalize_exception(space)
-        w_context = context.normalize_exception(space)
+        # Normalizing the context must not rewrite its __traceback__: the
+        # exception is already caught and the application may have changed it
+        # (code.InteractiveInterpreter chops its own frame off), while our
+        # copy still has the whole chain.  Raising anything inside an except
+        # block comes through here.
+        context._normalizing_as_context = True
+        try:
+            w_context = context.normalize_exception(space)
+        finally:
+            context._normalizing_as_context = False
         if not space.is_w(w_value, w_context):
             if not isinstance(w_value, W_BaseException):
                 raise oefmt(space.w_SystemError, "not an instance of Exception: %T", w_value)
