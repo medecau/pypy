@@ -7,7 +7,9 @@
 
 //#include <time.h>
 #include "Python.h"
-#include "pycore_namespace.h"     // _PyNamespace_New()
+/* CPython includes pycore_namespace.h here for _PyNamespace_New(), which this
+   module never calls; cpyext ships no CPython-internal headers, so including
+   it just breaks the build. */
 
 
 typedef struct {
