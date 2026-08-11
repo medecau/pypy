@@ -378,6 +378,39 @@ def setup_and_fix_paths(ignore_environment=False, **extra):
             sys.path.append(dir)
             _seen.add(dir)
 
+def fixup_early_module_specs():
+    """Give a __spec__ to modules that were imported before there was one.
+
+    importlib's _install(), which fills in __spec__ for everything already in
+    sys.modules, runs at translation time only -- see the startup() of
+    pypy/module/_frozen_importlib/moduledef.py.  Anything imported after that
+    point while translating, such as the lib_pypy helpers that interp-level
+    code reaches for (_structseq, _pypy_generic_alias, ...), is frozen into
+    the binary with __spec__ still None and stays that way.
+
+    CPython has no such modules, so stdlib code is entitled to assume every
+    entry in sys.modules has a spec: importlib.util._find_spec_from_path
+    raises ValueError without one, which is how pyclbr trips over them.
+
+    Left alone: __main__, whose spec is legitimately None for -c and stdin.
+    """
+    import sys
+    from _frozen_importlib import _find_spec, _init_module_attrs
+    module_type = type(sys)
+    for name, module in list(sys.modules.items()):
+        if name == '__main__' or not isinstance(module, module_type):
+            continue
+        if getattr(module, '__spec__', None) is not None:
+            continue
+        try:
+            spec = _find_spec(name, None)
+        except Exception:
+            # a module we cannot re-find is no worse off than before
+            continue
+        if spec is not None:
+            _init_module_attrs(spec, module)
+
+
 def initstdio(encoding=None, unbuffered=False):
     if hasattr(sys, 'stdin'):
         return # already initialized
@@ -1231,6 +1264,7 @@ def entry_point(executable, bargv, argv):
     except SystemExit as e:
         return e.code or 0
     setup_and_fix_paths(**cmdline)
+    fixup_early_module_specs()
     return run_command_line(**cmdline)
 
 
