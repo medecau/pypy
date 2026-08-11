@@ -449,6 +449,13 @@ class UnparseVisitor(Utf8BuilderVisitor):
     def visit_Await(self, node):
         raise SyntaxError.fromast("'await' expression cannot be used within an annotation", node)
 
+    def visit_NamedExpr(self, node):
+        # here rather than only on AnnotationUnparseVisitor below: the
+        # expressions inside an f-string come back through this visitor, so
+        # "test: f'{(x := 10)}'" reached the default visitor and raised
+        # SystemError (test_future_stmt test_annotations_forbidden)
+        raise SyntaxError.fromast("'named expression' can not be used within an annotation", node)
+
 
 class AnnotationUnparseVisitor(UnparseVisitor):
     """UnparseVisitor variant for annotation stringification.

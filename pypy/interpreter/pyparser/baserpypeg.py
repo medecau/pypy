@@ -933,6 +933,13 @@ class Parser:
             end_col_offset=end.end_column,
         )
 
+    def _add_spec_constant(self, pieces, constant):
+        # empty pieces are dropped, and neighbouring ones merged, so that
+        # "f'{x:h1{y=}h2}'" gives one Constant('h1y=') as CPython does
+        if not self.space.is_true(constant.value):
+            return
+        add_constant_string(self, pieces, constant)
+
     def fstring_format_spec_full(self, colon, specs):
         # Corresponds to CPython's _PyPegen_setup_full_format_spec
         # Positions come from the spec as written, so take them before
@@ -946,14 +953,15 @@ class Parser:
         pieces = []
         for spec in specs:
             if isinstance(spec, ast.Constant):
-                if not self.space.is_true(spec.value):
-                    continue
-                pieces.append(spec)
+                self._add_spec_constant(pieces, spec)
             elif isinstance(spec, ast.JoinedStr):
                 # a replacement field with a debug '=' expands to its own
                 # JoinedStr of [Constant('expr='), FormattedValue]
                 for piece in spec.values:
-                    pieces.append(piece)
+                    if isinstance(piece, ast.Constant):
+                        self._add_spec_constant(pieces, piece)
+                    else:
+                        pieces.append(piece)
             else:
                 pieces.append(spec)
         specs = pieces
