@@ -497,7 +497,16 @@ class _ReadlineWrapper:
         return self._get_idxs()[1]
 
     def insert_text(self, text: str) -> None:
-        self.get_reader().insert(text)
+        try:
+            reader = self.get_reader()
+        except _error:
+            # No usable terminal (no terminfo, TERM unset, not a tty).  GNU
+            # readline would still put the text in its line buffer, and
+            # nothing is going to display it; callers such as
+            # rlcompleter.Completer.complete('') expect this to be quiet
+            # rather than to raise (test_rlcompleter).
+            return
+        reader.insert(text)
 
 
 _wrapper = _ReadlineWrapper()
