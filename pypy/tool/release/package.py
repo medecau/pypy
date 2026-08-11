@@ -233,10 +233,7 @@ def create_package(basedir, options, _fake=False):
         subprocess.check_call([str(pypy_c), "-c", "import _testmultiphase_build"])
         subprocess.check_call([str(pypy_c), "-c", "import _testsinglephase_build"])
         subprocess.check_call([str(pypy_c), "-c", "import _ctypes_test_build"])
-        # XXX re-enable once lib_pypy/_testcapimodule.c is refreshed to 3.12:
-        # ours still predates it, so building it here would fail the package
-        # step outright.
-        #subprocess.check_call([str(pypy_c), "-c", "import _testcapi"])
+        subprocess.check_call([str(pypy_c), "-c", "import _testcapi"])
     if ARCH == 'win32':
         os.environ['PATH'] = str(basedir.join('externals').join('bin')) + ';' + \
                             os.environ.get('PATH', '')
