@@ -809,12 +809,15 @@ class CmdLineTest(unittest.TestCase):
         self.assertEqual(proc.stdout.rstrip(), name)
         self.assertEqual(proc.returncode, 0)
 
+    # PYTHONMALLOC selects between CPython's allocators and is reported by
+    # _testcapi.pymem_getallocatorsname; PyPy has neither -- it always uses
+    # the system malloc and ignores the variable.  (The previous PyPy patch
+    # here caught "AtributeError", a name that does not exist, so it never
+    # did anything.)
+    @support.cpython_only
     def test_pythonmalloc(self):
         # Test the PYTHONMALLOC environment variable
-        try:
-            pymalloc = support.with_pymalloc()
-        except AtributeError:
-            pymalloc = None
+        pymalloc = support.with_pymalloc()
         if pymalloc:
             default_name = 'pymalloc_debug' if support.Py_DEBUG else 'pymalloc'
             default_name_debug = 'pymalloc_debug'

@@ -15,11 +15,10 @@ def excepthook(exctype, value, traceback):
                          "value, {} found\n".format(type(value).__name__))
         return
 
-    # Flush stdout as well, both files may refer to the same file
-    try:
-        sys.stdout.flush()
-    except:
-        pass
+    # NB: no sys.stdout.flush() here.  It looks tempting -- stdout and stderr
+    # may be the same file -- but CPython's C hook never touches stdout, and
+    # test_code_module checks that the first thing a replaced stdout sees is
+    # the program's own write.  app_main flushes both streams on the way out.
 
     try:
         from traceback import TracebackException

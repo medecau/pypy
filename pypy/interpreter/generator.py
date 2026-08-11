@@ -186,18 +186,21 @@ return next yielded value or raise StopIteration."""
     def descr_throw(self, w_type, w_val=None, w_tb=None):
         """throw(typ[,val[,tb]]) -> raise exception in generator/coroutine,
 return next yielded value or raise StopIteration."""
+        if w_val is not None or w_tb is not None:
+            # 3.12 deprecated the (type, exc, tb) signature.  It lives here,
+            # on the public method, and not in throw() below, so that the
+            # internal callers -- an async generator's athrow(), which has
+            # already warned in its own name -- do not warn twice.
+            self.space.warn(self.space.newtext(
+                "the (type, exc, tb) signature of throw() is deprecated, "
+                "use the single-arg signature instead."),
+                self.space.w_DeprecationWarning)
         return self.throw(w_type, w_val, w_tb)
 
     def throw(self, w_type, w_val, w_tb):
         from pypy.interpreter.pytraceback import check_traceback
 
         space = self.space
-        if w_val is not None or w_tb is not None:
-            # 3.12 deprecated the (type, exc, tb) signature
-            space.warn(space.newtext(
-                "the (type, exc, tb) signature of throw() is deprecated, "
-                "use the single-arg signature instead."),
-                space.w_DeprecationWarning)
         if w_val is None:
             w_val = space.w_None
 
@@ -514,7 +517,7 @@ class CoroutineWrapper(W_Root):
     descr_send.__doc__ = Coroutine.descr_send.__doc__
 
     def descr_throw(self, w_type, w_val=None, w_tb=None):
-        return self.coroutine.throw(w_type, w_val, w_tb)
+        return self.coroutine.descr_throw(w_type, w_val, w_tb)
     descr_throw.__doc__ = Coroutine.descr_throw.__doc__
 
     def descr_close(self):
@@ -695,6 +698,13 @@ class AsyncGenerator(GeneratorOrCoroutine):
         return AsyncGenASend(self, w_arg)
 
     def descr_athrow(self, w_type, w_val=None, w_tb=None):
+        if w_val is not None or w_tb is not None:
+            # 3.12 deprecated the (type, exc, tb) signature here too, with
+            # its own wording (test_asyncgen)
+            self.space.warn(self.space.newtext(
+                "the (type, exc, tb) signature of athrow() is deprecated, "
+                "use the single-arg signature instead."),
+                self.space.w_DeprecationWarning)
         self.init_hooks()
         return AsyncGenAThrow(self, w_type, w_val, w_tb)
 
