@@ -346,9 +346,9 @@ class UnparseVisitor(Utf8BuilderVisitor):
         raise SyntaxError.fromast("'yield expression' can not be used within an annotation", node)
 
     def visit_YieldFrom(self, node):
-        self.append_ascii("(yield from ")
-        self.append_expr(node.value)
-        self.append_ascii(")")
+        # 'yield from' is no more allowed in an annotation than a plain
+        # yield is (test_future_stmt test_annotations_forbidden)
+        raise SyntaxError.fromast("'yield expression' can not be used within an annotation", node)
 
     def visit_Call(self, node):
         self.append_expr(node.func, PRIORITY_ATOM)

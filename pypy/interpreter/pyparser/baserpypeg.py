@@ -935,14 +935,30 @@ class Parser:
 
     def fstring_format_spec_full(self, colon, specs):
         # Corresponds to CPython's _PyPegen_setup_full_format_spec
-        # CPython compatibility: return an empty JoinedStr node if the format spec is empty
-        if len(specs) == 1:
-            fst = specs[0]
-            if isinstance(fst, ast.Constant) and not self.space.is_true(fst.value):
-                specs = []
+        # Positions come from the spec as written, so take them before
+        # rewriting the pieces below.
+        end_lineno, end_col_offset = self.extract_pos_end(specs[-1] if specs else colon)
+
+        # CPython drops every empty constant piece, not just a lone one, and
+        # splices a debug expression's own JoinedStr into the spec instead of
+        # nesting it -- "f'{2:{y=}}'" has format_spec=JoinedStr([Constant('y='),
+        # FormattedValue(y)]) there (test_unparse round-trips these).
+        pieces = []
+        for spec in specs:
+            if isinstance(spec, ast.Constant):
+                if not self.space.is_true(spec.value):
+                    continue
+                pieces.append(spec)
+            elif isinstance(spec, ast.JoinedStr):
+                # a replacement field with a debug '=' expands to its own
+                # JoinedStr of [Constant('expr='), FormattedValue]
+                for piece in spec.values:
+                    pieces.append(piece)
+            else:
+                pieces.append(spec)
+        specs = pieces
 
         # CPython compatibility: always return a JoinedStr node (even if len(specs) == 1)
-        end_lineno, end_col_offset = self.extract_pos_end(specs[-1] if specs else colon)
         return ast.JoinedStr(
             specs,
             lineno=colon.lineno,

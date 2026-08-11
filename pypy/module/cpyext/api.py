@@ -2060,9 +2060,15 @@ def make_generic_cpy_call(FT, expect_null, convert_result):
             has_result = ret is not None
             if not expect_null and has_new_error and has_result:
                 state = space.fromcache(State)
-                state.clear_exception()
-                raise oefmt(space.w_SystemError,
+                operr = state.clear_exception()
+                w_err = oefmt(space.w_SystemError,
                             "c function call returned a result with an exception set")
+                if operr:
+                    # keep the unreported exception as __cause__ rather than
+                    # dropping it -- CPython chains it too, and it is what
+                    # test_importlib's create_unreported_exception checks
+                    w_err.chain_exceptions_from_cause(space, operr)
+                raise w_err
             elif not expect_null and not has_new_error and not has_result:
                 state = space.fromcache(State)
                 state.clear_exception()
