@@ -1812,6 +1812,15 @@ class Popen:
                            start_new_session, process_group):
             """Execute program (POSIX version)"""
 
+            # CPython 3.12 raises this from _posixsubprocess.fork_exec()
+            # itself (gh-101907).  PyPy checks it here instead: reading
+            # space.sys.finalizing from interp_subprocess.fork_exec() would
+            # need a matching attribute on the fake objspace's stub sys
+            # module, which checkmodule('_posixsubprocess') annotates.
+            if preexec_fn is not None and sys.is_finalizing():
+                raise RuntimeError(
+                        "preexec_fn not supported at interpreter shutdown")
+
             if isinstance(args, (str, bytes)):
                 args = [args]
             elif isinstance(args, os.PathLike):

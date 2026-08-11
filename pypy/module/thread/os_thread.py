@@ -169,7 +169,6 @@ taken from the optional dictionary kwargs.  The thread exits when the
 function returns; the return value is ignored.  The thread will also exit
 when the function raises an unhandled exception; a stack trace will be
 printed unless the exception is SystemExit."""
-    setup_threads(space)
     if not space.isinstance_w(w_args, space.w_tuple):
         raise oefmt(space.w_TypeError, "2nd arg must be a tuple")
     if w_kwargs is not None and not space.isinstance_w(w_kwargs, space.w_dict):
@@ -177,6 +176,24 @@ printed unless the exception is SystemExit."""
     if not space.is_true(space.callable(w_callable)):
         raise oefmt(space.w_TypeError, "first arg must be callable")
 
+    # 3.12 audits the call after the argument checks and before anything is
+    # started; a missing 3rd argument is reported as None, like CPython's
+    # "OOO" with kwargs ? kwargs : Py_None.
+    if w_kwargs is None:
+        w_audit_kwargs = space.w_None
+    else:
+        w_audit_kwargs = w_kwargs
+    space.audit("_thread.start_new_thread",
+                [w_callable, w_args, w_audit_kwargs])
+
+    # ...and then refuses to start anything at all once the interpreter is
+    # shutting down (gh-101907).  space.sys.finalizing is PyPy's equivalent
+    # of CPython's interp->finalizing.
+    if space.sys.finalizing:
+        raise oefmt(space.w_RuntimeError,
+                    "can't create new thread at interpreter shutdown")
+
+    setup_threads(space)
     args = Arguments.frompacked(space, w_args, w_kwargs)
     bootstrapper.acquire(space, w_callable, args)
     try:

@@ -1540,7 +1540,38 @@ def run_fork_hooks(where, space):
     for hook in get_fork_hooks(where):
         hook(space)
 
+def warn_about_fork_with_threads(space, name):
+    """CPython 3.12's warn_about_fork_with_threads() (gh-100228).
+
+    Best effort: emit a DeprecationWarning if more than one thread is
+    running.  CPython asks the OS first (/proc/self/stat on Linux) and
+    otherwise falls back to len(threading._active) + len(threading._limbo);
+    we go straight to the equivalent PyPy bookkeeping, space.threadlocals,
+    which knows every thread that has an ExecutionContext -- that includes
+    the threads started by _thread, which is what the fallback counts.
+
+    Like CPython this must never overcount (else a plain single-threaded
+    fork() would start warning) and must never leave an exception set: a
+    filter turning the warning into an error must not break fork().
+    """
+    if len(space.threadlocals.getallvalues()) <= 1:
+        return
+    msg = ("This process (pid=%d) is multi-threaded, "
+           "use of %s() may lead to deadlocks in the child." % (
+               os.getpid(), name))
+    try:
+        space.warn(space.newtext(msg), space.w_DeprecationWarning)
+    except OperationError:
+        # CPython calls PyErr_Clear() right after the PyErr_WarnFormat(),
+        # so warnings.simplefilter('error') is silently swallowed here.
+        pass
+
 def _run_forking_function(space, kind):
+    # 3.12 refuses to fork once the interpreter is shutting down.  CPython
+    # tests interp->finalizing here; space.sys.finalizing is the same flag,
+    # set by ObjSpace.finish() once the atexit hooks have run.
+    if space.sys.finalizing:
+        raise oefmt(space.w_RuntimeError, "can't fork at interpreter shutdown")
     run_fork_hooks('before', space)
     try:
         if kind == "F":
@@ -1562,6 +1593,14 @@ def _run_forking_function(space, kind):
         os_thread.reinit_threads(space)
         run_fork_hooks('child', space)
     else:
+        # Only the parent warns, and it warns before the 'parent' hooks
+        # run -- same place as CPython 3.12.  The import lock is still
+        # held by us at this point, but it is reentrant per thread (see
+        # ImportRLock.acquire_lock), just like CPython's.
+        if kind == "F":
+            warn_about_fork_with_threads(space, "fork")
+        else:
+            warn_about_fork_with_threads(space, "forkpty")
         run_fork_hooks('parent', space)
     return pid, master_fd
 
