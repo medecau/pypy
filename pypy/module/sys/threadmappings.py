@@ -36,20 +36,20 @@ def _current_exceptions(space):
     while in the middle of a long-running function.
 
     This function should be used for specialized purposes only."""
+    # Since 3.12 (gh-103176) the values are the exception instances
+    # themselves, not (type, value, traceback) tuples; threads that are
+    # not handling an exception map to None.
     w_result = space.newdict()
     ecs = space.threadlocals.getallvalues()
     for thread_ident, ec in ecs.items():
         operror = ec.sys_exc_info()
-        if not operror:
-            space.setitem(w_result,
-                          space.newint(thread_ident),
-                          space.newtuple([space.w_None] * 3))
+        if operror is None:
+            w_exc = space.w_None
         else:
-            space.setitem(w_result, 
-                          space.newint(thread_ident),
-                          space.newtuple([operror.w_type,
-                                          operror.get_w_value(space),
-                                          operror.get_w_traceback(space)]))
+            w_exc = operror.get_w_value(space)
+        space.setitem(w_result,
+                      space.newint(thread_ident),
+                      w_exc)
     return w_result
 
 

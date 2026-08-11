@@ -1006,12 +1006,13 @@ class AppTestCurrentFramesWithThread:
 
         exc = f()
         lock1.release()
+        # since 3.12 the mapping holds the exception instances themselves,
+        # and a thread with no exception maps to None
         thisexc = exc.pop(thread_id)
-        assert thisexc == (None, None, None)
+        assert thisexc is None
 
         assert len(exc) == 1
-        key, values = exc.popitem()
-        exc_type, exc_value, exc_tb = values
+        key, exc_value = exc.popitem()
         assert str(exc_value) == "oops"
 
     def test_intern(self):

@@ -180,7 +180,11 @@ class sysflags(metaclass=structseqtype):
 # Set reasonable defaults for testing, in particular set utf8_mode to 1
 # no clue why some have to be a bool, but CPython has tests
 # for that. Also see default_otions in app_main
-null_sysflags = structseq_new(sysflags, (0,)*13 + (False, 1, 0, -1, False))
+# int_max_str_digits carries the interpreter default (4300, see
+# DEFAULT_MAX_STR_DIGITS in pypy/module/sys/system.py) rather than -1, which
+# is what app_main now fills in when neither -X int_max_str_digits nor
+# PYTHONINTMAXSTRDIGITS is given.
+null_sysflags = structseq_new(sysflags, (0,)*13 + (False, 1, 0, 4300, False))
 null__xoptions = {}
 
 # Names of the modules PyPy ships as part of its standard library (built-in

@@ -113,7 +113,8 @@ class TestParseCommandLine:
                     lc = _locale.setlocale(_locale.LC_CTYPE, None)
                     #assert value == (lc == "C" or lc == "POSIX")
                 elif key == "int_max_str_digits":
-                    assert value == -1
+                    # unset means the interpreter default, as on CPython
+                    assert value == sys.int_info.default_max_str_digits
                 else:
                     assert not value, (
                         "option %r has unexpectedly the value %r" % (key, value))

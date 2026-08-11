@@ -434,21 +434,25 @@ def initstdio(encoding=None, unbuffered=False):
 
     try:
         if encoding and ':' in encoding:
+            # CPython's config_init_stdio_encoding() splits on the first ':'
+            # only, and treats an empty part as *unset* so that the default
+            # still applies: PYTHONIOENCODING=':errors' leaves the encoding
+            # up to the locale, and 'enc:' leaves the error handler alone.
             encoding, errors = encoding.split(':', 1)
-            if encoding == '':
-                encoding = 'utf-8'
-            if errors == '':
-                errors = 'strict'
             errors = errors or None
         else:
             errors = None
         encoding = encoding or None
+        if encoding is not None and errors is None:
+            # "If the encoding is set but not the error handler, use 'strict'
+            # by default": PYTHONIOENCODING=latin1 behaves as latin1:strict.
+            errors = 'strict'
         # issue 5034
         import _locale
         _locale.setlocale(_locale.LC_CTYPE, "")
         if _WIN32 and not encoding:
             encoding = "utf-8"
-        if not (encoding or errors):
+        if not errors:
             # CPython's config_get_stdio_errors(): stdin/stdout default to
             # surrogateescape for the C/POSIX locale and for the locale
             # coercion targets (PEP 538/540), else strict.
@@ -608,6 +612,12 @@ def config_init_int_max_str_digits(env_option, x_option, options):
             prefix = "PYTHONINTMAXSTRDIGITS"
             maxdigits = int(env_option)
         else:
+            # Neither -X int_max_str_digits nor PYTHONINTMAXSTRDIGITS was
+            # given.  CPython's config_init_int_max_str_digits() replaces the
+            # "unset" -1 with the default limit at the end, so that
+            # sys.flags.int_max_str_digits agrees with
+            # sys.get_int_max_str_digits() instead of staying at -1.
+            options['int_max_str_digits'] = sys.int_info.default_max_str_digits
             return 0
     except Exception as e:
         msg = "invalid value '%s' for '%s'\n" % (val, prefix)
@@ -862,10 +872,18 @@ def run_command_line(interactive,
 
     readenv = not ignore_environment
     io_encoding = getenv("PYTHONIOENCODING") if readenv else None
-    if (not io_encoding or io_encoding == ":") and utf8_mode:
-        # CPython's UTF-8 mode defaults stdin/stdout (not stderr, which
-        # is hardcoded to backslashreplace below) to surrogateescape.
-        io_encoding = "utf-8:surrogateescape"
+    if utf8_mode:
+        # CPython's UTF-8 mode fills in the parts that PYTHONIOENCODING
+        # leaves empty: the encoding defaults to utf-8, and the error
+        # handler of stdin/stdout (not stderr, which is hardcoded to
+        # backslashreplace below) to surrogateescape.  A non-empty
+        # encoding still implies 'strict', so only default the error
+        # handler when the encoding itself was not given.
+        enc, sep, errors = (io_encoding or '').partition(':')
+        if not enc:
+            enc = 'utf-8'
+            errors = errors or 'surrogateescape'
+        io_encoding = enc + ':' + errors
     initstdio(io_encoding, unbuffered)
 
     if 'faulthandler' in sys.builtin_module_names:
