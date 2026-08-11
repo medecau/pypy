@@ -183,17 +183,20 @@ def test_issue31285():
                         return splitlines_ret_val
                 return BadSource('spam')
         return BadLoader()
+    import importlib.machinery
+    loader = get_bad_loader(42)
     # does not raise:
     with warnings.catch_warnings(record=True) as log:
+        # the globals carry a __spec__ as well: since gh-86298 the loader is
+        # resolved through it, and a __loader__ without one draws its own
+        # DeprecationWarning, which is not what this test is about
         _warnings.warn_explicit(
             'eggs', UserWarning, 'bar', 1,
-            module_globals={'__loader__': get_bad_loader(42),
+            module_globals={'__loader__': loader,
+                            '__spec__': importlib.machinery.ModuleSpec(
+                                'foobar', loader),
                             '__name__': 'foobar'})
-    # module_globals with a __loader__ but no __spec__ also draws a
-    # DeprecationWarning from the gh-86298 loader resolution, depending on
-    # the filters in force; what this test is about is that the broken
-    # splitlines() does not blow up and the warning still gets through.
-    assert len([entry for entry in log if entry.category is UserWarning]) == 1
+    assert len(log) == 1
 
 def test_once_is_not_broken():
     def f():
