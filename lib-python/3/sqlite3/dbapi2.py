@@ -55,25 +55,37 @@ Binary = memoryview
 collections.abc.Sequence.register(Row)
 
 def register_adapters_and_converters():
+    import _sqlite3
     from warnings import warn
 
     msg = ("The default {what} is deprecated as of Python 3.12; "
            "see the sqlite3 documentation for suggested replacement recipes")
 
+    # PyPy: _sqlite3 is written in Python here, so unlike CPython's C module
+    # it has frames of its own between the caller and the adapters and
+    # converters below; skip them, so that the warnings are attributed to the
+    # code that called execute()/fetchone().  On CPython this is a no-op,
+    # since no frame comes from the (shared library) _sqlite3 module.
+    skip = (_sqlite3.__file__,)
+
     def adapt_date(val):
-        warn(msg.format(what="date adapter"), DeprecationWarning, stacklevel=2)
+        warn(msg.format(what="date adapter"), DeprecationWarning,
+             stacklevel=2, skip_file_prefixes=skip)
         return val.isoformat()
 
     def adapt_datetime(val):
-        warn(msg.format(what="datetime adapter"), DeprecationWarning, stacklevel=2)
+        warn(msg.format(what="datetime adapter"), DeprecationWarning,
+             stacklevel=2, skip_file_prefixes=skip)
         return val.isoformat(" ")
 
     def convert_date(val):
-        warn(msg.format(what="date converter"), DeprecationWarning, stacklevel=2)
+        warn(msg.format(what="date converter"), DeprecationWarning,
+             stacklevel=2, skip_file_prefixes=skip)
         return datetime.date(*map(int, val.split(b"-")))
 
     def convert_timestamp(val):
-        warn(msg.format(what="timestamp converter"), DeprecationWarning, stacklevel=2)
+        warn(msg.format(what="timestamp converter"), DeprecationWarning,
+             stacklevel=2, skip_file_prefixes=skip)
         datepart, timepart = val.split(b" ")
         year, month, day = map(int, datepart.split(b"-"))
         timepart_full = timepart.split(b".")

@@ -14,21 +14,9 @@ from test import support
 class CProfileTest(ProfileTest):
     profilerclass = cProfile.Profile
     profilermodule = cProfile
-    expected_max_output = ("{built-in method builtins.max}"
-                           if support.check_impl_detail()
-                           else "{built-in function max}")
+    expected_max_output = "{built-in method builtins.max}"
 
     def get_expected_output(self):
-        if not support.check_impl_detail():
-            # PyPy uses "built-in function" instead of "built-in method builtins."
-            out = {}
-            for key, value in _ProfileOutput.items():
-                value = value.replace(
-                    '{built-in method builtins.', '{built-in function ')
-                value = value.replace(
-                    '{built-in method sys.', '{built-in function sys.')
-                out[key] = value
-            return out
         return _ProfileOutput
 
     @cpython_only
@@ -60,6 +48,9 @@ class CProfileTest(ProfileTest):
                     with self.assertRaises(TypeError):
                         method_obj()  # should not crash
 
+    # PyPy's _lsprof.Profiler has no clear(), and the RuntimeError this
+    # expects comes from re-entering _lsprof.c's own state machine.
+    @cpython_only
     def test_evil_external_timer(self):
         # gh-120289
         # Disabling profiler in external timer should not crash
@@ -97,6 +88,10 @@ class CProfileTest(ProfileTest):
             profiler_with_evil_timer.clear()
             self.assertEqual(cm.unraisable.exc_type, RuntimeError)
 
+    # PyPy ships sys.monitoring as an API-only stub (every tool id reports as
+    # taken), so cProfile keeps its own hooks and never claims PROFILER_ID.
+    @unittest.skipUnless(support.check_impl_detail(cpython=True),
+                         'needs sys.monitoring (PEP 669), not implemented yet')
     def test_profile_enable_disable(self):
         prof = self.profilerclass()
         # Make sure we clean ourselves up if the test fails for some reason.
@@ -109,6 +104,8 @@ class CProfileTest(ProfileTest):
         prof.disable()
         self.assertIs(sys.monitoring.get_tool(sys.monitoring.PROFILER_ID), None)
 
+    @unittest.skipUnless(support.check_impl_detail(cpython=True),
+                         'needs sys.monitoring (PEP 669), not implemented yet')
     def test_profile_as_context_manager(self):
         prof = self.profilerclass()
         # Make sure we clean ourselves up if the test fails for some reason.
@@ -126,6 +123,10 @@ class CProfileTest(ProfileTest):
         # profile shouldn't be set once we leave the with-block.
         self.assertIs(sys.monitoring.get_tool(sys.monitoring.PROFILER_ID), None)
 
+    # The ValueError below is raised by sys.monitoring's tool-id ownership;
+    # PyPy's _lsprof simply replaces the active profiling hook.
+    @unittest.skipUnless(support.check_impl_detail(cpython=True),
+                         'needs sys.monitoring (PEP 669), not implemented yet')
     def test_second_profiler(self):
         pr = self.profilerclass()
         pr2 = self.profilerclass()
@@ -133,6 +134,10 @@ class CProfileTest(ProfileTest):
         self.assertRaises(ValueError, pr2.enable)
         pr.disable()
 
+    # PyPy's generator finalizer only resumes the frame when a finally/except
+    # block is active (see GeneratorOrCoroutine._finalize_), so collecting an
+    # exhausted-in-place genexpr does not go through a throw.
+    @cpython_only
     def test_throw(self):
         """
         gh-106152

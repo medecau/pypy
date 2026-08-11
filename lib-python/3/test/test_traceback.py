@@ -196,10 +196,7 @@ class TracebackCases(unittest.TestCase):
         self.assertEqual(len(err), 4)
         self.assertEqual(err[1].strip(), "print(2)")
         self.assertIn("^", err[2])
-        if sys.implementation.name == 'pypy':
-            self.assertEqual(err[1].find("p"), err[2].find("^"))
-        else:
-            self.assertEqual(err[1].find(")") + 1, err[2].find("^"))
+        self.assertEqual(err[1].find(")") + 1, err[2].find("^"))
 
         # No caret for "unexpected indent"
         err = self.get_exception_format(self.syntax_error_bad_indentation2,

@@ -8,6 +8,10 @@ from test.support import script_helper
 from test.support import warnings_helper
 import unittest
 
+# PyPy's tokenizer words this error differently -- see
+# EOF_MULTI_LINE_STATEMENT_ERROR in pypy/interpreter/pyparser/pytokenizer.py.
+# Drop this once the tokenizer uses CPython's wording (test_syntax hardcodes
+# it too).
 if sys.implementation.name == 'pypy':
     eof_msg = "unexpected end of file (EOF) in multi-line statement"
 else:

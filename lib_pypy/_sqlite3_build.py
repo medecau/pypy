@@ -524,6 +524,31 @@ if SQLITE3_VERSION >= 3034000:
 #define SQLITE_IOERR_CORRUPTFS ...
 """)
 
+if SQLITE3_VERSION >= 3016002:
+    # Connection.getconfig()/setconfig().  sqlite3_db_config() is variadic;
+    # declare the (int, int*) form, the only one used for the boolean verbs.
+    _ffi.cdef("int sqlite3_db_config(sqlite3*, int op, int, int*);")
+    for _version, _verb in [
+            (3016002, "SQLITE_DBCONFIG_ENABLE_FKEY"),
+            (3016002, "SQLITE_DBCONFIG_ENABLE_TRIGGER"),
+            (3016002, "SQLITE_DBCONFIG_ENABLE_FTS3_TOKENIZER"),
+            (3016002, "SQLITE_DBCONFIG_ENABLE_LOAD_EXTENSION"),
+            (3016002, "SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE"),
+            (3020000, "SQLITE_DBCONFIG_ENABLE_QPSG"),
+            (3022000, "SQLITE_DBCONFIG_TRIGGER_EQP"),
+            (3024000, "SQLITE_DBCONFIG_RESET_DATABASE"),
+            (3026000, "SQLITE_DBCONFIG_DEFENSIVE"),
+            (3028000, "SQLITE_DBCONFIG_WRITABLE_SCHEMA"),
+            (3029000, "SQLITE_DBCONFIG_LEGACY_ALTER_TABLE"),
+            (3029000, "SQLITE_DBCONFIG_DQS_DML"),
+            (3029000, "SQLITE_DBCONFIG_DQS_DDL"),
+            (3030000, "SQLITE_DBCONFIG_ENABLE_VIEW"),
+            (3031000, "SQLITE_DBCONFIG_LEGACY_FILE_FORMAT"),
+            (3031000, "SQLITE_DBCONFIG_TRUSTED_SCHEMA"),
+            ]:
+        if SQLITE3_VERSION >= _version:
+            _ffi.cdef("#define %s ..." % (_verb,))
+
 if SQLITE3_VERSION >= 3036000:
     _ffi.cdef("""
 unsigned char *sqlite3_serialize(

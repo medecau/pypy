@@ -31,6 +31,7 @@ import sys
 import threading
 import traceback
 import types
+import warnings
 import weakref
 import operator
 from collections import OrderedDict
@@ -102,6 +103,22 @@ exported_sqlite_symbols = [
     'SQLITE_CREATE_TRIGGER',
     'SQLITE_CREATE_VIEW',
     'SQLITE_CREATE_VTABLE',
+    'SQLITE_DBCONFIG_DEFENSIVE',
+    'SQLITE_DBCONFIG_DQS_DDL',
+    'SQLITE_DBCONFIG_DQS_DML',
+    'SQLITE_DBCONFIG_ENABLE_FKEY',
+    'SQLITE_DBCONFIG_ENABLE_FTS3_TOKENIZER',
+    'SQLITE_DBCONFIG_ENABLE_LOAD_EXTENSION',
+    'SQLITE_DBCONFIG_ENABLE_QPSG',
+    'SQLITE_DBCONFIG_ENABLE_TRIGGER',
+    'SQLITE_DBCONFIG_ENABLE_VIEW',
+    'SQLITE_DBCONFIG_LEGACY_ALTER_TABLE',
+    'SQLITE_DBCONFIG_LEGACY_FILE_FORMAT',
+    'SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE',
+    'SQLITE_DBCONFIG_RESET_DATABASE',
+    'SQLITE_DBCONFIG_TRIGGER_EQP',
+    'SQLITE_DBCONFIG_TRUSTED_SCHEMA',
+    'SQLITE_DBCONFIG_WRITABLE_SCHEMA',
     'SQLITE_DELETE',
     'SQLITE_DENY',
     'SQLITE_DETACH',
@@ -277,12 +294,21 @@ _deprecated_version = "2.6.0"
 PARSE_COLNAMES = 1
 PARSE_DECLTYPES = 2
 
-# 3.12 added Connection.autocommit (PEP 249 transaction control) with this
-# sentinel for "keep using isolation_level".  The attribute itself is not
-# implemented yet; the constant is exported because test_sqlite3 reads it at
-# class-definition time, which otherwise stops the whole package from being
-# collected -- run=0 instead of ~190 tests.
+# 3.12 added Connection.autocommit (PEP 249 transaction control); this is the
+# sentinel for "keep using isolation_level".
 LEGACY_TRANSACTION_CONTROL = -1
+
+
+def _autocommit_converter(val):
+    """Normalize the autocommit argument to True, False or the sentinel."""
+    if val is True:
+        return True
+    if val is False:
+        return False
+    if isinstance(val, int) and val == LEGACY_TRANSACTION_CONTROL:
+        return LEGACY_TRANSACTION_CONTROL
+    raise ValueError("autocommit must be True, False, or "
+                     "sqlite3.LEGACY_TRANSACTION_CONTROL")
 
 # SQLite version information
 sqlite_version = str(_ffi.string(_lib.sqlite3_libversion()).decode('ascii'))
@@ -341,14 +367,15 @@ del _cls
 
 def connect(database, timeout=5.0, detect_types=0, isolation_level="",
                  check_same_thread=True, factory=None, cached_statements=100,
-                 uri=0):
+                 uri=0, *, autocommit=LEGACY_TRANSACTION_CONTROL):
     factory = Connection if not factory else factory
     # an sqlite3 db seems to be around 100 KiB at least (doesn't matter if
     # backed by :memory: or a file)
     res = factory(database=database, timeout=timeout,
                   detect_types=detect_types, isolation_level=isolation_level,
                   check_same_thread=check_same_thread, factory=factory,
-                  cached_statements=cached_statements, uri=uri)
+                  cached_statements=cached_statements, uri=uri,
+                  autocommit=autocommit)
     add_memory_pressure(100 * 1024)
     return res
 
@@ -384,10 +411,13 @@ BEGIN_STATMENTS = (
 class Connection(object):
     __initialized = False
     _db = None
+    _autocommit = LEGACY_TRANSACTION_CONTROL
 
     def __init__(self, database, timeout=5.0, detect_types=0, isolation_level="",
-                 check_same_thread=True, factory=None, cached_statements=100, uri=0):
+                 check_same_thread=True, factory=None, cached_statements=100, uri=0,
+                 *, autocommit=LEGACY_TRANSACTION_CONTROL):
         sys.audit("sqlite3.connect", database)
+        autocommit = _autocommit_converter(autocommit)
         self.__initialized = False
         db_star = _ffi.new('sqlite3 **')
 
@@ -447,6 +477,12 @@ class Connection(object):
         self.IntegrityError = IntegrityError
         self.DataError = DataError
         self.NotSupportedError = NotSupportedError
+
+        # PEP 249 transaction control: with autocommit disabled a transaction
+        # is always open, so start one right away
+        self._autocommit = autocommit
+        if autocommit is False:
+            self._exec_stmt(b"BEGIN")
         sys.audit("sqlite3.connect/handle", self)
 
     def __del__(self):
@@ -475,6 +511,11 @@ class Connection(object):
             for stmt in list(self.__rawstatements):
                 self._finalize_raw_statement(stmt)
             self.__rawstatements = None
+
+        # PEP 249 transaction control: roll back the transaction that is
+        # always open when autocommit is disabled
+        if self._db and self._autocommit is False and self.in_transaction:
+            self._exec_stmt(b"ROLLBACK")
 
         if self._db:
             ret = _lib.sqlite3_close(self._db)
@@ -638,9 +679,11 @@ class Connection(object):
         self._check_closed()
         return _iterdump(self)
 
-    def _begin(self):
+    def _exec_stmt(self, sql):
+        """Run a transaction control statement, bypassing the statement cache.
+        """
         statement_star = _ffi.new('sqlite3_stmt **')
-        ret = _lib.sqlite3_prepare_v2(self._db, self._begin_statement, -1,
+        ret = _lib.sqlite3_prepare_v2(self._db, sql, -1,
                                       statement_star, _ffi.NULL)
         try:
             if ret != _lib.SQLITE_OK:
@@ -650,55 +693,44 @@ class Connection(object):
                 raise self._get_exception(ret)
         finally:
             _lib.sqlite3_finalize(statement_star[0])
+
+    def _begin(self):
+        self._exec_stmt(self._begin_statement)
 
     def commit(self):
         self._check_thread()
         self._check_closed()
-        if not self.in_transaction:
+        if self._autocommit is True:
             return
+        if self.in_transaction:
+            # PyPy fix for non-refcounting semantics: since 2.7.13 (and in
+            # <= 2.6.x), the statements are not automatically reset upon
+            # commit.  However, if this is followed by some specific SQL
+            # operations like "drop table", these open statements come in
+            # the way and cause the "drop table" to fail.  On CPython the
+            # problem is much less important because typically all the old
+            # statements are freed already by reference counting.  So here,
+            # we copy all the still-alive statements to another list which
+            # is usually ignored, except if we get SQLITE_LOCKED
+            # afterwards---at which point we reset all statements in this
+            # list.
+            self.__statements_already_committed = list(self.__statements)
 
-        # PyPy fix for non-refcounting semantics: since 2.7.13 (and in
-        # <= 2.6.x), the statements are not automatically reset upon
-        # commit.  However, if this is followed by some specific SQL
-        # operations like "drop table", these open statements come in
-        # the way and cause the "drop table" to fail.  On CPython the
-        # problem is much less important because typically all the old
-        # statements are freed already by reference counting.  So here,
-        # we copy all the still-alive statements to another list which
-        # is usually ignored, except if we get SQLITE_LOCKED
-        # afterwards---at which point we reset all statements in this
-        # list.
-        self.__statements_already_committed = list(self.__statements)
-
-        statement_star = _ffi.new('sqlite3_stmt **')
-        ret = _lib.sqlite3_prepare_v2(self._db, b"COMMIT", -1,
-                                      statement_star, _ffi.NULL)
-        try:
-            if ret != _lib.SQLITE_OK:
-                raise self._get_exception(ret)
-            ret = _lib.sqlite3_step(statement_star[0])
-            if ret != _lib.SQLITE_DONE:
-                raise self._get_exception(ret)
-        finally:
-            _lib.sqlite3_finalize(statement_star[0])
+            self._exec_stmt(b"COMMIT")
+        if self._autocommit is False:
+            # PEP 249 transaction control: immediately open a new transaction
+            self._exec_stmt(b"BEGIN")
 
     def rollback(self):
         self._check_thread()
         self._check_closed()
-        if not self.in_transaction:
+        if self._autocommit is True:
             return
-
-        statement_star = _ffi.new('sqlite3_stmt **')
-        ret = _lib.sqlite3_prepare_v2(self._db, b"ROLLBACK", -1,
-                                      statement_star, _ffi.NULL)
-        try:
-            if ret != _lib.SQLITE_OK:
-                raise self._get_exception(ret)
-            ret = _lib.sqlite3_step(statement_star[0])
-            if ret != _lib.SQLITE_DONE:
-                raise self._get_exception(ret)
-        finally:
-            _lib.sqlite3_finalize(statement_star[0])
+        if self.in_transaction:
+            self._exec_stmt(b"ROLLBACK")
+        if self._autocommit is False:
+            # PEP 249 transaction control: immediately open a new transaction
+            self._exec_stmt(b"BEGIN")
 
     def __enter__(self):
         return self
@@ -975,6 +1007,61 @@ class Connection(object):
             self._begin_statement = stmt.encode('utf-8')
         self._isolation_level = val
     isolation_level = property(__get_isolation_level, __set_isolation_level)
+
+    def __get_autocommit(self):
+        return self._autocommit
+
+    def __set_autocommit(self, val):
+        self._check_thread()
+        self._check_closed()
+        mode = _autocommit_converter(val)
+        if mode is True:
+            if self.in_transaction:
+                self._exec_stmt(b"COMMIT")
+        elif mode is False:
+            if not self.in_transaction:
+                self._exec_stmt(b"BEGIN")
+        self._autocommit = mode
+    autocommit = property(__get_autocommit, __set_autocommit)
+
+    if hasattr(_lib, 'sqlite3_db_config'):
+        @_check_thread_wrap
+        @_check_closed_wrap
+        def setconfig(self, op, enable=True):
+            """
+                op: int
+                    The configuration verb; one of the sqlite3.SQLITE_DBCONFIG
+                    codes.
+                enable: bool = True
+
+            Set a boolean connection run-time configuration option.
+            """
+            op = operator.index(op)
+            rc = _lib.sqlite3_db_config(self._db, op, int(bool(enable)),
+                                        _ffi.NULL)
+            if rc == _lib.SQLITE_ERROR:
+                raise ValueError("unknown config 'op': %d" % (op,))
+            if rc != _lib.SQLITE_OK:
+                raise self._get_exception(rc)
+
+        @_check_thread_wrap
+        @_check_closed_wrap
+        def getconfig(self, op):
+            """
+                op: int
+                    The configuration verb; one of the sqlite3.SQLITE_DBCONFIG
+                    codes.
+
+            Query a boolean connection run-time configuration option.
+            """
+            op = operator.index(op)
+            current = _ffi.new('int *')
+            rc = _lib.sqlite3_db_config(self._db, op, -1, current)
+            if rc == _lib.SQLITE_ERROR:
+                raise ValueError("unknown config 'op': %d" % (op,))
+            if rc != _lib.SQLITE_OK:
+                raise self._get_exception(rc)
+            return bool(current[0])
 
     if hasattr(_lib, 'sqlite3_enable_load_extension'):
         @_check_thread_wrap
@@ -1454,7 +1541,9 @@ class Cursor(object):
                 self.__statement._reset(self.__in_use_token)
             self.__statement = self.__connection._statement_cache.get(sql)
 
-            if self.__connection._begin_statement and self.__statement._is_dml:
+            if (self.__connection._autocommit == LEGACY_TRANSACTION_CONTROL
+                    and self.__connection._begin_statement
+                    and self.__statement._is_dml):
                 if _lib.sqlite3_get_autocommit(self.__connection._db):
                     self.__connection._begin()
 
@@ -1524,7 +1613,10 @@ class Cursor(object):
         statement_star = _ffi.new('sqlite3_stmt **')
         next_char = _ffi.new('char **')
 
-        self.__connection.commit()
+        # only the legacy transaction control commits before a script; with
+        # Connection.autocommit the script runs inside the current transaction
+        if self.__connection._autocommit == LEGACY_TRANSACTION_CONTROL:
+            self.__connection.commit()
         while True:
             c_sql = _ffi.new("char[]", sql)
             rc = _lib.sqlite3_prepare(self.__connection._db, c_sql, -1,
@@ -1655,6 +1747,7 @@ class _InUseToken(object):
 
 class Statement(object):
     _statement = None
+    _named_params = None
 
     def __init__(self, connection, sql):
         self.__con = connection
@@ -1693,9 +1786,24 @@ class Statement(object):
 
         self.__con._remember_statement(self)
 
+        # the named placeholders, if any, of a statement never change, so
+        # collect them once here instead of on every _set_params() call
+        self._named_params = self.__collect_named_params()
+
         tail = _ffi.string(next_char[0]).decode('utf-8')
         if _sql_lstrip_comments(tail):
             raise ProgrammingError("You can only execute one statement at a time.")
+
+    def __collect_named_params(self):
+        result = None
+        for i in range(1, _lib.sqlite3_bind_parameter_count(self._statement) + 1):
+            name = _lib.sqlite3_bind_parameter_name(self._statement, i)
+            # '?NNN' is a nameless (indexed) placeholder, see gh-117995
+            if name and name[0] != b'?':
+                if result is None:
+                    result = []
+                result.append((i, _ffi.string(name).decode('utf-8')))
+        return result
 
     def __new__(cls, *args):
         raise TypeError("cannot create '_sqlite3.Statement' instances")
@@ -1761,6 +1869,22 @@ class Statement(object):
             rc = _UNSUPPORTED_TYPE
         return rc
 
+    def __warn_named_params(self):
+        # 3.12 (gh-99953) deprecates supplying a sequence for named
+        # placeholders
+        for idx, name in self._named_params:
+            warnings.warn(
+                "Binding %d ('%s') is a named parameter, but you supplied a "
+                "sequence which requires nameless (qmark) placeholders. "
+                "Starting with Python 3.14 an sqlite3.ProgrammingError will "
+                "be raised." % (idx, name),
+                DeprecationWarning,
+                # PyPy: unlike CPython's C module, this pure-Python
+                # implementation has frames of its own between the caller and
+                # warnings.warn(); skip them, so that the warning points at
+                # the user's execute() call
+                skip_file_prefixes=(__file__,))
+
     def _set_params(self, params, token):
         assert isinstance(token, _InUseToken)
         self._in_use_token = token
@@ -1778,6 +1902,8 @@ class Statement(object):
                                        "The current statement uses %d, and "
                                        "there are %d supplied." %
                                        (num_params_needed, num_params))
+            if self._named_params is not None:
+                self.__warn_named_params()
             for i in range(num_params):
                 rc = self.__set_param(i + 1, params[i])
                 if rc is _UNSUPPORTED_TYPE:
@@ -1826,6 +1952,8 @@ class Row(object):
         elif isinstance(item, slice):
             return self.values[item]
         elif isinstance(item, str):
+            if self.description is None:
+                raise IndexError("No item with key %r" % (item,))
             for idx, desc in enumerate(self.description):
                 # but to bug compatibility: CPython does case folding only for
                 # ascii chars
@@ -1839,6 +1967,8 @@ class Row(object):
         raise IndexError(f"index must be int or string, not '{type(item).__name__}'")
 
     def keys(self):
+        if self.description is None:
+            return []
         return [desc[0] for desc in self.description]
 
     def __eq__(self, other):
