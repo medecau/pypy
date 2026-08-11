@@ -151,7 +151,16 @@ def raise_unterminated_string(
         "f-" if f_string else "",
         end_lineno,
     )
-    raise TokenError(msg, line, lineno, column, tokens, end_lineno, end_offset)
+    # CPython's error text for this one stops at the end of the line the
+    # string started on, without the line break (test_eof test_EOFS).  Note
+    # that the EOF-in-continuation error next door keeps its newline, so
+    # this cannot be done for TokenError in general.
+    end = len(line)
+    while end > 0 and (line[end - 1] == '\n' or line[end - 1] == '\r'):
+        end -= 1
+    assert end >= 0
+    raise TokenError(msg, line[:end], lineno, column, tokens, end_lineno,
+                     end_offset)
 
 def potential_identifier_char(ch):
     return (ch in NAMECHARS or  # ordinary name
@@ -208,8 +217,13 @@ class TokenizerState(object):
         self.strstart_is_triple_quoted = False
 
 class Tokenizer(object):
-    def __init__(self, flags):
+    def __init__(self, flags, newline_at_eof=True):
         self.flags = flags
+        # Whether the source really ends with a newline -- either because it
+        # did, or because this is 'exec' mode, where CPython's tokenizer
+        # appends one too.  It decides how a trailing backslash is reported;
+        # see the continuation branch of tokenize_lines.
+        self.newline_at_eof = newline_at_eof
 
         self.token_list = []
         self.lnum = 0
@@ -449,12 +463,13 @@ class Tokenizer(object):
                 self._raise_token_error("'%s' was never closed" % (parenkind, ), line1,
                                  lnum1, start1 + 1, self.lnum)
             prevline = self.lines[self.lines_index - 1]
-            # A backslash continuation with nothing at all on the logical
-            # line -- eval('\\') -- reports the continuation character
-            # itself, not an unfinished statement (test_fstring's
-            # test_invalid_backslashes_inside_fstring_context).  With any
-            # tokens before the backslash it stays the EOF error, which
-            # test_eof pins for 'x = 5\\'.
+            # A backslash that EOF follows immediately -- eval('\\') -- names
+            # the continuation character itself (test_fstring's
+            # test_invalid_backslashes_inside_fstring_context).  A backslash
+            # followed by a real newline is an unfinished statement instead,
+            # and in 'exec' mode CPython supplies that newline itself, so
+            # there it is always the EOF error even for a lone backslash
+            # (test_eof test_line_continuation_EOF).
             empty_logical_line = True
             if self.token_list:
                 last_type = self.token_list[-1].token_type
@@ -463,12 +478,13 @@ class Tokenizer(object):
                         last_type != tokens.INDENT and
                         last_type != tokens.DEDENT):
                     empty_logical_line = False
-            if empty_logical_line:
+            if empty_logical_line and not self.newline_at_eof:
                 self._raise_token_error(
                     "unexpected character after line continuation character",
                     prevline, self.lnum - 1, len(prevline) - 1)
+            # the offset points one past the backslash, as CPython's does
             self._raise_token_error(EOF_MULTI_LINE_STATEMENT_ERROR , prevline,
-                             self.lnum - 1, len(prevline) - 1) # XXX why is the offset 0 here?
+                             self.lnum - 1, len(prevline))
         self.continued = False
 
     def _tokenize_regular(self, line):
@@ -833,7 +849,7 @@ def _odd_backslash_prefix(line, first_pos):
     return (first_pos - i) % 2
 
 
-def generate_tokens(lines, flags):
+def generate_tokens(lines, flags, newline_at_eof=True):
     """
     This is a rewrite of pypy.module.parser.pytokenize.generate_tokens since
     the original function is not RPYTHON (uses yield)
@@ -862,11 +878,11 @@ def generate_tokens(lines, flags):
     orig_lines = lines
     err1 = None
     try:
-        token_list = _generate_tokens(lines, flags)
+        token_list = _generate_tokens(lines, flags, newline_at_eof)
     except TokenError as e:
         err1 = e
 
-    t = Tokenizer(flags)
+    t = Tokenizer(flags, newline_at_eof)
     try:
         token_list2 = t.tokenize_lines(orig_lines[:])
     except TokenError as err2:
@@ -889,7 +905,7 @@ def generate_tokens(lines, flags):
             assert tok1 == tok2
     return token_list2
 
-def _generate_tokens(lines, flags):
+def _generate_tokens(lines, flags, newline_at_eof=True):
     token_list = []
     lnum = 0
     continued = False
@@ -1040,8 +1056,20 @@ def _generate_tokens(lines, flags):
                     raise TokenError("'%s' was never closed" % (parenkind, ), line1,
                                      lnum1, start1 + 1, token_list, lnum)
                 prevline = lines[lines_index - 1]
+                empty_logical_line = True
+                if token_list:
+                    last_type = token_list[-1].token_type
+                    if (last_type != tokens.NEWLINE and
+                            last_type != tokens.NL and
+                            last_type != tokens.INDENT and
+                            last_type != tokens.DEDENT):
+                        empty_logical_line = False
+                if empty_logical_line and not newline_at_eof:
+                    raise TokenError(
+                        "unexpected character after line continuation character",
+                        prevline, lnum - 1, len(prevline) - 1, token_list)
                 raise TokenError(EOF_MULTI_LINE_STATEMENT_ERROR , prevline,
-                                 lnum - 1, len(prevline) - 1, token_list) # XXX why is the offset 0 here?
+                                 lnum - 1, len(prevline), token_list)
             continued = False
 
         while pos < max:

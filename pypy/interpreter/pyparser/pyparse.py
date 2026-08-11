@@ -237,8 +237,13 @@ class PegParser(object):
 
         # The tokenizer is very picky about how it wants its input.
         source_lines = textsrc.splitlines(True)
+        real_newline_at_eof = True
         if source_lines and not source_lines[-1].endswith("\n"):
             source_lines[-1] += '\n'
+            # We just made one up.  CPython only does that for 'exec', which
+            # is why a trailing backslash is an unfinished statement there but
+            # names the continuation character in the other modes.
+            real_newline_at_eof = compile_info.mode == "exec"
         if textsrc and textsrc[-1] == "\n" or compile_info.mode != "single":
             flags &= ~consts.PyCF_DONT_IMPLY_DEDENT
 
@@ -248,7 +253,8 @@ class PegParser(object):
             # Note: we no longer pass the CO_FUTURE_* to the tokenizer,
             # which is expected to work independently of them.  It's
             # certainly the case for all futures in Python <= 2.7.
-            tokens = pytokenizer.generate_tokens(source_lines, flags)
+            tokens = pytokenizer.generate_tokens(source_lines, flags,
+                                                 real_newline_at_eof)
         except (error.TokenError, error.TokenIndentationError) as e:
             e.filename = compile_info.filename
             if (isinstance(e, error.TokenError) and
