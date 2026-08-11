@@ -151,15 +151,20 @@ def raise_unterminated_string(
         "f-" if f_string else "",
         end_lineno,
     )
-    # CPython's error text for this one stops at the end of the line the
-    # string started on, without the line break (test_eof test_EOFS).  Note
-    # that the EOF-in-continuation error next door keeps its newline, so
-    # this cannot be done for TokenError in general.
-    end = len(line)
-    while end > 0 and (line[end - 1] == '\n' or line[end - 1] == '\r'):
-        end -= 1
-    assert end >= 0
-    raise TokenError(msg, line[:end], lineno, column, tokens, end_lineno,
+    # CPython 3.12's error text for an unterminated *string* stops at the end
+    # of the line the literal started on, without the line break (test_eof
+    # test_EOFS) -- but an unterminated *f-string* keeps it (test_fstring
+    # test_not_closing_quotes), because 3.12 tokenizes those in separate code
+    # with its own idea of the text.  3.13 unified the two on the stripped
+    # form; we are 3.12.  Note also that the EOF-in-continuation error next
+    # door keeps its newline, so this cannot live in TokenError.
+    if not f_string:
+        end = len(line)
+        while end > 0 and (line[end - 1] == '\n' or line[end - 1] == '\r'):
+            end -= 1
+        assert end >= 0
+        line = line[:end]
+    raise TokenError(msg, line, lineno, column, tokens, end_lineno,
                      end_offset)
 
 def potential_identifier_char(ch):
