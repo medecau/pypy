@@ -60,6 +60,12 @@ except ImportError:
     INT_MAX = PY_SSIZE_T_MAX = sys.maxsize
 
 try:
+    from _testcapi import _spawn_pthread_waiter, _end_spawned_pthread
+    HAVE_PTHREAD_WAITER = True
+except ImportError:
+    HAVE_PTHREAD_WAITER = False
+
+try:
     import mmap
 except ImportError:
     mmap = None
@@ -4858,6 +4864,11 @@ class ForkTests(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform in ("linux", "darwin"),
                          "Only Linux and macOS detect this today.")
+    # PyPy: the raw-pthread helpers below are CPython _testcapi additions we
+    # do not ship, and PyPy's own fork warning counts interpreter-level
+    # threads, so a thread created outside the interpreter is invisible to it.
+    @unittest.skipUnless(HAVE_PTHREAD_WAITER,
+                         "requires _testcapi._spawn_pthread_waiter")
     def test_fork_warns_when_non_python_thread_exists(self):
         code = """if 1:
             import os, threading, warnings

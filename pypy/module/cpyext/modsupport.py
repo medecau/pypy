@@ -137,6 +137,16 @@ def create_module_from_def_and_spec(space, moddef, w_spec, name):
     if createf:
         createf = rffi.cast(createfunctype, createf)
         w_mod = generic_cpy_call(space, createf, w_spec, moddef)
+        state = space.fromcache(State)
+        operr = state.clear_exception()
+        if operr:
+            # a create slot that returns a module and still leaves an
+            # exception set (test_importlib's create_unreported_exception)
+            w_err = oefmt(space.w_SystemError,
+                          "creation of module %s raised unreported exception",
+                          name)
+            w_err.chain_exceptions_from_cause(space, operr)
+            raise w_err
     else:
         w_mod = Module(space, space.newtext(name))
     if isinstance(w_mod, Module):

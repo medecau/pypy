@@ -265,15 +265,18 @@ class ProfileHookTestCase(TestCaseBase):
 
         f_ident = ident(f)
         g_ident = ident(g)
-        self.check_events(g, [(1, 'call', g_ident),
-                              (2, 'call', f_ident),
-                              (2, 'return', f_ident),
-                              # once more; the generator is being garbage collected
-                              # and it will do a PY_THROW
-                              (2, 'call', f_ident),
-                              (2, 'return', f_ident),
-                              (1, 'return', g_ident),
-                              ])
+        events = [(1, 'call', g_ident),
+                  (2, 'call', f_ident),
+                  (2, 'return', f_ident)]
+        if support.check_impl_detail(cpython=True):
+            # once more; the generator is being garbage collected
+            # and it will do a PY_THROW.  On PyPy the abandoned generator is
+            # not finalized at the moment its last reference goes away, so
+            # the close happens after profiling has been switched off again.
+            events += [(2, 'call', f_ident),
+                       (2, 'return', f_ident)]
+        events.append((1, 'return', g_ident))
+        self.check_events(g, events)
 
     def test_stop_iteration(self):
         def f():

@@ -1918,10 +1918,15 @@ def create_cpyext_module(space, w_spec, name, path, dll, initptr):
                 "initialization of %s failed without raising an exception",
                 name)
         else:
-            if state.clear_exception():
-                raise oefmt(space.w_SystemError,
+            operr = state.clear_exception()
+            if operr:
+                # chained as __cause__, like CPython's PyErr_FormatFromCause
+                # (test_importlib's export_unreported_exception)
+                w_err = oefmt(space.w_SystemError,
                     "initialization of %s raised unreported exception",
                     name)
+                w_err.chain_exceptions_from_cause(space, operr)
+                raise w_err
         if not initret.c_ob_type:
             raise oefmt(space.w_SystemError,
                         "init function of %s returned uninitialized object",
