@@ -21,8 +21,16 @@ typedef struct PyModuleDef_Slot{
 
 #define Py_mod_create 1
 #define Py_mod_exec 2
+/* New in 3.12.  PyPy has no subinterpreters, so the value a module supplies
+   is only validated, never acted on. */
+#define Py_mod_multiple_interpreters 3
 
-#define _Py_mod_LAST_SLOT 2
+#define _Py_mod_LAST_SLOT 3
+
+/* for Py_mod_multiple_interpreters: */
+#define Py_MOD_MULTIPLE_INTERPRETERS_NOT_SUPPORTED ((void *)0)
+#define Py_MOD_MULTIPLE_INTERPRETERS_SUPPORTED ((void *)1)
+#define Py_MOD_PER_INTERPRETER_GIL_SUPPORTED ((void *)2)
 
 
 typedef struct PyModuleDef{
