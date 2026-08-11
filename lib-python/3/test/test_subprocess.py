@@ -3387,6 +3387,10 @@ class POSIXProcessTestCase(BaseTestCase):
             except subprocess.TimeoutExpired:
                 pass
 
+    # PyPy does not run the __del__ of objects that are still alive when the
+    # interpreter shuts down, so a finalizer cannot be made to spawn a
+    # subprocess during interpreter finalization in the first place.
+    @support.impl_detail("no finalizers at interpreter shutdown", pypy=False)
     def test_preexec_at_exit(self):
         code = f"""if 1:
         import atexit

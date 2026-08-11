@@ -1180,7 +1180,7 @@ os.close(fd)
                 # can't use assertRaises because that clears frames
                 exc = excs.exceptions[0]
             self.assertIsNotNone(exc)
-            self.assertListEqual(gc.get_referrers(exc), [])
+            self.assertListEqual(test_utils.external_referrers(exc), [])
 
         asyncio.run(main())
 

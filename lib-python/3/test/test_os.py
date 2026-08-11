@@ -1663,6 +1663,9 @@ class FwalkTests(WalkTests):
         # Since we're opening a lot of FDs, we must be careful to avoid leaks:
         # we both check that calling fwalk() a large number of times doesn't
         # yield EMFILE, and that the minimum allocated FD hasn't changed.
+        # For PyPy or other GCs: the baseline is only stable once the
+        # generators dropped by earlier tests have actually been finalized.
+        support.gc_collect()
         minfd = os.dup(1)
         os.close(minfd)
         for i in range(256):
@@ -1685,12 +1688,19 @@ class FwalkTests(WalkTests):
             os.close(fd)
             return fd
         for topdown in (False, True):
+            # For PyPy or other GCs: the baseline is only stable once the
+            # generators dropped earlier have actually been finalized.
+            support.gc_collect()
             old_fd = getfd()
             it = self.fwalk(os_helper.TESTFN, topdown=topdown)
             self.assertEqual(getfd(), old_fd)
             next(it)
             self.assertGreater(getfd(), old_fd)
             it.close()
+            # For PyPy or other GCs: closing the wrapper generator only drops
+            # the reference to the os.fwalk() generator it iterates over; the
+            # latter releases its dir_fds from its own finalizer.
+            support.gc_collect()
             self.assertEqual(getfd(), old_fd)
 
     # fwalk() keeps file descriptors open
@@ -4874,6 +4884,10 @@ class ForkTests(unittest.TestCase):
         self.assertEqual(err.decode("utf-8"), "")
         self.assertEqual(out.decode("utf-8"), "")
 
+    # PyPy does not run the __del__ of objects that are still alive when the
+    # interpreter shuts down, so there is no way to get a finalizer to call
+    # fork() during interpreter finalization in the first place.
+    @support.impl_detail("no finalizers at interpreter shutdown", pypy=False)
     def test_fork_at_finalization(self):
         code = """if 1:
             import atexit

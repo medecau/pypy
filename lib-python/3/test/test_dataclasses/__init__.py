@@ -2353,7 +2353,15 @@ class TestDocString(unittest.TestCase):
         class C(Base):
             pass
 
-        self.assertDocStrEqual(C.__doc__, "C")
+        if support.check_impl_detail(pypy=True):
+            # PyPy's built-in functions and types are introspectable, so
+            # inspect.signature(dict) does not raise ValueError here and
+            # dataclasses is able to build a real signature.  The point of
+            # the test -- that the docstring is generated without blowing
+            # up -- still holds.
+            self.assertDocStrEqual(C.__doc__, "C()")
+        else:
+            self.assertDocStrEqual(C.__doc__, "C")
 
 
 class TestInit(unittest.TestCase):

@@ -23,6 +23,12 @@ class EventfulGCObj():
         self.event.set()
 
 
+def _collect_in_worker(*args):
+    # For PyPy or other GCs: run inside a worker process to force the
+    # finalization of the job arguments the worker has already dropped.
+    support.gc_collect()
+
+
 class ProcessPoolExecutorTest(ExecutorTest):
 
     @unittest.skipUnless(sys.platform=='win32', 'Windows-only process limit')
@@ -94,6 +100,15 @@ class ProcessPoolExecutorTest(ExecutorTest):
         obj = EventfulGCObj(mgr)
         future = self.executor.submit(id, obj)
         future.result()
+
+        # For PyPy or other GCs: the worker has already dropped its copy of
+        # the argument, but its __del__ only runs at the next collection.
+        # There is no way to tell which worker ran the job, so keep handing
+        # collections to the pool until the finalizer has run.  On CPython
+        # the event is set already and this loop does not run at all.
+        deadline = time.monotonic() + support.SHORT_TIMEOUT
+        while not obj.event.is_set() and time.monotonic() < deadline:
+            self.executor.submit(_collect_in_worker).result()
 
         self.assertTrue(obj.event.wait(timeout=1))
 

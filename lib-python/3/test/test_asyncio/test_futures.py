@@ -668,7 +668,7 @@ class BaseFutureTests:
         except asyncio.CancelledError as e:
             exc = e
         self.assertIsNotNone(exc)
-        self.assertListEqual(gc.get_referrers(exc), [])
+        self.assertListEqual(test_utils.external_referrers(exc), [])
 
     def test_future_cancelled_exception_refcycles(self):
         f = self._new_future(loop=self.loop)
@@ -679,7 +679,7 @@ class BaseFutureTests:
         except asyncio.CancelledError as e:
             exc = e
         self.assertIsNotNone(exc)
-        self.assertListEqual(gc.get_referrers(exc), [])
+        self.assertListEqual(test_utils.external_referrers(exc), [])
 
 
 @unittest.skipUnless(hasattr(futures, '_CFuture'),

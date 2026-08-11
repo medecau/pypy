@@ -3,6 +3,7 @@
 import asyncio
 import collections
 import contextlib
+import gc
 import io
 import logging
 import os
@@ -12,6 +13,7 @@ import socket
 import socketserver
 import sys
 import threading
+import types
 import unittest
 import weakref
 import warnings
@@ -40,6 +42,66 @@ from test.support import threading_helper
 # GetTickCount64() has a resolution of 15.6 ms. Use 50 ms to tolerate rounding
 # issues.
 CLOCK_RES = 0.050
+
+
+# Interpreter-level objects PyPy's gc.get_referrers() reports but which are
+# not app-level objects at all: SApplicationException is the exception being
+# unwound, the equivalent of the exception state CPython keeps on its C stack.
+_VM_INTERNAL_REFERRERS = frozenset({'SApplicationException'})
+
+_FRAME_OWNERS = (types.GeneratorType, types.CoroutineType,
+                 types.AsyncGeneratorType)
+
+
+def _owned_frame(obj):
+    for attr in ('cr_frame', 'gi_frame', 'ag_frame'):
+        frame = getattr(obj, attr, None)
+        if frame is not None:
+            return frame
+    return None
+
+
+def external_referrers(obj):
+    """gc.get_referrers(obj) minus the referrers that are the call stack.
+
+    The "no reference cycle is left behind" tests compare this against [].
+    Calling gc.get_referrers() on 'obj' from anywhere always finds the
+    frames that hold 'obj' in a local variable, plus the coroutines that own
+    those frames and the tuple of arguments of the get_referrers() call
+    itself.  CPython happens to hide all of that when the call is written
+    inline in the test -- it does not materialize frame objects, it does not
+    visit the value stack of the frame that is running, and it drops its own
+    argument tuple before scanning.  PyPy hides none of it, and on top
+    reports the exception being unwound, which CPython keeps on the C stack.
+
+    So drop exactly the referrers that belong to the running call stack --
+    and nothing else.  Anything genuinely holding on to 'obj', including a
+    coroutine or a frame that is not running any more, is still reported.
+    """
+    # Frames of functions that have already returned are garbage rather than
+    # freed on PyPy; collect them first so that only the live ones are left.
+    support.gc_collect()
+    live_frames = set()
+    frame = sys._getframe()
+    while frame is not None:
+        live_frames.add(id(frame))
+        frame = frame.f_back
+    # Written as a plain loop on purpose: a comprehension mentioning 'obj'
+    # makes it a cell variable, and the cell is itself a referrer.
+    result = []
+    for ref in gc.get_referrers(obj):
+        if id(ref) in live_frames:
+            continue
+        if isinstance(ref, _FRAME_OWNERS):
+            frame = _owned_frame(ref)
+            if frame is not None and id(frame) in live_frames:
+                continue
+        if type(ref) is tuple and len(ref) == 1 and ref[0] is obj:
+            continue
+        if type(ref).__name__ in _VM_INTERNAL_REFERRERS:
+            continue
+        result.append(ref)
+    return result
 
 
 def data_file(*filename):

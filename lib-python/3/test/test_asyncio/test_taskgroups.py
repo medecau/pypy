@@ -10,7 +10,8 @@ import contextlib
 from asyncio import taskgroups
 import unittest
 
-from test.test_asyncio.utils import await_without_task
+from test import support
+from test.test_asyncio.utils import await_without_task, external_referrers
 
 # To prevent a warning "test altered the execution environment"
 def tearDownModule():
@@ -858,7 +859,7 @@ class BaseTestTaskGroup:
             exc = e
 
         self.assertIsNotNone(exc)
-        self.assertListEqual(gc.get_referrers(exc), [])
+        self.assertListEqual(external_referrers(exc), [])
 
 
     async def test_exception_refcycles_errors(self):
@@ -876,7 +877,7 @@ class BaseTestTaskGroup:
             exc = excs.exceptions[0]
 
         self.assertIsInstance(exc, _Done)
-        self.assertListEqual(gc.get_referrers(exc), [])
+        self.assertListEqual(external_referrers(exc), [])
 
 
     async def test_exception_refcycles_parent_task(self):
@@ -898,7 +899,7 @@ class BaseTestTaskGroup:
             exc = excs.exceptions[0].exceptions[0]
 
         self.assertIsInstance(exc, _Done)
-        self.assertListEqual(gc.get_referrers(exc), [])
+        self.assertListEqual(external_referrers(exc), [])
 
 
     async def test_exception_refcycles_parent_task_wr(self):
@@ -920,9 +921,14 @@ class BaseTestTaskGroup:
             except* _Done as excs:
                 exc = excs.exceptions[0].exceptions[0]
 
+        if not support.check_impl_detail(cpython=True):
+            # Without refcounting the task can only be released by a
+            # collection, so the "gc disabled" part of the check above cannot
+            # apply.  Still assert that nothing holds a strong reference.
+            support.gc_collect()
         self.assertIsNone(task_wr())
         self.assertIsInstance(exc, _Done)
-        self.assertListEqual(gc.get_referrers(exc), [])
+        self.assertListEqual(external_referrers(exc), [])
 
     async def test_exception_refcycles_propagate_cancellation_error(self):
         """Test that TaskGroup deletes propagate_cancellation_error"""
@@ -937,7 +943,7 @@ class BaseTestTaskGroup:
             exc = e.__cause__
 
         self.assertIsInstance(exc, asyncio.CancelledError)
-        self.assertListEqual(gc.get_referrers(exc), [])
+        self.assertListEqual(external_referrers(exc), [])
 
     async def test_exception_refcycles_base_error(self):
         """Test that TaskGroup deletes self._base_error"""
@@ -954,7 +960,7 @@ class BaseTestTaskGroup:
             exc = e
 
         self.assertIsNotNone(exc)
-        self.assertListEqual(gc.get_referrers(exc), [])
+        self.assertListEqual(external_referrers(exc), [])
 
     async def test_cancels_task_if_created_during_creation(self):
         # regression test for gh-128550

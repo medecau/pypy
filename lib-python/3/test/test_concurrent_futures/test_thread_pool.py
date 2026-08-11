@@ -78,8 +78,15 @@ class ThreadPoolExecutorTest(ThreadPoolMixin, ExecutorTest, BaseTestCase):
             p.join()
             return p.exitcode
 
-        with futures.ThreadPoolExecutor(1) as pool:
-            process_exitcode = pool.submit(fork_process_and_return_exitcode).result()
+        try:
+            with futures.ThreadPoolExecutor(1) as pool:
+                process_exitcode = pool.submit(
+                    fork_process_and_return_exitcode).result()
+        finally:
+            # For PyPy or other GCs: drop the child Process object now,
+            # otherwise it stays in multiprocessing.process._dangling until
+            # the next collection and regrtest reports a modified environment.
+            support.gc_collect()
 
         self.assertEqual(process_exitcode, 0)
 

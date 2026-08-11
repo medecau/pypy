@@ -4,6 +4,7 @@ import contextvars
 import traceback
 import unittest
 from asyncio import tasks
+from test import support
 
 
 def tearDownModule():
@@ -46,6 +47,9 @@ class FutureTests:
         loop.set_exception_handler(exc_handler)
         self.cls(task())
         await asyncio.sleep(0)
+        # For PyPy or other GCs: the task is unreferenced now, but it only
+        # reports the never-retrieved exception from its finalizer.
+        support.gc_collect()
         self.assertTrue(exc_handler_called)
 
     async def test_handle_exc_handler_correct_context(self):

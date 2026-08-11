@@ -2003,17 +2003,26 @@ def test_pdb_frame_refleak():
     ...     import pdb; pdb.Pdb(nosigint=True, readrc=False).set_trace()
     ...     pass
 
+    PyPy note: gc.get_referrers() also reports the interpreter's own
+    argument tuple for the get_referrers() call itself, which CPython has
+    already freed by refcounting when the scan runs.  The 1-tuples below are
+    filtered out for that reason only -- a frame leaked by pdb is reachable
+    from pdb's (frame, lineno) 2-tuples, so it is still counted.
+
     >>> def test_function():
     ...     import gc
     ...     container = []
     ...     frame_leaker(container)  # c
-    ...     print(len(gc.get_referrers(container[0])))
+    ...     print(len([r for r in gc.get_referrers(container[0])
+    ...                if not (type(r) is tuple and len(r) == 1)]))
     ...     container = []
     ...     frame_leaker(container)  # n c
-    ...     print(len(gc.get_referrers(container[0])))
+    ...     print(len([r for r in gc.get_referrers(container[0])
+    ...                if not (type(r) is tuple and len(r) == 1)]))
     ...     container = []
     ...     frame_leaker(container)  # r c
-    ...     print(len(gc.get_referrers(container[0])))
+    ...     print(len([r for r in gc.get_referrers(container[0])
+    ...                if not (type(r) is tuple and len(r) == 1)]))
 
     >>> with PdbTestInput([  # doctest: +NORMALIZE_WHITESPACE
     ...     'continue',

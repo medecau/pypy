@@ -35,6 +35,10 @@ PROGRAM_CAT = [
 
 
 def tearDownModule():
+    # For PyPy or other GCs: the child watcher threads have finished, but
+    # their Thread objects only leave threading._dangling once collected,
+    # which regrtest would otherwise report as a modified environment.
+    support.gc_collect()
     asyncio.set_event_loop_policy(None)
 
 

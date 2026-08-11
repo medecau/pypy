@@ -727,6 +727,10 @@ class ThreadTests(BaseTestCase):
                     print("main", main.name, type(main).__name__)
                     print("main ident", main.ident == ident)
                     print("current is main", threading.current_thread() is main)
+                    # For PyPy or other GCs: the pre-fork _MainThread object
+                    # is garbage now, but it only leaves the _dangling
+                    # WeakSet once it has actually been collected.
+                    support.gc_collect()
                     print("_dangling", [t.name for t in list(threading._dangling)])
                     # stdout is fully buffered because not a tty,
                     # we have to flush before exit.
@@ -1138,6 +1142,10 @@ class ThreadTests(BaseTestCase):
         self.assertEqual(out, b'')
         self.assertEqual(err, b'')
 
+    # PyPy does not run the __del__ of objects that are still alive when the
+    # interpreter shuts down, so a finalizer cannot be made to start a thread
+    # during interpreter finalization in the first place.
+    @support.impl_detail("no finalizers at interpreter shutdown", pypy=False)
     def test_start_new_thread_at_finalization(self):
         code = """if 1:
             import _thread

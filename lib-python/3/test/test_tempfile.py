@@ -1122,6 +1122,7 @@ class TestNamedTemporaryFile(BaseTestCase):
         dir = tempfile.mkdtemp()
         try:
             tmp_name = my_func(dir)
+            support.gc_collect()  # For PyPy or other GCs.
             self.assertFalse(os.path.exists(tmp_name),
                         f"NamedTemporaryFile {tmp_name!r} "
                         f"exists after finalizer ")
