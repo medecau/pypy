@@ -54,6 +54,22 @@ def concatenate_strings(astbuilder, nodes):
     if not fmode and len(joined_pieces) == 1:   # <= the common path
         return joined_pieces[0]   # ast.Constant or FormattedValue
 
+    if fmode:
+        # An f-string's JoinedStr carries no empty pieces: "f'{1}' ''" is
+        # just the formatted value, as is "'' f'{1}'".  add_constant_string
+        # above can only merge an empty literal into a neighbouring
+        # Constant, so drop what it had to append instead.  Only str
+        # constants: an empty bytes literal still has to reach the
+        # bytes-and-nonbytes check below.
+        pieces = []
+        for node in joined_pieces:
+            if (isinstance(node, ast.Constant) and
+                    space.isinstance_w(node.value, space.w_unicode) and
+                    not space.is_true(node.value)):
+                continue
+            pieces.append(node)
+        joined_pieces = pieces
+
     # with more than one piece, it is a combination of ast.Constant[str]
     # and FormattedValue pieces --- if there is a bytes value, then we got
     # an invalid mixture of bytes and unicode literals

@@ -1335,16 +1335,19 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
                     imp.lineno == last_line and imp.col_offset > last_offset:
                 self.error("__future__ statements must appear at beginning "
                                "of file", imp)
+            # These three point at the offending name, not at the statement,
+            # the way CPython's future_check_features does (test_future_stmt
+            # checks the exact offsets).
             if star_import:
-                self.error("* not valid in __future__ imports", imp)
+                self.error("* not valid in __future__ imports", first)
             compiler = space.createcompiler()
             for alias in imp.names:
                 assert isinstance(alias, ast.alias)
                 if alias.name not in compiler.future_flags.compiler_features:
                     if alias.name == "braces":
-                        self.error("not a chance", imp)
+                        self.error("not a chance", alias)
                     self.error("future feature %s is not defined" %
-                               (alias.name,), imp)
+                               (alias.name,), alias)
         self.load_const(space.newint(imp.level))
         names_w = [None]*len(imp.names)
         for i in range(len(imp.names)):
