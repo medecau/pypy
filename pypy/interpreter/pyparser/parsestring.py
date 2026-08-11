@@ -105,7 +105,10 @@ def parsestr(space, encoding, s, token=None, astbuilder=None):
             # SyntaxWarning (the default category deprecation_warn picks
             # from feature_version); the runtime codec path below stays
             # DeprecationWarning.
-            astbuilder.escape_warn(msg, token, substr, first_escape_error_pos)
+            # 'ps' is where substr starts inside the raw token, so that
+            # escape_warn can report the escape's own column.
+            astbuilder.escape_warn(msg, token, substr, ps,
+                                   first_escape_error_pos)
 
     return space.newbytes(v)
 
@@ -159,7 +162,7 @@ def decode_unicode_str(space, encoding, s, rawmode, astbuilder=None, token=None,
                 return space.newutf8(s[ps:q], length)
             substr = decode_unicode_utf8(space, s, ps, q)
 
-        r = decode_unicode_escape(space, substr, astbuilder, token)
+        r = decode_unicode_escape(space, substr, astbuilder, token, ps)
         v, length, pos = r
         return space.newutf8(v, length)
     except OperationError as e:
@@ -270,7 +273,9 @@ def _PyString_DecodeEscape(space, s, errors, recode_encoding):
             assert ps >= 0
             if first_escape_error_char == '':
                 first_escape_error_char = "\\" + ch
-                first_escape_error_pos = ps
+                # the backslash, like the octal case above and like
+                # unicodehelper.str_decode_unicode_escape
+                first_escape_error_pos = ps - 1
             continue
             # an arbitrary number of unescaped UTF-8 bytes may follow.
 
@@ -291,7 +296,7 @@ def PyString_DecodeEscape(space, s, errors, recode_encoding):
     return buf, first_escape_error_char
 
 
-def decode_unicode_escape(space, string, astbuilder, token):
+def decode_unicode_escape(space, string, astbuilder, token, offset=0):
     from pypy.interpreter.unicodehelper import str_decode_unicode_escape
     from pypy.module._codecs import interp_codecs
     state = space.fromcache(interp_codecs.CodecState)
@@ -306,7 +311,11 @@ def decode_unicode_escape(space, string, astbuilder, token):
     if first_escape_error_char is not None and astbuilder is not None:
         msg, _ = unicodehelper.format_invalid_escape_message(
             first_escape_error_char, distinguish_octal=True)
-        astbuilder.escape_warn(msg, token, s, first_escape_error_pos)
+        # walk 'string' (what the decoder was given), not the decoded result:
+        # first_escape_error_pos indexes the former, and a decoded "\n" escape
+        # would otherwise be counted as a real line break
+        astbuilder.escape_warn(msg, token, string, offset,
+                               first_escape_error_pos)
     return s, ulen, blen
 
 def isxdigit(ch):

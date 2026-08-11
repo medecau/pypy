@@ -282,17 +282,54 @@ class Parser:
 
             tok = self.diagnose()
             if self.compile_info.flags & consts.PyCF_ALLOW_INCOMPLETE_INPUT:
-                # XXX: This comment is out of sync with the implementation
-                # bit of a heuristic: if the remaining tokens are ENDMARKER,
-                # NEWLINE, DEDENT then more input could fix things, so we raise
-                # "incomplete input"
-                for index in range(self._highwatermark, len(self._tokens)):
-                    typ = tok.token_type
-                    if (typ != tokens.ENDMARKER and typ != tokens.NEWLINE and
-                            typ != tokens.DEDENT):
-                        break
-                else:
-                    self.raise_syntax_error_known_location("incomplete input", tok)
+                if (self.compile_info.source_ends_with_newline or
+                        self.compile_info.mode == "exec"):
+                    # Mirror CPython's _is_end_of_source(): the parser consumed
+                    # all the way to ENDMARKER.  For "@int\n" the decorator rule
+                    # fetches ENDMARKER while looking for a function/class body;
+                    # for "a @\n" the parser fails at the NEWLINE token and never
+                    # reaches ENDMARKER, so "invalid syntax" is raised instead.
+                    # 'exec' counts as ending with a newline: CPython's
+                    # tokenizer appends the missing one for file_input
+                    # (translate_newlines' exec_input), exactly like
+                    # pyparse._parse does, so the token stream is the same.
+                    at_eof = self._highwatermark >= len(self._tokens) - 1
+                    if not at_eof and self._highwatermark > 0:
+                        # ...but the run of tokens the tokenizer synthesises
+                        # at EOF is not always a lone ENDMARKER: closing a
+                        # block adds DEDENTs and a NEWLINE before it, and the
+                        # parser stops inside that run.  "try:\n  pass\n" and
+                        # "if 1:\n  @foo\n" are the common REPL cases; they
+                        # are incomplete input, not a syntax error.
+                        typ = self._tokens[self._highwatermark].token_type
+                        prev = self._tokens[self._highwatermark - 1].token_type
+                        if typ == tokens.DEDENT or prev == tokens.DEDENT:
+                            at_eof = True
+                            for index in range(self._highwatermark,
+                                               len(self._tokens)):
+                                typ = self._tokens[index].token_type
+                                if (typ != tokens.ENDMARKER and
+                                        typ != tokens.NEWLINE and
+                                        typ != tokens.DEDENT):
+                                    at_eof = False
+                                    break
+                    if (at_eof and
+                            not self._eval_invalid_with_trailing_newline()):
+                        self.raise_syntax_error_known_location("incomplete input", tok)
+                elif (self.compile_info.flags & consts.PyCF_DONT_IMPLY_DEDENT or
+                        self.compile_info.mode == "eval"):
+                    # Source does not end with a newline (PyCF_DONT_IMPLY_DEDENT
+                    # is set) or eval mode: bit of a heuristic, if the remaining
+                    # tokens are ENDMARKER, NEWLINE, DEDENT then more input could
+                    # fix things, so we raise "incomplete input"
+                    for index in range(self._highwatermark, len(self._tokens)):
+                        typ = self._tokens[index].token_type
+                        if (typ != tokens.ENDMARKER and typ != tokens.NEWLINE and
+                                typ != tokens.DEDENT):
+                            break
+                    else:
+                        if not self._eval_invalid_with_trailing_newline():
+                            self.raise_syntax_error_known_location("incomplete input", tok)
             self.reset()
         else:
             tok = None
@@ -306,28 +343,32 @@ class Parser:
             self.raise_indentation_error("unexpected indent")
         self.raise_syntax_error_known_location("invalid syntax", tok)
 
-    def escape_warn(self, msg, tok, literal, error_pos, w_category=None):
-        """Warn about an invalid escape at 'error_pos' inside 'literal'.
+    def escape_warn(self, msg, tok, literal, offset, error_pos, w_category=None):
+        """Warn about the invalid escape whose backslash is at 'error_pos'
+        inside 'literal'.  'offset' is where 'literal' starts inside the raw
+        token, i.e. the length of the prefix and the opening quote(s).
 
-        CPython computes the warning's position by walking the literal up
-        to the offending escape (string_parser.c's
-        warn_invalid_escape_sequence), so a multi-line literal reports the
-        line the escape is on rather than the line the token starts on.
+        CPython computes the position by walking the literal up to the
+        offending escape (string_parser.c's warn_invalid_escape_sequence), so
+        a multi-line literal reports the line the escape is on rather than the
+        line the token starts on, and the error underlines the two characters
+        of the escape itself rather than the whole literal.
         """
         lineno = tok.lineno
-        column = tok.column
-        if error_pos >= 0:
-            i = 0
-            while i < error_pos and i < len(literal):
-                if literal[i] == '\n':
-                    lineno += 1
-                    column = 0
-                else:
-                    column += 1
-                i += 1
-        self.deprecation_warn(msg, tok, w_category=w_category, lineno=lineno)
+        column = tok.column + offset
+        i = 0
+        while i < error_pos and i < len(literal):
+            if literal[i] == '\n':
+                lineno += 1
+                column = 0
+            else:
+                column += 1
+            i += 1
+        self.deprecation_warn(msg, tok, w_category=w_category, lineno=lineno,
+                              col_offset=column, end_col_offset=column + 2)
 
-    def deprecation_warn(self, msg, tok, w_category=None, lineno=-1):
+    def deprecation_warn(self, msg, tok, w_category=None, lineno=-1,
+                         col_offset=-1, end_col_offset=-1):
         from pypy.interpreter import error
         from pypy.module._warnings.interp_warnings import warn_explicit
         space = self.space
@@ -359,7 +400,14 @@ class Parser:
                 )
         except error.OperationError as e:
             if e.match(space, w_category):
-                self.raise_syntax_error_known_location(msg, tok)
+                if col_offset >= 0:
+                    # the caller knows exactly where the escape is: report it
+                    # the way CPython does, with a two-character span, instead
+                    # of underlining the whole string literal
+                    self._raise_syntax_error(msg, lineno, col_offset,
+                                             lineno, end_col_offset)
+                else:
+                    self.raise_syntax_error_known_location(msg, tok)
             else:
                 raise
 
@@ -405,7 +453,25 @@ class Parser:
         return self._tokens[self._index]
 
     def diagnose(self):
+        # _highwatermark can == len(_tokens) after a parse consumed the last
+        # token (reading past the end is undefined behaviour once translated)
+        if self._highwatermark >= len(self._tokens):
+            self._highwatermark = len(self._tokens) - 1
         return self._tokens[self._highwatermark]
+
+    def _eval_invalid_with_trailing_newline(self):
+        """In eval mode, if the source ended with a newline and the parse
+        consumed at least one token, the input is definitively invalid syntax,
+        not incomplete. Unclosed-bracket cases are already caught by the
+        tokenizer (TokenError) before the parser runs, so no bracket scan is
+        needed here.
+        CPython: compile("9+\\n", "eval", PyCF_ALLOW_INCOMPLETE_INPUT) raises
+        "invalid syntax"; compile("9+", ...) raises "incomplete input".
+        codeop appends "\\n" and retries, so this distinction matters.
+        """
+        return (self.compile_info.source_ends_with_newline and
+                self.compile_info.mode == "eval" and
+                self._highwatermark > 0)
 
     def get_last_non_whitespace_token(self):
         tok = self._tokens[0]
@@ -581,6 +647,23 @@ class Parser:
 
     def raise_indentation_error(self, msg):
         """Raise an indentation error."""
+        if (self.compile_info.flags & consts.PyCF_ALLOW_INCOMPLETE_INPUT and
+                msg.startswith("expected an indented block")):
+            # When checking for incomplete input, "expected an indented block"
+            # means the block-requiring construct (if/while/for/def/...) was
+            # written but its body was not yet provided. Report "incomplete
+            # input" so that codeop._maybe_compile can detect it and return
+            # None rather than raising SyntaxError.
+            # But only if no meaningful token follows: e.g. "def x():\n\npass\n"
+            # has 'pass' at col 0 after the blank line, which closes the block
+            # definitively -- that is invalid, not merely incomplete.
+            for index in range(self._index, len(self._tokens)):
+                typ = self._tokens[index].token_type
+                if (typ != tokens.ENDMARKER and typ != tokens.NEWLINE and
+                        typ != tokens.DEDENT):
+                    break
+            else:
+                msg = "incomplete input"
         self._raise_syntax_error(msg, cls=IndentationError)
 
     def get_expr_name(self, node):

@@ -681,3 +681,100 @@ class TestIncompleteInput(object):
     def test_line_continuation(self):
         self.check_incomplete("a = \\")
         self.check_incomplete("a = '\\")
+
+    def test_invalid_with_explicit_newline(self):
+        # An expression that is genuinely invalid (not just incomplete) should
+        # raise "invalid syntax" when it ends with an explicit newline.
+        # CPython behaviour: compile("a @\n", ..., PyCF_ALLOW_INCOMPLETE_INPUT)
+        # raises SyntaxError("invalid syntax"), not "incomplete input".
+        msg = self.check_error("a @\n")
+        assert "invalid syntax" in msg, msg
+        msg = self.check_error("a = \n")
+        assert "invalid syntax" in msg, msg
+        msg = self.check_error("a = 9 +\n")
+        assert "invalid syntax" in msg, msg
+
+    def test_delete_literal_with_explicit_newline(self):
+        # the second (invalid rules) pass must get a chance to produce the
+        # specific message instead of the incomplete-input heuristic winning
+        msg = self.check_error("del 1\n")
+        assert "cannot delete literal" in msg, msg
+
+    def test_if_with_explicit_newline(self):
+        # An 'if' header ending with an explicit newline is still incomplete
+        # (it needs an indented body), so "incomplete input" must be raised.
+        self.check_incomplete("if True:\n")
+        self.check_incomplete("while True:\n")
+        self.check_incomplete("for x in y:\n")
+        self.check_incomplete("def f():\n")
+        self.check_incomplete("if 9==3:\n   pass\nelse:\n")
+        # here the block is left open with indent levels still on the stack,
+        # so raise_indentation_error is what reports incompleteness
+        self.check_incomplete("if 1:\n pass\n if 1:\n  pass\n else:\n")
+
+    def test_missing_block_followed_by_code_is_invalid(self):
+        # 'pass' at column 0 closes the block definitively: that is a real
+        # IndentationError, not merely incomplete input
+        msg = self.check_error("def x():\n\npass\n")
+        assert "expected an indented block" in msg, msg
+
+    def test_decorator_without_body_is_incomplete(self):
+        # "@foo" and "@foo\n" are both incomplete: a decorator requires a
+        # function or class definition to follow.  codeop._maybe_compile passes
+        # both PyCF_ALLOW_INCOMPLETE_INPUT and PyCF_DONT_IMPLY_DEDENT; both
+        # forms must report "incomplete input" so codeop returns None.
+        both = consts.PyCF_ALLOW_INCOMPLETE_INPUT | consts.PyCF_DONT_IMPLY_DEDENT
+        for src in ("@int", "@int\n"):
+            info = pyparse.CompileInfo("<test>", "single", flags=both)
+            with pytest.raises(SyntaxError) as excinfo:
+                self.parser.parse_source(src, info)
+            assert excinfo.value.msg == "incomplete input", (
+                "src=%r got %r" % (src, excinfo.value.msg))
+
+    def test_eval_mode_trailing_operator_is_invalid(self):
+        # "9+\n" (trailing newline, top-level) is invalid, not incomplete.
+        # codeop appends "\n" and retries; PyPy must not say "incomplete input"
+        # or codeop returns None instead of raising SyntaxError.
+        info = pyparse.CompileInfo("<test>", "eval", flags=consts.PyCF_ALLOW_INCOMPLETE_INPUT)
+        with pytest.raises(SyntaxError) as excinfo:
+            self.parser.parse_source("9+\n", info)
+        assert "incomplete input" not in excinfo.value.msg, excinfo.value.msg
+
+    def test_exec_mode_incomplete_and_invalid(self):
+        # CPython's tokenizer appends the missing trailing newline in exec
+        # mode, so "@int" behaves there exactly like "@int\n" does elsewhere
+        for src in ("@int", "if 1:", "class C:", "x = ("):
+            info = pyparse.CompileInfo("<test>", "exec",
+                                       flags=consts.PyCF_ALLOW_INCOMPLETE_INPUT)
+            with pytest.raises(SyntaxError) as excinfo:
+                self.parser.parse_source(src, info)
+            assert "incomplete input" in excinfo.value.msg, (
+                "src=%r got %r" % (src, excinfo.value.msg))
+        for src in ("a = ", "a b", "a @"):
+            info = pyparse.CompileInfo("<test>", "exec",
+                                       flags=consts.PyCF_ALLOW_INCOMPLETE_INPUT)
+            with pytest.raises(SyntaxError) as excinfo:
+                self.parser.parse_source(src, info)
+            assert "incomplete input" not in excinfo.value.msg, (
+                "src=%r got %r" % (src, excinfo.value.msg))
+
+    def test_eval_mode_incomplete(self):
+        # ... but without the newline, and for an unclosed bracket even with
+        # it, more input can still fix things
+        for src in ("9+", "lambda z:", "(9+\n", "\n"):
+            info = pyparse.CompileInfo("<test>", "eval",
+                                       flags=consts.PyCF_ALLOW_INCOMPLETE_INPUT)
+            with pytest.raises(SyntaxError) as excinfo:
+                self.parser.parse_source(src, info)
+            assert "incomplete input" in excinfo.value.msg, (
+                "src=%r got %r" % (src, excinfo.value.msg))
+
+    def test_unterminated_single_quote_with_newline_is_invalid(self):
+        # a single-quoted literal cut short by a newline is definitively
+        # broken; one cut short by the end of the source may still be completed
+        self.check_incomplete("a = 'a\\\n")
+        msg = self.check_error("a = 'sta\n")
+        assert "unterminated string literal" in msg, msg
+        msg = self.check_error("a = 'a\\ \n")
+        assert "unterminated string literal" in msg, msg
+        self.check_incomplete("a = '''xy\n")

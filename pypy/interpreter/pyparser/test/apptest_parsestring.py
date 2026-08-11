@@ -31,6 +31,50 @@ def test_str_invalid_escape():
     assert not w
     assert excinfo.value.filename == '<string>'
 
+def test_invalid_escape_error_position():
+    # CPython points the escalated SyntaxError at the escape itself, with a
+    # two-character span, instead of underlining the whole string literal
+    # (string_parser.c's warn_invalid_escape_sequence)
+    with warnings.catch_warnings():
+        warnings.simplefilter('error', category=SyntaxWarning)
+        with raises(SyntaxError) as excinfo:
+            eval("'''\n\\z'''")
+    exc = excinfo.value
+    assert exc.lineno == 2
+    assert exc.offset == 1
+    assert (exc.end_lineno, exc.end_offset) == (2, 3)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter('error', category=SyntaxWarning)
+        with raises(SyntaxError) as excinfo:
+            eval("\"''Incorrect \\ logic?\"")
+    exc = excinfo.value
+    assert exc.lineno == 1
+    assert exc.offset == 14
+    assert (exc.end_lineno, exc.end_offset) == (1, 16)
+
+def test_invalid_escape_warning_position():
+    # the escape's own line, and a "\n" *escape* is not a line break
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter('always', category=SyntaxWarning)
+        compile(r"x = 'a\nb\d'", '<test>', 'exec')
+    assert len(w) == 1
+    assert w[0].lineno == 1
+
+def test_invalid_escape_plus_syntax_error_single_warning():
+    # When a string literal contains an invalid escape sequence AND the
+    # surrounding expression is a SyntaxError, the warning must be emitted
+    # exactly once. The call_invalid_rules second parse pass must not
+    # re-emit it.
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter('always')
+        try:
+            compile("'\\e' 1", '<test>', 'single')
+        except SyntaxError:
+            pass
+    assert len(w) == 1, w
+    assert issubclass(w[0].category, SyntaxWarning)
+
 def test_fstring_invalid_escape():
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter('always', category=SyntaxWarning)
