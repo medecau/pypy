@@ -1830,6 +1830,13 @@ class SubinterpImportTests(unittest.TestCase):
         #  * subinterpreter in a new process
         #  * module has never been imported before in that process
         #  * this tests importing the module for the first time
+        # The subprocess below calls _testcapi.run_in_subinterp_with_config,
+        # which PyPy's _testcapi does not have; support's in-process helper
+        # raises SkipTest for exactly this, and so must we, or the child dies
+        # with an AttributeError and the test reads as a failure.
+        import _testcapi
+        if not hasattr(_testcapi, 'run_in_subinterp_with_config'):
+            raise unittest.SkipTest("sub-interpreters are not supported")
         kwargs = dict(
             **self.RUN_KWARGS,
             **(self.ISOLATED if isolated else self.NOT_ISOLATED),
@@ -1851,6 +1858,13 @@ class SubinterpImportTests(unittest.TestCase):
         self.assertEqual(out, b'okay')
 
     def check_incompatible_fresh(self, name, *, isolated=False):
+        # The subprocess below calls _testcapi.run_in_subinterp_with_config,
+        # which PyPy's _testcapi does not have; support's in-process helper
+        # raises SkipTest for exactly this, and so must we, or the child dies
+        # with an AttributeError and the test reads as a failure.
+        import _testcapi
+        if not hasattr(_testcapi, 'run_in_subinterp_with_config'):
+            raise unittest.SkipTest("sub-interpreters are not supported")
         # Differences from check_compatible_fresh():
         #  * verify that import fails
         #  * "strict" is always True

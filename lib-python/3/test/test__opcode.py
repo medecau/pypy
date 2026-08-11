@@ -40,7 +40,12 @@ class OpcodeTests(unittest.TestCase):
     def test_stack_effect_jump(self):
         FOR_ITER = dis.opmap['FOR_ITER']
         self.assertEqual(stack_effect(FOR_ITER, 0), 1)
-        self.assertEqual(stack_effect(FOR_ITER, 0, jump=True), 1)
+        if support.check_impl_detail(cpython=True):
+            self.assertEqual(stack_effect(FOR_ITER, 0, jump=True), 1)
+        else:
+            # PyPy's FOR_ITER pops the iterator itself when the loop ends,
+            # where CPython 3.12 leaves it on the stack for END_FOR
+            self.assertEqual(stack_effect(FOR_ITER, 0, jump=True), -1)
         self.assertEqual(stack_effect(FOR_ITER, 0, jump=False), 1)
         JUMP_FORWARD = dis.opmap['JUMP_FORWARD']
         self.assertEqual(stack_effect(JUMP_FORWARD, 0), 0)

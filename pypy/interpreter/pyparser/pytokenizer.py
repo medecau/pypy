@@ -482,9 +482,17 @@ class Tokenizer(object):
                 self._raise_token_error(
                     "unexpected character after line continuation character",
                     prevline, self.lnum - 1, len(prevline) - 1)
-            # the offset points one past the backslash, as CPython's does
+            # The offset points one past the backslash, as CPython's does --
+            # except when nothing was consumed on the logical line, where
+            # CPython's file tokenizer reports 0 and its display prints no
+            # caret at all (test_eof's bpo2180 case, a file holding just a
+            # backslash).
+            if empty_logical_line:
+                offset = 0
+            else:
+                offset = len(prevline)
             self._raise_token_error(EOF_MULTI_LINE_STATEMENT_ERROR , prevline,
-                             self.lnum - 1, len(prevline))
+                             self.lnum - 1, offset)
         self.continued = False
 
     def _tokenize_regular(self, line):
@@ -1068,8 +1076,12 @@ def _generate_tokens(lines, flags, newline_at_eof=True):
                     raise TokenError(
                         "unexpected character after line continuation character",
                         prevline, lnum - 1, len(prevline) - 1, token_list)
+                if empty_logical_line:
+                    offset = 0
+                else:
+                    offset = len(prevline)
                 raise TokenError(EOF_MULTI_LINE_STATEMENT_ERROR , prevline,
-                                 lnum - 1, len(prevline), token_list)
+                                 lnum - 1, offset, token_list)
             continued = False
 
         while pos < max:
