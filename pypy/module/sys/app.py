@@ -325,26 +325,31 @@ def _make_monitoring_module():
     # PEP 669 (sys.monitoring, new in 3.12): API-surface implementation.
     #
     # PyPy does not (yet) implement the underlying low-overhead bytecode
-    # instrumentation.  Rather than being absent (which breaks importing
-    # libraries that reference sys.monitoring.events at import time behind a
-    # version check -- e.g. hypothesis' scrutineer), this module exposes the
-    # complete, value-correct API in a honestly-degraded form: every tool id
-    # reports as already in use, so well-behaved clients (hypothesis,
-    # coverage.py, debuggers) conclude that monitoring is unavailable and
-    # take their sys.settrace/sys.setprofile fallback paths, which work and
-    # give correct results on PyPy.  No client silently gets zero events.
+    # instrumentation, so no event is ever delivered.  Everything that does
+    # not need instrumentation is implemented for real, in particular the
+    # tool id registry (use_tool_id/free_tool_id/get_tool): _lsprof reserves
+    # PROFILER_ID there for the lifetime of a profiler exactly like CPython
+    # 3.12's cProfile does, and monitoring clients use the registry to
+    # detect each other.  Asking for actual events (a non-empty event set
+    # passed to set_events/set_local_events) raises NotImplementedError
+    # rather than quietly delivering nothing, so that no client silently
+    # gets zero events -- they can fall back to sys.settrace/sys.setprofile,
+    # which work and give correct results on PyPy.
     #
     # NB: this runs while the sys module itself is being initialized, so it
     # must not import anything (importing types here can deadlock the
     # bootstrap, since types.py itself imports sys).  ModuleType is
-    # reachable as type(sys): app.py already holds the in-progress module.
+    # reachable as type(sys): app.py already holds the in-progress module,
+    # and CodeType as the type of any function's __code__.
     _ModuleType = type(sys)
+    _CodeType = type(_make_monitoring_module.__code__)
 
     monitoring = _ModuleType(
         'sys.monitoring',
-        "An implementation of PEP 669's API surface. PyPy does not implement "
-        "the underlying instrumentation yet: all tool ids report as taken so "
-        "that monitoring clients use their sys.settrace-based fallbacks.")
+        "An implementation of PEP 669's API surface. The tool id registry is "
+        "real, but PyPy does not implement the underlying instrumentation "
+        "yet: no event is delivered, and asking for events raises "
+        "NotImplementedError instead of silently doing nothing.")
 
     events = _ModuleType('sys.monitoring.events')
     _event_ids = [   # ids from CPython's pycore_instruments.h
@@ -358,11 +363,27 @@ def _make_monitoring_module():
     for _name, _id in _event_ids:
         setattr(events, _name, 1 << _id)
     monitoring.events = events
+    _NUM_EVENTS = len(_event_ids)
 
+    # Only ids 0..5 can be handed out: CPython reserves 6 and 7 for
+    # sys.setprofile() and sys.settrace().
+    _NUM_TOOL_IDS = 6
     monitoring.DEBUGGER_ID = 0
     monitoring.COVERAGE_ID = 1
     monitoring.PROFILER_ID = 2
     monitoring.OPTIMIZER_ID = 5
+
+    # Every id except PROFILER_ID starts out taken.  The registry itself is
+    # real, but there is no instrumentation behind it, so a client that got
+    # an id would receive no events; reporting the ids as in use is what
+    # makes hypothesis, coverage.py and debuggers fall back to
+    # sys.settrace/sys.setprofile, which do work here.  PROFILER_ID is left
+    # free because _lsprof claims it, the way CPython's cProfile does.
+    _RESERVED = 'non-instrumenting sys.monitoring stub'
+    _tool_names = [_RESERVED] * _NUM_TOOL_IDS
+    _tool_names[monitoring.PROFILER_ID] = None
+    _tool_events = [0] * _NUM_TOOL_IDS
+    _tool_callbacks = [{} for _i in range(_NUM_TOOL_IDS)]
 
     class _Sentinel:
         def __init__(self, name):
@@ -373,52 +394,109 @@ def _make_monitoring_module():
     monitoring.DISABLE = _Sentinel('DISABLE')
     monitoring.MISSING = _Sentinel('MISSING')
 
-    _RESERVED = 'non-instrumenting sys.monitoring stub'
+    def _index(value):
+        # CPython's argument clinic 'int' converter, spelled out: this
+        # module must keep working without importing anything (see above).
+        if not isinstance(value, int):
+            try:
+                index = type(value).__index__
+            except AttributeError:
+                raise TypeError(
+                    "'%s' object cannot be interpreted as an integer"
+                    % (type(value).__name__,)) from None
+            value = index(value)
+        if not -0x80000000 <= value <= 0x7fffffff:
+            raise OverflowError("Python int too large to convert to C int")
+        return value
 
     def _check_tool_id(tool_id):
-        if not isinstance(tool_id, int) or not 0 <= tool_id < 8:
-            raise ValueError("invalid tool %r (must be between 0 and 7)"
-                             % (tool_id,))
+        tool_id = _index(tool_id)
+        if not 0 <= tool_id < _NUM_TOOL_IDS:
+            raise ValueError("invalid tool %d (must be between 0 and %d)"
+                             % (tool_id, _NUM_TOOL_IDS - 1))
+        return tool_id
+
+    def _check_event_set(event_set, what="event set"):
+        event_set = _index(event_set)
+        if not 0 <= event_set < (1 << _NUM_EVENTS):
+            raise ValueError("invalid %s 0x%x"
+                             % (what, event_set & 0xffffffff))
+        return event_set
+
+    def _check_in_use(tool_id):
+        if _tool_names[tool_id] is None:
+            raise ValueError("tool %d is not in use" % (tool_id,))
+
+    def _check_code(code):
+        if not isinstance(code, _CodeType):
+            raise TypeError("code must be a code object")
+
+    def _not_implemented():
+        return NotImplementedError(
+            "PyPy does not implement sys.monitoring instrumentation yet: "
+            "no event can be delivered, use sys.settrace()/sys.setprofile() "
+            "instead")
 
     def use_tool_id(tool_id, name):
-        _check_tool_id(tool_id)
-        raise ValueError("tool %d is already in use" % (tool_id,))
+        tool_id = _check_tool_id(tool_id)
+        if not isinstance(name, str):
+            raise ValueError("tool name must be a str")
+        if _tool_names[tool_id] is not None:
+            raise ValueError("tool %d is already in use" % (tool_id,))
+        _tool_names[tool_id] = name
 
     def free_tool_id(tool_id):
-        _check_tool_id(tool_id)
+        # CPython only drops the name here: the event set and the callbacks
+        # registered for the id survive, a tool is expected to clean up
+        # after itself.  Freeing an id that is not in use is not an error.
+        tool_id = _check_tool_id(tool_id)
+        _tool_names[tool_id] = None
 
     def get_tool(tool_id):
-        _check_tool_id(tool_id)
-        # every id reads as occupied: see module docstring
-        return _RESERVED
+        tool_id = _check_tool_id(tool_id)
+        return _tool_names[tool_id]
 
     def register_callback(tool_id, event, func):
-        _check_tool_id(tool_id)
-        return None
+        tool_id = _check_tool_id(tool_id)
+        event = _index(event)
+        if event <= 0 or event & (event - 1):
+            raise ValueError(
+                "The callback can only be set for one event at a time")
+        if event >= (1 << _NUM_EVENTS):
+            raise ValueError("invalid event %d" % (event,))
+        sys.audit('sys.monitoring.register_callback', func)
+        callbacks = _tool_callbacks[tool_id]
+        previous = callbacks.get(event)
+        if func is None:
+            callbacks.pop(event, None)
+        else:
+            callbacks[event] = func
+        return previous
 
     def get_events(tool_id):
-        _check_tool_id(tool_id)
-        return events.NO_EVENTS
+        tool_id = _check_tool_id(tool_id)
+        return _tool_events[tool_id]
 
     def set_events(tool_id, event_set):
-        _check_tool_id(tool_id)
-        if event_set == events.NO_EVENTS:
-            return
-        raise NotImplementedError(
-            "PyPy does not implement sys.monitoring instrumentation yet "
-            "(and all tool ids report as in use -- use_tool_id should have "
-            "failed before reaching set_events)")
+        tool_id = _check_tool_id(tool_id)
+        event_set = _check_event_set(event_set)
+        _check_in_use(tool_id)
+        if event_set != events.NO_EVENTS:
+            raise _not_implemented()
+        _tool_events[tool_id] = event_set
 
     def get_local_events(tool_id, code):
+        _check_code(code)
         _check_tool_id(tool_id)
         return events.NO_EVENTS
 
     def set_local_events(tool_id, code, event_set):
-        _check_tool_id(tool_id)
-        if event_set == events.NO_EVENTS:
-            return
-        raise NotImplementedError(
-            "PyPy does not implement sys.monitoring instrumentation yet")
+        _check_code(code)
+        tool_id = _check_tool_id(tool_id)
+        event_set = _check_event_set(event_set, "local event set")
+        _check_in_use(tool_id)
+        if event_set != events.NO_EVENTS:
+            raise _not_implemented()
 
     def restart_events():
         pass

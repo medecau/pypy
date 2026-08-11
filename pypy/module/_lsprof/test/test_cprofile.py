@@ -166,3 +166,67 @@ class AppTestCProfile(object):
         prof.disable()
         stats = prof.getstats()
         assert len(stats) == 2
+
+    def test_uses_sys_monitoring_profiler_id(self):
+        import _lsprof, sys
+        prof = _lsprof.Profiler()
+        assert sys.monitoring.get_tool(sys.monitoring.PROFILER_ID) is None
+        prof.enable()
+        try:
+            assert (sys.monitoring.get_tool(sys.monitoring.PROFILER_ID) ==
+                    "cProfile")
+        finally:
+            prof.disable()
+        assert sys.monitoring.get_tool(sys.monitoring.PROFILER_ID) is None
+        # disabling twice is still allowed, and does not free anything else
+        prof.disable()
+        assert sys.monitoring.get_tool(sys.monitoring.PROFILER_ID) is None
+
+    def test_second_profiler(self):
+        import _lsprof, sys
+        prof = _lsprof.Profiler()
+        prof2 = _lsprof.Profiler()
+        prof.enable()
+        try:
+            raises(ValueError, prof2.enable)
+        finally:
+            prof.disable()
+        # the failed enable() left prof2 untouched, so it can be used now
+        prof2.enable()
+        assert sys.monitoring.get_tool(sys.monitoring.PROFILER_ID) == "cProfile"
+        prof2.disable()
+
+    def test_clear(self):
+        import _lsprof
+        prof = _lsprof.Profiler()
+        lst = []
+        prof.enable()
+        lst.append(len(lst))
+        prof.disable()
+        assert prof.getstats()
+        prof.clear()
+        assert prof.getstats() == []
+
+    def test_disable_in_external_timer(self):
+        import _lsprof, sys
+        seen = []
+        class EvilTimer(object):
+            def __init__(self):
+                self.count = 0
+            def __call__(self):
+                self.count += 1
+                if self.count == 1:
+                    prof.disable()      # not allowed from here
+                return self.count
+        prof = _lsprof.Profiler(EvilTimer())
+        old_hook = sys.unraisablehook
+        sys.unraisablehook = seen.append
+        try:
+            prof.enable()
+            (lambda: None)()
+            prof.disable()
+        finally:
+            sys.unraisablehook = old_hook
+        prof.clear()
+        assert seen
+        assert seen[-1].exc_type is RuntimeError

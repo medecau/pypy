@@ -88,10 +88,6 @@ class CProfileTest(ProfileTest):
             profiler_with_evil_timer.clear()
             self.assertEqual(cm.unraisable.exc_type, RuntimeError)
 
-    # PyPy ships sys.monitoring as an API-only stub (every tool id reports as
-    # taken), so cProfile keeps its own hooks and never claims PROFILER_ID.
-    @unittest.skipUnless(support.check_impl_detail(cpython=True),
-                         'needs sys.monitoring (PEP 669), not implemented yet')
     def test_profile_enable_disable(self):
         prof = self.profilerclass()
         # Make sure we clean ourselves up if the test fails for some reason.
@@ -104,8 +100,6 @@ class CProfileTest(ProfileTest):
         prof.disable()
         self.assertIs(sys.monitoring.get_tool(sys.monitoring.PROFILER_ID), None)
 
-    @unittest.skipUnless(support.check_impl_detail(cpython=True),
-                         'needs sys.monitoring (PEP 669), not implemented yet')
     def test_profile_as_context_manager(self):
         prof = self.profilerclass()
         # Make sure we clean ourselves up if the test fails for some reason.
@@ -123,10 +117,6 @@ class CProfileTest(ProfileTest):
         # profile shouldn't be set once we leave the with-block.
         self.assertIs(sys.monitoring.get_tool(sys.monitoring.PROFILER_ID), None)
 
-    # The ValueError below is raised by sys.monitoring's tool-id ownership;
-    # PyPy's _lsprof simply replaces the active profiling hook.
-    @unittest.skipUnless(support.check_impl_detail(cpython=True),
-                         'needs sys.monitoring (PEP 669), not implemented yet')
     def test_second_profiler(self):
         pr = self.profilerclass()
         pr2 = self.profilerclass()

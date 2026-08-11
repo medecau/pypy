@@ -35,6 +35,16 @@ if _is_64_bit:
 else:
     timer_size_int = r_longlong
 
+# sys.monitoring.PROFILER_ID: CPython 3.12's cProfile reserves this tool id
+# for as long as a profiler is enabled, so that a second profiler fails
+# instead of silently fighting over the events.  PyPy does not implement the
+# PEP 669 instrumentation, but it plays by the same registry rules.
+PROFILER_ID = 2
+
+def get_monitoring(space):
+    return space.getattr(space.getbuiltinmodule('sys'),
+                         space.newtext('monitoring'))
+
 class W_StatsEntry(W_Root):
     def __init__(self, space, frame, callcount, reccallcount, tt, it,
                  w_sublist):
@@ -307,17 +317,29 @@ class W_Profiler(W_Root):
         self.builtin_data = {}
         self.space = space
         self.is_enabled = False
+        self.in_external_timer = False
         self.total_timestamp = r_longlong(0)
         self.total_real_time = 0.0
+
+    def _call_external_timer(self, space):
+        # The external timer can do arbitrary things, including calling
+        # disable() on us; flag the call so that we can refuse that
+        # (CPython's call_external_timer() sets POF_EXT_TIMER the same way,
+        # and also clears it again before writing the unraisable below).
+        self.in_external_timer = True
+        try:
+            if _is_64_bit:
+                return space.int_w(space.call_function(self.w_callable))
+            else:
+                return space.r_longlong_w(space.call_function(self.w_callable))
+        finally:
+            self.in_external_timer = False
 
     def ll_timer(self):
         if self.w_callable:
             space = self.space
             try:
-                if _is_64_bit:
-                    return space.int_w(space.call_function(self.w_callable))
-                else:
-                    return space.r_longlong_w(space.call_function(self.w_callable))
+                return self._call_external_timer(space)
             except OperationError as e:
                 e.write_unraisable(space, "timer function ",
                                    self.w_callable)
@@ -328,10 +350,27 @@ class W_Profiler(W_Root):
                w_builtins=None):
         if self.is_enabled:
             return      # ignored
+        # Convert the arguments before claiming anything: CPython's clinic
+        # does that too, and nothing between the claim below and
+        # is_enabled = True may raise, or the tool id would stay held by a
+        # profiler that never started.
         if w_subcalls is not None:
             self.subcalls = space.bool_w(w_subcalls)
         if w_builtins is not None:
             self.builtins = space.bool_w(w_builtins)
+        # Like CPython 3.12's cProfile: claim sys.monitoring's PROFILER_ID
+        # for the whole enabled period.  A second profiler then gets a
+        # ValueError out of use_tool_id instead of quietly taking over.
+        w_monitoring = get_monitoring(space)
+        try:
+            space.call_method(w_monitoring, 'use_tool_id',
+                              space.newint(PROFILER_ID),
+                              space.newtext('cProfile'))
+        except OperationError as e:
+            if not e.match(space, space.w_ValueError):
+                raise
+            raise oefmt(space.w_ValueError,
+                        "Another profiling tool is already active")
         # We want total_real_time and total_timestamp to end up containing
         # (endtime - starttime).  Now we are at the start, so we first
         # have to subtract the current time.
@@ -432,6 +471,13 @@ class W_Profiler(W_Root):
         return space.w_None
 
     def disable(self, space):
+        if self.in_external_timer:
+            # gh-120289: the external timer is called from inside the
+            # profiler hook; disabling there would pull the rug from under
+            # it.  CPython raises here, and the profiler hook turns it into
+            # an unraisable exception.
+            raise oefmt(space.w_RuntimeError,
+                        "cannot disable profiler in external timer")
         if not self.is_enabled:
             return      # ignored
         # We want total_real_time and total_timestamp to end up containing
@@ -444,6 +490,20 @@ class W_Profiler(W_Root):
         space.getexecutioncontext().setllprofile(None, None)
         c_teardown_profiling()
         self._flush_unmatched()
+        # release sys.monitoring's PROFILER_ID again, now that nothing of
+        # ours is profiled any more (see enable())
+        space.call_method(get_monitoring(space), 'free_tool_id',
+                          space.newint(PROFILER_ID))
+
+    def clear(self, space):
+        # like CPython's clearEntries(): drop the collected entries and the
+        # context stack, but keep the timing totals
+        if self.in_external_timer:
+            raise oefmt(space.w_RuntimeError,
+                        "cannot clear profiler in external timer")
+        self.data.clear()
+        self.builtin_data.clear()
+        self.current_context = None
 
     def getstats(self, space):
         if self.w_callable is None:
@@ -475,6 +535,7 @@ W_Profiler.typedef = TypeDef(
     __new__ = interp2app(descr_new_profile),
     enable = interp2app(W_Profiler.enable),
     disable = interp2app(W_Profiler.disable),
+    clear = interp2app(W_Profiler.clear),
     getstats = interp2app(W_Profiler.getstats),
     # 3.12 sys.monitoring callbacks
     _pystart_callback = interp2app(W_Profiler._pystart_callback),

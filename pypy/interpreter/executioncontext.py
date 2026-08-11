@@ -189,13 +189,53 @@ class ExecutionContext(object):
         d = frame.getorcreatedebug()
         lastline = d.f_lineno
         lineno = frame.pycode._get_lineno_for_pc_tracing(frame.last_instr)
-        d.f_lineno = lineno
+        if lineno != -1:
+            # artificial bytecodes (lineno == -1) never produce a line event
+            # and must not make the *next* real instruction look like a new
+            # line either
+            d.f_lineno = lineno
         if d.f_trace_lines and lineno != -1:
-            # when we are at a start of a line, or executing a backwards jump,
-            # produce a line event
-            if lastline != lineno or frame.last_instr < d.instr_prev_plus_one:
+            if d.instr_prev_plus_one == 0:
+                # This is the very first bytecode of this frame that the trace
+                # machinery gets to see, i.e. the hook was installed while the
+                # frame was already running: sys.settrace() called by the frame
+                # itself, or f_trace assigned to it from a callee.  d.f_lineno
+                # then says nothing about the bytecode that ran last, so
+                # comparing against it can invent a line event in the middle of
+                # the line we are already on (test_sys_settrace,
+                # TestLinesAfterTraceStarted.test_events).  Look at the
+                # bytecode instead: CPython 3.12 only instruments the start of
+                # a line, so a tracer installed halfway through a line sees the
+                # *next* line first.
+                # ANDing in the old test keeps this branch purely
+                # subtractive: it can only ever suppress a line event that we
+                # emit today, never invent one.  That matters because
+                # last_instr - 2 is not always the instruction that really
+                # ran before -- a frame resumed by fset_f_lineno, or one whose
+                # predecessor is an EXTENDED_ARG carrying the line, would
+                # otherwise gain an event CPython does not produce.
+                if frame.last_instr >= 2:
+                    prevlineno = frame.pycode._get_lineno_for_pc_tracing(
+                        frame.last_instr - 2)
+                    line_event = prevlineno != lineno and lastline != lineno
+                else:
+                    line_event = True
+            else:
+                # when we are at a start of a line, or executing a backwards
+                # jump, produce a line event
+                line_event = (lastline != lineno or
+                              frame.last_instr < d.instr_prev_plus_one)
+            if line_event:
                 self._trace(frame, 'line', self.space.w_None)
-        if d.f_trace_opcodes:
+        # The line callback just above may have uninstalled the trace hook:
+        # that is what pdb's 'continue' does (sys.settrace(None) followed by
+        # 'del frame.f_trace' -- and bdb then returns its dispatch method, so
+        # f_trace comes right back).  CPython removes the instrumentation as
+        # soon as the global hook goes away, so no opcode event follows on the
+        # same bytecode; without this re-check pdb sees an 'opcode' event it
+        # does not know about (test_pdb, test_pdb_issue_gh_108976).
+        if (d.f_trace_opcodes and self.gettrace() is not None and
+                frame.get_w_f_trace() is not None):
             self._trace(frame, 'opcode', self.space.w_None)
         d.instr_prev_plus_one = frame.last_instr + 1
 
@@ -214,6 +254,19 @@ class ExecutionContext(object):
         "Trace function called upon OperationError."
         if self.gettrace() is not None:
             self._trace(frame, 'exception', None, operationerr)
+            d = frame.getdebug()
+            if (d is not None and d.w_f_trace is not None and
+                    frame.last_instr >= 0):
+                # The trace machinery has now visited this bytecode; record
+                # that, so that the handler we are about to unwind to is not
+                # taken for the first bytecode ever seen in this frame by
+                # run_trace_func.  An exception handler is a jump target and
+                # must produce a line event even when it does not start a line
+                # (CPython marks every exception table entry as a line start).
+                # In the common case, where the hook was installed before the
+                # frame started, this merely rewrites the value that
+                # run_trace_func already stored for this same bytecode.
+                d.instr_prev_plus_one = frame.last_instr + 1
         #operationerr.print_detailed_traceback(self.space)
 
     def sys_exc_info(self):
