@@ -36,6 +36,9 @@ class OperationError(Exception):
     _w_value = None
     _application_traceback = None
     _context_recorded = False
+    # the traceback object normalize_exception() last mirrored onto the
+    # exception instance's __traceback__; see the comment there
+    _mirrored_traceback = None
 
     def __init__(self, w_type, w_value, tb=None):
         self.setup(w_type, w_value)
@@ -226,14 +229,32 @@ class OperationError(Exception):
                 from pypy.interpreter.pytraceback import PyTraceback
                 from pypy.module.exceptions.interp_exceptions import W_BaseException
                 tb = self._application_traceback
+                # The instance's __traceback__ mirrors our own traceback, and
+                # is refreshed here as the exception travels outwards.  But if
+                # the application has assigned __traceback__ itself since we
+                # last wrote it -- code.InteractiveInterpreter does exactly
+                # that, chopping its own frame off (test_code_module) -- that
+                # assignment wins, and re-normalizing must not undo it.
                 if (isinstance(w_value, W_BaseException) and
                     isinstance(tb, PyTraceback)):
                     # traceback hasn't escaped yet
-                    w_value.w_traceback = tb
+                    if (w_value.w_traceback is None or
+                            w_value.w_traceback is self._mirrored_traceback):
+                        w_value.w_traceback = tb
+                        self._mirrored_traceback = tb
                 else:
                     # traceback has escaped
-                    space.setattr(w_value, space.newtext("__traceback__"),
-                                  self.get_w_traceback(space))
+                    w_tb = self.get_w_traceback(space)
+                    # findattr, not getattr: this path also covers values that
+                    # are not exception instances at all
+                    w_current = space.findattr(w_value,
+                                               space.newtext("__traceback__"))
+                    if (w_current is None or
+                            space.is_w(w_current, space.w_None) or
+                            w_current is self._mirrored_traceback):
+                        space.setattr(w_value, space.newtext("__traceback__"),
+                                      w_tb)
+                        self._mirrored_traceback = w_tb
         else:
             # the only case left here is (inst, None), from a 'raise inst'.
             w_inst = w_type
