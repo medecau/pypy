@@ -21,7 +21,14 @@ import time
 import types
 import unittest
 from unittest import mock
-import _testinternalcapi
+try:
+    import _testinternalcapi
+except ImportError:
+    # PyPy does not have CPython's internal-C-API test module.  Everything
+    # that uses it here lives behind requires_singlephase_init, which is
+    # cpython_only anyway; without this guard the whole file fails to import
+    # and not a single test in it runs.
+    _testinternalcapi = None
 import _imp
 
 from test.support import os_helper, impl_detail

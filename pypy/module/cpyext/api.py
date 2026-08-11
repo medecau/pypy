@@ -1822,8 +1822,13 @@ def create_extension_module(space, w_spec):
 
     w_name = space.getattr(w_spec, space.newtext("name"))
     w_path = space.getattr(w_spec, space.newtext("origin"))
-    name = space.text_w(w_name)
-    path = space.text_w(w_path)
+    # Both end up as C strings passed to dlopen()/dlsym(), so an embedded NUL
+    # has to be rejected up front -- CPython raises ValueError("embedded null
+    # character") here, where we used to get as far as dlopen() and report a
+    # misleading ImportError about a missing file (test_import
+    # test_create_dynamic_null).
+    name = space.text0_w(w_name)
+    path = space.text0_w(w_path)
 
     if os.sep not in path:
         path = os.curdir + os.sep + path      # force a '/' in the path
