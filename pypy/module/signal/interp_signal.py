@@ -11,7 +11,7 @@ from pypy.interpreter.executioncontext import (AsyncAction, AbstractActionFlag,
     PeriodicAsyncAction)
 from pypy.interpreter.gateway import unwrap_spec
 
-from rpython.rlib import jit, rgc, rposix, rposix_stat, rthread
+from rpython.rlib import jit, rgc, rposix, rposix_stat, rstackovf, rthread
 from rpython.rlib.objectmodel import we_are_translated
 from rpython.rlib.rarithmetic import intmask, widen
 from rpython.rlib.rsignal import *
@@ -114,7 +114,29 @@ class CheckSignalAction(PeriodicAsyncAction):
                 # If we are in the main thread, report the signal now,
                 # and poll more
                 self.pending_signal = -1
-                report_signal(self.space, n)
+                try:
+                    report_signal(self.space, n)
+                except rstackovf.StackOverflow:
+                    rstackovf.check_stack_overflow()
+                    # We could not even *invoke* the handler: calling it
+                    # needs a bit of stack, and there is none left.  By now
+                    # pypysig_poll() has cleared the C-level bit, we have
+                    # cleared self.pending_signal, and action_dispatcher()
+                    # has already reset the ticker -- so without this the
+                    # signal would be silently lost for good.  That is how a
+                    # program stuck at the recursion limit can never be
+                    # interrupted: the KeyboardInterrupt is destroyed on its
+                    # way out, and the RecursionError it turns into is caught
+                    # by the very handler that keeps the program spinning.
+                    # Put it back instead and let the next check try again,
+                    # at whatever stack depth we have then.
+                    #
+                    # Note that we must *not* do this for OperationError:
+                    # the normal successful path raises one, because
+                    # default_int_handler() below raises KeyboardInterrupt.
+                    self.pending_signal = n
+                    self.space.actionflag.rearm_ticker()
+                    raise
                 n = self.pending_signal
                 if n < 0:
                     n = pypysig_poll()
