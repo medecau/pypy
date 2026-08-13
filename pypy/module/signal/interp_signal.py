@@ -12,6 +12,8 @@ from pypy.interpreter.executioncontext import (AsyncAction, AbstractActionFlag,
 from pypy.interpreter.gateway import unwrap_spec
 
 from rpython.rlib import jit, rgc, rposix, rposix_stat, rstackovf, rthread
+from rpython.rlib.debug import (debug_start, debug_stop, debug_print,
+    have_debug_prints_for)
 from rpython.rlib.objectmodel import we_are_translated
 from rpython.rlib.rarithmetic import intmask, widen
 from rpython.rlib.rsignal import *
@@ -19,6 +21,27 @@ from rpython.rtyper.lltypesystem import lltype, rffi
 
 
 WIN32 = sys.platform == 'win32'
+
+
+def _sig_trace(what, n):
+    """Trace signal delivery into PYPYLOG.
+
+    Enable with PYPYLOG=sig-deliver:/tmp/sig.log; costs nothing otherwise.
+    The point of logging to a file rather than counting is that a process
+    which has stopped responding cannot report anything itself -- the whole
+    failure mode being chased here is that no app-level code ever runs
+    again -- but its log can still be read from outside.
+
+    Deliberately does not probe the stack (rstack.stack_almost_full() would
+    be the natural thing to record here): that calls _stack_too_big_slowpath,
+    which rewrites tl1->stack_end, i.e. it would perturb the very quantity
+    this is meant to observe.
+    """
+    if not have_debug_prints_for("sig-deliver"):
+        return
+    debug_start("sig-deliver")
+    debug_print(what, n)
+    debug_stop("sig-deliver")
 
 
 class SignalActionFlag(AbstractActionFlag):
@@ -114,10 +137,12 @@ class CheckSignalAction(PeriodicAsyncAction):
                 # If we are in the main thread, report the signal now,
                 # and poll more
                 self.pending_signal = -1
+                _sig_trace("attempt", n)
                 try:
                     report_signal(self.space, n)
                 except rstackovf.StackOverflow:
                     rstackovf.check_stack_overflow()
+                    _sig_trace("overflow-rearm", n)
                     # We could not even *invoke* the handler: calling it
                     # needs a bit of stack, and there is none left.  By now
                     # pypysig_poll() has cleared the C-level bit, we have
@@ -137,12 +162,21 @@ class CheckSignalAction(PeriodicAsyncAction):
                     self.pending_signal = n
                     self.space.actionflag.rearm_ticker()
                     raise
+                except OperationError:
+                    # The handler ran and raised -- this is the *successful*
+                    # path for SIGINT, whose handler raises KeyboardInterrupt.
+                    # Logged because "delivered" and "then lost further up"
+                    # look identical from outside the process.
+                    _sig_trace("raised-operr", n)
+                    raise
+                _sig_trace("returned", n)
                 n = self.pending_signal
                 if n < 0:
                     n = pypysig_poll()
             else:
                 # Otherwise, arrange for perform() to be called again
                 # after we switch to the main thread.
+                _sig_trace("park", n)
                 self.pending_signal = n
                 self.fire_in_another_thread = True
                 break
@@ -151,6 +185,7 @@ class CheckSignalAction(PeriodicAsyncAction):
         "Simulates the effect of a signal arriving, defaults to SIGINT"
         if not (1 <= signum < NSIG):
             return
+        _sig_trace("flagged", signum)
         if not we_are_translated():
             self.pending_signal = signum
             # ^^^ may override another signal, but it's just for testing
