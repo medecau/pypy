@@ -87,18 +87,6 @@ class __extend__(pyframe.PyFrame):
                     "couldn't record exception context for exception '%T', got: %R",
                     w_value,
                     w_value2)
-            except rstackovf.StackOverflow:
-                rstackovf.check_stack_overflow()
-                # We ran out of stack while chaining the context.  Keep
-                # 'operr' and carry on: letting the StackOverflow escape
-                # would destroy it, because our caller's handle_bytecode()
-                # turns it into a RecursionError in *its* frame and 'operr'
-                # is never seen again.  That matters most when operr is the
-                # KeyboardInterrupt just raised by a signal handler, which
-                # would otherwise be silently swallowed -- leaving a program
-                # spinning at the recursion limit with no way to interrupt
-                # it.  A missing __context__ is a much smaller loss.
-                pass
             next_instr = self.handle_operation_error(ec, operr)
         except RaiseWithExplicitTraceback as e:
             next_instr = self.handle_operation_error(ec, e.operr,
