@@ -40,6 +40,20 @@ def obj_to_int(space, w_value, optional):
                     "invalid integer value: %R", w_value)
     return space.int_w(w_value)
 
+# Like obj_to_int() for an optional field, but a missing value means "same as
+# the matching start position" rather than 0.  CPython's obj2ast_* do
+# `end_lineno = lineno` (and `end_col_offset = col_offset`) when the attribute
+# is absent or None, see Python/Python-ast.c.  Defaulting to 0 instead makes
+# _validate_positions() reject `lineno > end_lineno` for any tree built without
+# end positions -- ASTs that CPython compiles happily.
+def obj_to_int_default(space, w_value, default):
+    if space.is_w(w_value, space.w_None):
+        return default
+    if not space.isinstance_w(w_value, space.w_long):
+        raise oefmt(space.w_ValueError,
+                    "invalid integer value: %R", w_value)
+    return space.int_w(w_value)
+
 
 class AST(TokenASTBase):
     __metaclass__ = extendabletype
@@ -533,8 +547,8 @@ class FunctionDef(stmt):
         _type_params = [type_param.from_object(space, w_item) for w_item in type_params_w]
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return FunctionDef(_name, _args, _body, _decorator_list, _returns, _type_comment, _type_params, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('FunctionDef', 'stmt', ['name', 'args', 'body', 'decorator_list', 'returns', 'type_comment', 'type_params'], default_none_fields=['returns', 'type_comment'], doc='FunctionDef(identifier name, arguments args, stmt* body, expr* decorator_list, expr? returns, string? type_comment, type_param* type_params)')
@@ -652,8 +666,8 @@ class AsyncFunctionDef(stmt):
         _type_params = [type_param.from_object(space, w_item) for w_item in type_params_w]
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return AsyncFunctionDef(_name, _args, _body, _decorator_list, _returns, _type_comment, _type_params, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('AsyncFunctionDef', 'stmt', ['name', 'args', 'body', 'decorator_list', 'returns', 'type_comment', 'type_params'], default_none_fields=['returns', 'type_comment'], doc='AsyncFunctionDef(identifier name, arguments args, stmt* body, expr* decorator_list, expr? returns, string? type_comment, type_param* type_params)')
@@ -777,8 +791,8 @@ class ClassDef(stmt):
         _type_params = [type_param.from_object(space, w_item) for w_item in type_params_w]
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return ClassDef(_name, _bases, _keywords, _body, _decorator_list, _type_params, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('ClassDef', 'stmt', ['name', 'bases', 'keywords', 'body', 'decorator_list', 'type_params'], default_none_fields=[], doc='ClassDef(identifier name, expr* bases, keyword* keywords, stmt* body, expr* decorator_list, type_param* type_params)')
@@ -827,8 +841,8 @@ class Return(stmt):
         _value = expr.from_object(space, w_value)
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Return(_value, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Return', 'stmt', ['value'], default_none_fields=['value'], doc='Return(expr? value)')
@@ -884,8 +898,8 @@ class Delete(stmt):
         _targets = [expr.from_object(space, w_item) for w_item in targets_w]
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Delete(_targets, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Delete', 'stmt', ['targets'], default_none_fields=[], doc='Delete(expr* targets)')
@@ -957,8 +971,8 @@ class Assign(stmt):
         _type_comment = check_string(space, w_type_comment, 1)
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Assign(_targets, _value, _type_comment, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Assign', 'stmt', ['targets', 'value', 'type_comment'], default_none_fields=['type_comment'], doc='Assign(expr* targets, expr value, string? type_comment)')
@@ -1032,8 +1046,8 @@ class TypeAlias(stmt):
             raise_required_value(space, w_node, 'value')
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return TypeAlias(_name, _type_params, _value, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('TypeAlias', 'stmt', ['name', 'type_params', 'value'], default_none_fields=[], doc='TypeAlias(expr name, type_param* type_params, expr value)')
@@ -1100,8 +1114,8 @@ class AugAssign(stmt):
             raise_required_value(space, w_node, 'value')
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return AugAssign(_target, _op, _value, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('AugAssign', 'stmt', ['target', 'op', 'value'], default_none_fields=[], doc='AugAssign(expr target, operator op, expr value)')
@@ -1174,8 +1188,8 @@ class AnnAssign(stmt):
         _simple = obj_to_int(space, w_simple, False)
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return AnnAssign(_target, _annotation, _value, _simple, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('AnnAssign', 'stmt', ['target', 'annotation', 'value', 'simple'], default_none_fields=['value'], doc='AnnAssign(expr target, expr annotation, expr? value, int simple)')
@@ -1271,8 +1285,8 @@ class For(stmt):
         _type_comment = check_string(space, w_type_comment, 1)
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return For(_target, _iter, _body, _orelse, _type_comment, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('For', 'stmt', ['target', 'iter', 'body', 'orelse', 'type_comment'], default_none_fields=['type_comment'], doc='For(expr target, expr iter, stmt* body, stmt* orelse, string? type_comment)')
@@ -1368,8 +1382,8 @@ class AsyncFor(stmt):
         _type_comment = check_string(space, w_type_comment, 1)
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return AsyncFor(_target, _iter, _body, _orelse, _type_comment, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('AsyncFor', 'stmt', ['target', 'iter', 'body', 'orelse', 'type_comment'], default_none_fields=['type_comment'], doc='AsyncFor(expr target, expr iter, stmt* body, stmt* orelse, string? type_comment)')
@@ -1449,8 +1463,8 @@ class While(stmt):
         _orelse = [stmt.from_object(space, w_item) for w_item in orelse_w]
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return While(_test, _body, _orelse, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('While', 'stmt', ['test', 'body', 'orelse'], default_none_fields=[], doc='While(expr test, stmt* body, stmt* orelse)')
@@ -1530,8 +1544,8 @@ class If(stmt):
         _orelse = [stmt.from_object(space, w_item) for w_item in orelse_w]
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return If(_test, _body, _orelse, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('If', 'stmt', ['test', 'body', 'orelse'], default_none_fields=[], doc='If(expr test, stmt* body, stmt* orelse)')
@@ -1609,8 +1623,8 @@ class With(stmt):
         _type_comment = check_string(space, w_type_comment, 1)
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return With(_items, _body, _type_comment, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('With', 'stmt', ['items', 'body', 'type_comment'], default_none_fields=['type_comment'], doc='With(withitem* items, stmt* body, string? type_comment)')
@@ -1688,8 +1702,8 @@ class AsyncWith(stmt):
         _type_comment = check_string(space, w_type_comment, 1)
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return AsyncWith(_items, _body, _type_comment, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('AsyncWith', 'stmt', ['items', 'body', 'type_comment'], default_none_fields=['type_comment'], doc='AsyncWith(withitem* items, stmt* body, string? type_comment)')
@@ -1754,8 +1768,8 @@ class Match(stmt):
         _cases = [match_case.from_object(space, w_item) for w_item in cases_w]
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Match(_subject, _cases, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Match', 'stmt', ['subject', 'cases'], default_none_fields=[], doc='Match(expr subject, match_case* cases)')
@@ -1812,8 +1826,8 @@ class Raise(stmt):
         _cause = expr.from_object(space, w_cause)
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Raise(_exc, _cause, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Raise', 'stmt', ['exc', 'cause'], default_none_fields=['exc', 'cause'], doc='Raise(expr? exc, expr? cause)')
@@ -1914,8 +1928,8 @@ class Try(stmt):
         _finalbody = [stmt.from_object(space, w_item) for w_item in finalbody_w]
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Try(_body, _handlers, _orelse, _finalbody, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Try', 'stmt', ['body', 'handlers', 'orelse', 'finalbody'], default_none_fields=[], doc='Try(stmt* body, excepthandler* handlers, stmt* orelse, stmt* finalbody)')
@@ -2016,8 +2030,8 @@ class TryStar(stmt):
         _finalbody = [stmt.from_object(space, w_item) for w_item in finalbody_w]
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return TryStar(_body, _handlers, _orelse, _finalbody, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('TryStar', 'stmt', ['body', 'handlers', 'orelse', 'finalbody'], default_none_fields=[], doc='TryStar(stmt* body, excepthandler* handlers, stmt* orelse, stmt* finalbody)')
@@ -2075,8 +2089,8 @@ class Assert(stmt):
         _msg = expr.from_object(space, w_msg)
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Assert(_test, _msg, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Assert', 'stmt', ['test', 'msg'], default_none_fields=['msg'], doc='Assert(expr test, expr? msg)')
@@ -2132,8 +2146,8 @@ class Import(stmt):
         _names = [alias.from_object(space, w_item) for w_item in names_w]
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Import(_names, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Import', 'stmt', ['names'], default_none_fields=[], doc='Import(alias* names)')
@@ -2201,8 +2215,8 @@ class ImportFrom(stmt):
         _level = obj_to_int(space, w_level, True)
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return ImportFrom(_module, _names, _level, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('ImportFrom', 'stmt', ['module', 'names', 'level'], default_none_fields=['module', 'level'], doc='ImportFrom(identifier? module, alias* names, int? level)')
@@ -2254,8 +2268,8 @@ class Global(stmt):
         _names = [space.text_w(w_item) for w_item in names_w]
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Global(_names, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Global', 'stmt', ['names'], default_none_fields=[], doc='Global(identifier* names)')
@@ -2307,8 +2321,8 @@ class Nonlocal(stmt):
         _names = [space.text_w(w_item) for w_item in names_w]
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Nonlocal(_names, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Nonlocal', 'stmt', ['names'], default_none_fields=[], doc='Nonlocal(identifier* names)')
@@ -2358,8 +2372,8 @@ class Expr(stmt):
             raise_required_value(space, w_node, 'value')
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Expr(_value, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Expr', 'stmt', ['value'], default_none_fields=[], doc='Expr(expr value)')
@@ -2400,8 +2414,8 @@ class Pass(stmt):
         w_end_col_offset = get_field(space, w_node, 'end_col_offset', True)
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Pass(_lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Pass', 'stmt', [], default_none_fields=[], doc='Pass')
@@ -2442,8 +2456,8 @@ class Break(stmt):
         w_end_col_offset = get_field(space, w_node, 'end_col_offset', True)
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Break(_lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Break', 'stmt', [], default_none_fields=[], doc='Break')
@@ -2484,8 +2498,8 @@ class Continue(stmt):
         w_end_col_offset = get_field(space, w_node, 'end_col_offset', True)
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Continue(_lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Continue', 'stmt', [], default_none_fields=[], doc='Continue')
@@ -2621,8 +2635,8 @@ class BoolOp(expr):
         _values = [expr.from_object(space, w_item) for w_item in values_w]
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return BoolOp(_op, _values, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('BoolOp', 'expr', ['op', 'values'], default_none_fields=[], doc='BoolOp(boolop op, expr* values)')
@@ -2681,8 +2695,8 @@ class NamedExpr(expr):
             raise_required_value(space, w_node, 'value')
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return NamedExpr(_target, _value, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('NamedExpr', 'expr', ['target', 'value'], default_none_fields=[], doc='NamedExpr(expr target, expr value)')
@@ -2749,8 +2763,8 @@ class BinOp(expr):
             raise_required_value(space, w_node, 'right')
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return BinOp(_left, _op, _right, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('BinOp', 'expr', ['left', 'op', 'right'], default_none_fields=[], doc='BinOp(expr left, operator op, expr right)')
@@ -2808,8 +2822,8 @@ class UnaryOp(expr):
             raise_required_value(space, w_node, 'operand')
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return UnaryOp(_op, _operand, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('UnaryOp', 'expr', ['op', 'operand'], default_none_fields=[], doc='UnaryOp(unaryop op, expr operand)')
@@ -2868,8 +2882,8 @@ class Lambda(expr):
             raise_required_value(space, w_node, 'body')
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Lambda(_args, _body, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Lambda', 'expr', ['args', 'body'], default_none_fields=[], doc='Lambda(arguments args, expr body)')
@@ -2937,8 +2951,8 @@ class IfExp(expr):
             raise_required_value(space, w_node, 'orelse')
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return IfExp(_test, _body, _orelse, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('IfExp', 'expr', ['test', 'body', 'orelse'], default_none_fields=[], doc='IfExp(expr test, expr body, expr orelse)')
@@ -3009,8 +3023,8 @@ class Dict(expr):
         _values = [expr.from_object(space, w_item) for w_item in values_w]
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Dict(_keys, _values, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Dict', 'expr', ['keys', 'values'], default_none_fields=[], doc='Dict(expr* keys, expr* values)')
@@ -3066,8 +3080,8 @@ class Set(expr):
         _elts = [expr.from_object(space, w_item) for w_item in elts_w]
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Set(_elts, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Set', 'expr', ['elts'], default_none_fields=[], doc='Set(expr* elts)')
@@ -3132,8 +3146,8 @@ class ListComp(expr):
         _generators = [comprehension.from_object(space, w_item) for w_item in generators_w]
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return ListComp(_elt, _generators, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('ListComp', 'expr', ['elt', 'generators'], default_none_fields=[], doc='ListComp(expr elt, comprehension* generators)')
@@ -3198,8 +3212,8 @@ class SetComp(expr):
         _generators = [comprehension.from_object(space, w_item) for w_item in generators_w]
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return SetComp(_elt, _generators, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('SetComp', 'expr', ['elt', 'generators'], default_none_fields=[], doc='SetComp(expr elt, comprehension* generators)')
@@ -3273,8 +3287,8 @@ class DictComp(expr):
         _generators = [comprehension.from_object(space, w_item) for w_item in generators_w]
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return DictComp(_key, _value, _generators, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('DictComp', 'expr', ['key', 'value', 'generators'], default_none_fields=[], doc='DictComp(expr key, expr value, comprehension* generators)')
@@ -3339,8 +3353,8 @@ class GeneratorExp(expr):
         _generators = [comprehension.from_object(space, w_item) for w_item in generators_w]
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return GeneratorExp(_elt, _generators, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('GeneratorExp', 'expr', ['elt', 'generators'], default_none_fields=[], doc='GeneratorExp(expr elt, comprehension* generators)')
@@ -3390,8 +3404,8 @@ class Await(expr):
             raise_required_value(space, w_node, 'value')
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Await(_value, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Await', 'expr', ['value'], default_none_fields=[], doc='Await(expr value)')
@@ -3440,8 +3454,8 @@ class Yield(expr):
         _value = expr.from_object(space, w_value)
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Yield(_value, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Yield', 'expr', ['value'], default_none_fields=['value'], doc='Yield(expr? value)')
@@ -3491,8 +3505,8 @@ class YieldFrom(expr):
             raise_required_value(space, w_node, 'value')
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return YieldFrom(_value, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('YieldFrom', 'expr', ['value'], default_none_fields=[], doc='YieldFrom(expr value)')
@@ -3568,8 +3582,8 @@ class Compare(expr):
         _comparators = [expr.from_object(space, w_item) for w_item in comparators_w]
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Compare(_left, _ops, _comparators, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Compare', 'expr', ['left', 'ops', 'comparators'], default_none_fields=[], doc='Compare(expr left, cmpop* ops, expr* comparators)')
@@ -3649,8 +3663,8 @@ class Call(expr):
         _keywords = [keyword.from_object(space, w_item) for w_item in keywords_w]
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Call(_func, _args, _keywords, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Call', 'expr', ['func', 'args', 'keywords'], default_none_fields=[], doc='Call(expr func, expr* args, keyword* keywords)')
@@ -3697,8 +3711,8 @@ class RevDBMetaVar(expr):
         _metavar = obj_to_int(space, w_metavar, False)
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return RevDBMetaVar(_metavar, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('RevDBMetaVar', 'expr', ['metavar'], default_none_fields=[], doc='RevDBMetaVar(int metavar)')
@@ -3762,8 +3776,8 @@ class FormattedValue(expr):
         _format_spec = expr.from_object(space, w_format_spec)
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return FormattedValue(_value, _conversion, _format_spec, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('FormattedValue', 'expr', ['value', 'conversion', 'format_spec'], default_none_fields=['format_spec'], doc='FormattedValue(expr value, int conversion, expr? format_spec)')
@@ -3819,8 +3833,8 @@ class JoinedStr(expr):
         _values = [expr.from_object(space, w_item) for w_item in values_w]
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return JoinedStr(_values, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('JoinedStr', 'expr', ['values'], default_none_fields=[], doc='JoinedStr(expr* values)')
@@ -3876,8 +3890,8 @@ class Constant(expr):
         _kind = check_string(space, w_kind, 1)
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Constant(_value, _kind, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Constant', 'expr', ['value', 'kind'], default_none_fields=['kind'], doc='Constant(constant value, string? kind)')
@@ -3943,8 +3957,8 @@ class Attribute(expr):
             raise_required_value(space, w_node, 'ctx')
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Attribute(_value, _attr, _ctx, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Attribute', 'expr', ['value', 'attr', 'ctx'], default_none_fields=[], doc='Attribute(expr value, identifier attr, expr_context ctx)')
@@ -4011,8 +4025,8 @@ class Subscript(expr):
             raise_required_value(space, w_node, 'ctx')
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Subscript(_value, _slice, _ctx, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Subscript', 'expr', ['value', 'slice', 'ctx'], default_none_fields=[], doc='Subscript(expr value, expr slice, expr_context ctx)')
@@ -4070,8 +4084,8 @@ class Starred(expr):
             raise_required_value(space, w_node, 'ctx')
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Starred(_value, _ctx, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Starred', 'expr', ['value', 'ctx'], default_none_fields=[], doc='Starred(expr value, expr_context ctx)')
@@ -4128,8 +4142,8 @@ class Name(expr):
             raise_required_value(space, w_node, 'ctx')
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Name(_id, _ctx, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Name', 'expr', ['id', 'ctx'], default_none_fields=[], doc='Name(identifier id, expr_context ctx)')
@@ -4193,8 +4207,8 @@ class List(expr):
             raise_required_value(space, w_node, 'ctx')
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return List(_elts, _ctx, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('List', 'expr', ['elts', 'ctx'], default_none_fields=[], doc='List(expr* elts, expr_context ctx)')
@@ -4258,8 +4272,8 @@ class Tuple(expr):
             raise_required_value(space, w_node, 'ctx')
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Tuple(_elts, _ctx, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Tuple', 'expr', ['elts', 'ctx'], default_none_fields=[], doc='Tuple(expr* elts, expr_context ctx)')
@@ -4324,8 +4338,8 @@ class Slice(expr):
         _step = expr.from_object(space, w_step)
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return Slice(_lower, _upper, _step, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('Slice', 'expr', ['lower', 'upper', 'step'], default_none_fields=['lower', 'upper', 'step'], doc='Slice(expr? lower, expr? upper, expr? step)')
@@ -4815,8 +4829,8 @@ class ExceptHandler(excepthandler):
         _body = [stmt.from_object(space, w_item) for w_item in body_w]
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return ExceptHandler(_type, _name, _body, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('ExceptHandler', 'excepthandler', ['type', 'name', 'body'], default_none_fields=['type', 'name'], doc='ExceptHandler(expr? type, identifier? name, stmt* body)')
@@ -4994,8 +5008,8 @@ class arg(AST):
         _type_comment = check_string(space, w_type_comment, 1)
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return arg(_arg, _annotation, _type_comment, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('arg', 'AST', ['arg', 'annotation', 'type_comment'], ['lineno', 'col_offset', 'end_lineno', 'end_col_offset'], default_none_fields=['annotation', 'type_comment', 'end_lineno', 'end_col_offset'], doc='arg(identifier arg, expr? annotation, string? type_comment)')
@@ -5053,8 +5067,8 @@ class keyword(AST):
             raise_required_value(space, w_node, 'value')
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return keyword(_arg, _value, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('keyword', 'AST', ['arg', 'value'], ['lineno', 'col_offset', 'end_lineno', 'end_col_offset'], default_none_fields=['arg', 'end_lineno', 'end_col_offset'], doc='keyword(identifier? arg, expr value)')
@@ -5111,8 +5125,8 @@ class alias(AST):
         _asname = space.text_or_none_w(w_asname)
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)
-        _end_lineno = obj_to_int(space, w_end_lineno, True)
-        _end_col_offset = obj_to_int(space, w_end_col_offset, True)
+        _end_lineno = obj_to_int_default(space, w_end_lineno, _lineno)
+        _end_col_offset = obj_to_int_default(space, w_end_col_offset, _col_offset)
         return alias(_name, _asname, _lineno, _col_offset, _end_lineno, _end_col_offset)
 
 State.ast_type('alias', 'AST', ['name', 'asname'], ['lineno', 'col_offset', 'end_lineno', 'end_col_offset'], default_none_fields=['asname', 'end_lineno', 'end_col_offset'], doc='alias(identifier name, identifier? asname)')

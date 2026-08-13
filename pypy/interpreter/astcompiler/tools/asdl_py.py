@@ -202,6 +202,14 @@ class ASTNodeVisitor(ASDLVisitor):
                 return "space.text_or_none_w(%s)" % (value,)
             return "space.text_w(%s)" % (value,)
         elif field.type in ("int",):
+            # The optional end positions default to the matching start
+            # position, not to 0 -- see obj_to_int_default().  They are
+            # emitted after lineno/col_offset (attributes come last, in
+            # asdl order), so _lineno and _col_offset are already bound.
+            if field.name == "end_lineno":
+                return "obj_to_int_default(space, %s, _lineno)" % (value,)
+            if field.name == "end_col_offset":
+                return "obj_to_int_default(space, %s, _col_offset)" % (value,)
             return "obj_to_int(space, %s, %s)" % (value, field.opt)
         elif field.type in ("bool",):
             return "space.bool_w(%s)" % (value,)
@@ -527,6 +535,20 @@ def get_field(space, w_node, name, optional):
 def obj_to_int(space, w_value, optional):
     if optional and space.is_w(w_value, space.w_None):
         return 0
+    if not space.isinstance_w(w_value, space.w_long):
+        raise oefmt(space.w_ValueError,
+                    "invalid integer value: %R", w_value)
+    return space.int_w(w_value)
+
+# Like obj_to_int() for an optional field, but a missing value means "same as
+# the matching start position" rather than 0.  CPython's obj2ast_* do
+# `end_lineno = lineno` (and `end_col_offset = col_offset`) when the attribute
+# is absent or None, see Python/Python-ast.c.  Defaulting to 0 instead makes
+# _validate_positions() reject `lineno > end_lineno` for any tree built without
+# end positions -- ASTs that CPython compiles happily.
+def obj_to_int_default(space, w_value, default):
+    if space.is_w(w_value, space.w_None):
+        return default
     if not space.isinstance_w(w_value, space.w_long):
         raise oefmt(space.w_ValueError,
                     "invalid integer value: %R", w_value)
