@@ -23,8 +23,14 @@ from rpython.rtyper.lltypesystem import lltype, rffi
 WIN32 = sys.platform == 'win32'
 
 
+@jit.dont_look_inside
 def _sig_trace(what, n):
     """Trace signal delivery into PYPYLOG.
+
+    dont_look_inside because have_debug_prints_for() is not an operation the
+    JIT can trace ("the JIT doesn't support the operation ... in
+    CheckSignalAction.set_interrupt").  _poll_for_signals already carries the
+    same decorator; set_interrupt does not.
 
     Enable with PYPYLOG=sig-deliver:/tmp/sig.log; costs nothing otherwise.
     The point of logging to a file rather than counting is that a process
