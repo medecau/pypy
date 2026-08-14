@@ -145,12 +145,35 @@ class CheckSignalAction(PeriodicAsyncAction):
                 self.pending_signal = -1
                 _sig_trace("attempt", n)
                 try:
-                    report_signal(self.space, n)
+                    try:
+                        report_signal(self.space, n)
+                    except OperationError as e:
+                        # The handler ran and raised: the *successful* path for
+                        # SIGINT, whose handler raises KeyboardInterrupt.  But it
+                        # raises it unnormalized, and the exception class still
+                        # has to be instantiated -- normalize_exception() does
+                        # that with a space.call_function().  Do it HERE, inside
+                        # the window the re-arm below protects.
+                        #
+                        # Otherwise it happens a moment later in
+                        # handle_bytecode()'s record_context() instead
+                        # (pypy/interpreter/pyopcode.py), at the same stack depth
+                        # but with nothing watching: an overflow there escapes as
+                        # a bare RecursionError, the KeyboardInterrupt is gone,
+                        # and the program's own `except RecursionError:` swallows
+                        # what is left.  Traces of a hang show exactly that --
+                        # "attempt, raised-operr" and then silence, i.e. the
+                        # signal was delivered correctly and thrown away
+                        # downstream.
+                        _sig_trace("raised-operr", n)
+                        e.normalize_exception(self.space)
+                        _sig_trace("normalized", n)
+                        raise
                 except rstackovf.StackOverflow:
                     rstackovf.check_stack_overflow()
                     _sig_trace("overflow-rearm", n)
-                    # We could not even *invoke* the handler: calling it
-                    # needs a bit of stack, and there is none left.  By now
+                    # Delivery ran out of stack -- either invoking the
+                    # handler or instantiating what it raised.  By now
                     # pypysig_poll() has cleared the C-level bit, we have
                     # cleared self.pending_signal, and action_dispatcher()
                     # has already reset the ticker -- so without this the
@@ -165,15 +188,10 @@ class CheckSignalAction(PeriodicAsyncAction):
                     # Note that we must *not* do this for OperationError:
                     # the normal successful path raises one, because
                     # default_int_handler() below raises KeyboardInterrupt.
+                    # That is why the inner try re-raises it rather than
+                    # letting it reach here.
                     self.pending_signal = n
                     self.space.actionflag.rearm_ticker()
-                    raise
-                except OperationError:
-                    # The handler ran and raised -- this is the *successful*
-                    # path for SIGINT, whose handler raises KeyboardInterrupt.
-                    # Logged because "delivered" and "then lost further up"
-                    # look identical from outside the process.
-                    _sig_trace("raised-operr", n)
                     raise
                 _sig_trace("returned", n)
                 n = self.pending_signal
