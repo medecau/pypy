@@ -287,8 +287,14 @@ class ASTNodeVisitor(ASDLVisitor):
         self.emit("@staticmethod", 1)
         self.emit("def from_object(space, w_node):", 1)
         for field in all_fields:
-            self.emit("w_%s = get_field(space, w_node, '%s', %s)" % (
-                    field.name, field.name, field.opt), 2)
+            if field.seq:
+                # a missing sequence field is an empty sequence, never an
+                # error -- see get_field_seq()
+                self.emit("w_%s = get_field_seq(space, w_node, '%s')" % (
+                        field.name, field.name), 2)
+            else:
+                self.emit("w_%s = get_field(space, w_node, '%s', %s)" % (
+                        field.name, field.name, field.opt), 2)
         for field in all_fields:
             unwrapping_code = self.get_field_extractor(field)
             for line in unwrapping_code:
@@ -530,6 +536,19 @@ def get_field(space, w_node, name, optional):
             raise oefmt(space.w_TypeError,
                 "required field '%s' missing from %T", name, w_node)
         w_obj = space.w_None
+    return w_obj
+
+def get_field_seq(space, w_node, name):
+    # A missing *sequence* field is an empty sequence, not an error.
+    # CPython's Parser/asdl_c.py (ObjVisitor.visitField) emits
+    #     if (tmp == NULL) { tmp = PyList_New(0); }
+    # for every field.seq and only reaches the "required field ... missing"
+    # branch for non-seq fields, so compile() accepts e.g.
+    # ast.FunctionDef("x", ast.arguments(), [ast.Pass()]) with no
+    # decorator_list and no type_params.
+    w_obj = w_node.getdictvalue(space, name)
+    if w_obj is None:
+        return space.newlist([])
     return w_obj
 
 def obj_to_int(space, w_value, optional):

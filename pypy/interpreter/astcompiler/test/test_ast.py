@@ -46,10 +46,14 @@ class TestAstToObject:
         assert node.value is value
 
     def test_from_object_error(self, space):
+        # a missing *sequence* field is an empty sequence, not an error
         w_node = space.call_function(ast.get(space).w_Module)
-        excinfo = space.raises_w(space.w_TypeError, ast.Module.from_object, space, w_node)
+        assert ast.Module.from_object(space, w_node).body == []
+        # a missing scalar field still is one
+        w_node = space.call_function(ast.get(space).w_Expression)
+        excinfo = space.raises_w(space.w_TypeError, ast.Expression.from_object, space, w_node)
         error = space.text_w(excinfo.value.get_w_value(space))
-        assert error == "required field 'body' missing from Module"
+        assert error == "required field 'body' missing from Expression"
         w_node = space.call_function(ast.get(space).w_Expression, space.w_None)
         excinfo = space.raises_w(space.w_ValueError, ast.Expression.from_object, space, w_node)
         error = space.text_w(excinfo.value.get_w_value(space))

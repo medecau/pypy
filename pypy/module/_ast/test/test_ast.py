@@ -65,8 +65,12 @@ class AppTestAST:
             return compile(node, "<test>", "exec")
         mod = ast.Module()
         raises(AttributeError, getattr, mod, "body")
-        exc = raises(TypeError, com, mod).value
-        assert str(exc) == "required field 'body' missing from Module"
+        # 'body' is a sequence field, and a missing one is an empty
+        # sequence rather than an error, so this compiles to an empty
+        # module.  A missing *scalar* field is still an error.
+        com(mod)
+        exc = raises(TypeError, compile, ast.Expression(), "<test>", "eval").value
+        assert str(exc) == "required field 'body' missing from Expression"
         expr = ast.Name()
         expr.id = "hi"
         expr.ctx = ast.Load()

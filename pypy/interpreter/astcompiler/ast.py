@@ -32,6 +32,19 @@ def get_field(space, w_node, name, optional):
         w_obj = space.w_None
     return w_obj
 
+def get_field_seq(space, w_node, name):
+    # A missing *sequence* field is an empty sequence, not an error.
+    # CPython's Parser/asdl_c.py (ObjVisitor.visitField) emits
+    #     if (tmp == NULL) { tmp = PyList_New(0); }
+    # for every field.seq and only reaches the "required field ... missing"
+    # branch for non-seq fields, so compile() accepts e.g.
+    # ast.FunctionDef("x", ast.arguments(), [ast.Pass()]) with no
+    # decorator_list and no type_params.
+    w_obj = w_node.getdictvalue(space, name)
+    if w_obj is None:
+        return space.newlist([])
+    return w_obj
+
 def obj_to_int(space, w_value, optional):
     if optional and space.is_w(w_value, space.w_None):
         return 0
@@ -241,8 +254,8 @@ class Module(mod):
 
     @staticmethod
     def from_object(space, w_node):
-        w_body = get_field(space, w_node, 'body', False)
-        w_type_ignores = get_field(space, w_node, 'type_ignores', False)
+        w_body = get_field_seq(space, w_node, 'body')
+        w_type_ignores = get_field_seq(space, w_node, 'type_ignores')
         body_w = space.unpackiterable(w_body)
         _body = [stmt.from_object(space, w_item) for w_item in body_w]
         type_ignores_w = space.unpackiterable(w_type_ignores)
@@ -280,7 +293,7 @@ class Interactive(mod):
 
     @staticmethod
     def from_object(space, w_node):
-        w_body = get_field(space, w_node, 'body', False)
+        w_body = get_field_seq(space, w_node, 'body')
         body_w = space.unpackiterable(w_body)
         _body = [stmt.from_object(space, w_item) for w_item in body_w]
         return Interactive(_body)
@@ -351,7 +364,7 @@ class FunctionType(mod):
 
     @staticmethod
     def from_object(space, w_node):
-        w_argtypes = get_field(space, w_node, 'argtypes', False)
+        w_argtypes = get_field_seq(space, w_node, 'argtypes')
         w_returns = get_field(space, w_node, 'returns', False)
         argtypes_w = space.unpackiterable(w_argtypes)
         _argtypes = [expr.from_object(space, w_item) for w_item in argtypes_w]
@@ -522,11 +535,11 @@ class FunctionDef(stmt):
     def from_object(space, w_node):
         w_name = get_field(space, w_node, 'name', False)
         w_args = get_field(space, w_node, 'args', False)
-        w_body = get_field(space, w_node, 'body', False)
-        w_decorator_list = get_field(space, w_node, 'decorator_list', False)
+        w_body = get_field_seq(space, w_node, 'body')
+        w_decorator_list = get_field_seq(space, w_node, 'decorator_list')
         w_returns = get_field(space, w_node, 'returns', True)
         w_type_comment = get_field(space, w_node, 'type_comment', True)
-        w_type_params = get_field(space, w_node, 'type_params', False)
+        w_type_params = get_field_seq(space, w_node, 'type_params')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', True)
@@ -641,11 +654,11 @@ class AsyncFunctionDef(stmt):
     def from_object(space, w_node):
         w_name = get_field(space, w_node, 'name', False)
         w_args = get_field(space, w_node, 'args', False)
-        w_body = get_field(space, w_node, 'body', False)
-        w_decorator_list = get_field(space, w_node, 'decorator_list', False)
+        w_body = get_field_seq(space, w_node, 'body')
+        w_decorator_list = get_field_seq(space, w_node, 'decorator_list')
         w_returns = get_field(space, w_node, 'returns', True)
         w_type_comment = get_field(space, w_node, 'type_comment', True)
-        w_type_params = get_field(space, w_node, 'type_params', False)
+        w_type_params = get_field_seq(space, w_node, 'type_params')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', True)
@@ -767,11 +780,11 @@ class ClassDef(stmt):
     @staticmethod
     def from_object(space, w_node):
         w_name = get_field(space, w_node, 'name', False)
-        w_bases = get_field(space, w_node, 'bases', False)
-        w_keywords = get_field(space, w_node, 'keywords', False)
-        w_body = get_field(space, w_node, 'body', False)
-        w_decorator_list = get_field(space, w_node, 'decorator_list', False)
-        w_type_params = get_field(space, w_node, 'type_params', False)
+        w_bases = get_field_seq(space, w_node, 'bases')
+        w_keywords = get_field_seq(space, w_node, 'keywords')
+        w_body = get_field_seq(space, w_node, 'body')
+        w_decorator_list = get_field_seq(space, w_node, 'decorator_list')
+        w_type_params = get_field_seq(space, w_node, 'type_params')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', True)
@@ -889,7 +902,7 @@ class Delete(stmt):
 
     @staticmethod
     def from_object(space, w_node):
-        w_targets = get_field(space, w_node, 'targets', False)
+        w_targets = get_field_seq(space, w_node, 'targets')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', True)
@@ -956,7 +969,7 @@ class Assign(stmt):
 
     @staticmethod
     def from_object(space, w_node):
-        w_targets = get_field(space, w_node, 'targets', False)
+        w_targets = get_field_seq(space, w_node, 'targets')
         w_value = get_field(space, w_node, 'value', False)
         w_type_comment = get_field(space, w_node, 'type_comment', True)
         w_lineno = get_field(space, w_node, 'lineno', False)
@@ -1030,7 +1043,7 @@ class TypeAlias(stmt):
     @staticmethod
     def from_object(space, w_node):
         w_name = get_field(space, w_node, 'name', False)
-        w_type_params = get_field(space, w_node, 'type_params', False)
+        w_type_params = get_field_seq(space, w_node, 'type_params')
         w_value = get_field(space, w_node, 'value', False)
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
@@ -1265,8 +1278,8 @@ class For(stmt):
     def from_object(space, w_node):
         w_target = get_field(space, w_node, 'target', False)
         w_iter = get_field(space, w_node, 'iter', False)
-        w_body = get_field(space, w_node, 'body', False)
-        w_orelse = get_field(space, w_node, 'orelse', False)
+        w_body = get_field_seq(space, w_node, 'body')
+        w_orelse = get_field_seq(space, w_node, 'orelse')
         w_type_comment = get_field(space, w_node, 'type_comment', True)
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
@@ -1362,8 +1375,8 @@ class AsyncFor(stmt):
     def from_object(space, w_node):
         w_target = get_field(space, w_node, 'target', False)
         w_iter = get_field(space, w_node, 'iter', False)
-        w_body = get_field(space, w_node, 'body', False)
-        w_orelse = get_field(space, w_node, 'orelse', False)
+        w_body = get_field_seq(space, w_node, 'body')
+        w_orelse = get_field_seq(space, w_node, 'orelse')
         w_type_comment = get_field(space, w_node, 'type_comment', True)
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
@@ -1448,8 +1461,8 @@ class While(stmt):
     @staticmethod
     def from_object(space, w_node):
         w_test = get_field(space, w_node, 'test', False)
-        w_body = get_field(space, w_node, 'body', False)
-        w_orelse = get_field(space, w_node, 'orelse', False)
+        w_body = get_field_seq(space, w_node, 'body')
+        w_orelse = get_field_seq(space, w_node, 'orelse')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', True)
@@ -1529,8 +1542,8 @@ class If(stmt):
     @staticmethod
     def from_object(space, w_node):
         w_test = get_field(space, w_node, 'test', False)
-        w_body = get_field(space, w_node, 'body', False)
-        w_orelse = get_field(space, w_node, 'orelse', False)
+        w_body = get_field_seq(space, w_node, 'body')
+        w_orelse = get_field_seq(space, w_node, 'orelse')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', True)
@@ -1609,8 +1622,8 @@ class With(stmt):
 
     @staticmethod
     def from_object(space, w_node):
-        w_items = get_field(space, w_node, 'items', False)
-        w_body = get_field(space, w_node, 'body', False)
+        w_items = get_field_seq(space, w_node, 'items')
+        w_body = get_field_seq(space, w_node, 'body')
         w_type_comment = get_field(space, w_node, 'type_comment', True)
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
@@ -1688,8 +1701,8 @@ class AsyncWith(stmt):
 
     @staticmethod
     def from_object(space, w_node):
-        w_items = get_field(space, w_node, 'items', False)
-        w_body = get_field(space, w_node, 'body', False)
+        w_items = get_field_seq(space, w_node, 'items')
+        w_body = get_field_seq(space, w_node, 'body')
         w_type_comment = get_field(space, w_node, 'type_comment', True)
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
@@ -1756,7 +1769,7 @@ class Match(stmt):
     @staticmethod
     def from_object(space, w_node):
         w_subject = get_field(space, w_node, 'subject', False)
-        w_cases = get_field(space, w_node, 'cases', False)
+        w_cases = get_field_seq(space, w_node, 'cases')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', True)
@@ -1910,10 +1923,10 @@ class Try(stmt):
 
     @staticmethod
     def from_object(space, w_node):
-        w_body = get_field(space, w_node, 'body', False)
-        w_handlers = get_field(space, w_node, 'handlers', False)
-        w_orelse = get_field(space, w_node, 'orelse', False)
-        w_finalbody = get_field(space, w_node, 'finalbody', False)
+        w_body = get_field_seq(space, w_node, 'body')
+        w_handlers = get_field_seq(space, w_node, 'handlers')
+        w_orelse = get_field_seq(space, w_node, 'orelse')
+        w_finalbody = get_field_seq(space, w_node, 'finalbody')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', True)
@@ -2012,10 +2025,10 @@ class TryStar(stmt):
 
     @staticmethod
     def from_object(space, w_node):
-        w_body = get_field(space, w_node, 'body', False)
-        w_handlers = get_field(space, w_node, 'handlers', False)
-        w_orelse = get_field(space, w_node, 'orelse', False)
-        w_finalbody = get_field(space, w_node, 'finalbody', False)
+        w_body = get_field_seq(space, w_node, 'body')
+        w_handlers = get_field_seq(space, w_node, 'handlers')
+        w_orelse = get_field_seq(space, w_node, 'orelse')
+        w_finalbody = get_field_seq(space, w_node, 'finalbody')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', True)
@@ -2137,7 +2150,7 @@ class Import(stmt):
 
     @staticmethod
     def from_object(space, w_node):
-        w_names = get_field(space, w_node, 'names', False)
+        w_names = get_field_seq(space, w_node, 'names')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', True)
@@ -2203,7 +2216,7 @@ class ImportFrom(stmt):
     @staticmethod
     def from_object(space, w_node):
         w_module = get_field(space, w_node, 'module', True)
-        w_names = get_field(space, w_node, 'names', False)
+        w_names = get_field_seq(space, w_node, 'names')
         w_level = get_field(space, w_node, 'level', True)
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
@@ -2259,7 +2272,7 @@ class Global(stmt):
 
     @staticmethod
     def from_object(space, w_node):
-        w_names = get_field(space, w_node, 'names', False)
+        w_names = get_field_seq(space, w_node, 'names')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', True)
@@ -2312,7 +2325,7 @@ class Nonlocal(stmt):
 
     @staticmethod
     def from_object(space, w_node):
-        w_names = get_field(space, w_node, 'names', False)
+        w_names = get_field_seq(space, w_node, 'names')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', True)
@@ -2623,7 +2636,7 @@ class BoolOp(expr):
     @staticmethod
     def from_object(space, w_node):
         w_op = get_field(space, w_node, 'op', False)
-        w_values = get_field(space, w_node, 'values', False)
+        w_values = get_field_seq(space, w_node, 'values')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', True)
@@ -3011,8 +3024,8 @@ class Dict(expr):
 
     @staticmethod
     def from_object(space, w_node):
-        w_keys = get_field(space, w_node, 'keys', False)
-        w_values = get_field(space, w_node, 'values', False)
+        w_keys = get_field_seq(space, w_node, 'keys')
+        w_values = get_field_seq(space, w_node, 'values')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', True)
@@ -3071,7 +3084,7 @@ class Set(expr):
 
     @staticmethod
     def from_object(space, w_node):
-        w_elts = get_field(space, w_node, 'elts', False)
+        w_elts = get_field_seq(space, w_node, 'elts')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', True)
@@ -3134,7 +3147,7 @@ class ListComp(expr):
     @staticmethod
     def from_object(space, w_node):
         w_elt = get_field(space, w_node, 'elt', False)
-        w_generators = get_field(space, w_node, 'generators', False)
+        w_generators = get_field_seq(space, w_node, 'generators')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', True)
@@ -3200,7 +3213,7 @@ class SetComp(expr):
     @staticmethod
     def from_object(space, w_node):
         w_elt = get_field(space, w_node, 'elt', False)
-        w_generators = get_field(space, w_node, 'generators', False)
+        w_generators = get_field_seq(space, w_node, 'generators')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', True)
@@ -3272,7 +3285,7 @@ class DictComp(expr):
     def from_object(space, w_node):
         w_key = get_field(space, w_node, 'key', False)
         w_value = get_field(space, w_node, 'value', False)
-        w_generators = get_field(space, w_node, 'generators', False)
+        w_generators = get_field_seq(space, w_node, 'generators')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', True)
@@ -3341,7 +3354,7 @@ class GeneratorExp(expr):
     @staticmethod
     def from_object(space, w_node):
         w_elt = get_field(space, w_node, 'elt', False)
-        w_generators = get_field(space, w_node, 'generators', False)
+        w_generators = get_field_seq(space, w_node, 'generators')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', True)
@@ -3567,8 +3580,8 @@ class Compare(expr):
     @staticmethod
     def from_object(space, w_node):
         w_left = get_field(space, w_node, 'left', False)
-        w_ops = get_field(space, w_node, 'ops', False)
-        w_comparators = get_field(space, w_node, 'comparators', False)
+        w_ops = get_field_seq(space, w_node, 'ops')
+        w_comparators = get_field_seq(space, w_node, 'comparators')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', True)
@@ -3648,8 +3661,8 @@ class Call(expr):
     @staticmethod
     def from_object(space, w_node):
         w_func = get_field(space, w_node, 'func', False)
-        w_args = get_field(space, w_node, 'args', False)
-        w_keywords = get_field(space, w_node, 'keywords', False)
+        w_args = get_field_seq(space, w_node, 'args')
+        w_keywords = get_field_seq(space, w_node, 'keywords')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', True)
@@ -3824,7 +3837,7 @@ class JoinedStr(expr):
 
     @staticmethod
     def from_object(space, w_node):
-        w_values = get_field(space, w_node, 'values', False)
+        w_values = get_field_seq(space, w_node, 'values')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', True)
@@ -4194,7 +4207,7 @@ class List(expr):
 
     @staticmethod
     def from_object(space, w_node):
-        w_elts = get_field(space, w_node, 'elts', False)
+        w_elts = get_field_seq(space, w_node, 'elts')
         w_ctx = get_field(space, w_node, 'ctx', False)
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
@@ -4259,7 +4272,7 @@ class Tuple(expr):
 
     @staticmethod
     def from_object(space, w_node):
-        w_elts = get_field(space, w_node, 'elts', False)
+        w_elts = get_field_seq(space, w_node, 'elts')
         w_ctx = get_field(space, w_node, 'ctx', False)
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
@@ -4732,7 +4745,7 @@ class comprehension(AST):
     def from_object(space, w_node):
         w_target = get_field(space, w_node, 'target', False)
         w_iter = get_field(space, w_node, 'iter', False)
-        w_ifs = get_field(space, w_node, 'ifs', False)
+        w_ifs = get_field_seq(space, w_node, 'ifs')
         w_is_async = get_field(space, w_node, 'is_async', False)
         _target = expr.from_object(space, w_target)
         if _target is None:
@@ -4818,7 +4831,7 @@ class ExceptHandler(excepthandler):
     def from_object(space, w_node):
         w_type = get_field(space, w_node, 'type', True)
         w_name = get_field(space, w_node, 'name', True)
-        w_body = get_field(space, w_node, 'body', False)
+        w_body = get_field_seq(space, w_node, 'body')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', True)
@@ -4924,13 +4937,13 @@ class arguments(AST):
 
     @staticmethod
     def from_object(space, w_node):
-        w_posonlyargs = get_field(space, w_node, 'posonlyargs', False)
-        w_args = get_field(space, w_node, 'args', False)
+        w_posonlyargs = get_field_seq(space, w_node, 'posonlyargs')
+        w_args = get_field_seq(space, w_node, 'args')
         w_vararg = get_field(space, w_node, 'vararg', True)
-        w_kwonlyargs = get_field(space, w_node, 'kwonlyargs', False)
-        w_kw_defaults = get_field(space, w_node, 'kw_defaults', False)
+        w_kwonlyargs = get_field_seq(space, w_node, 'kwonlyargs')
+        w_kw_defaults = get_field_seq(space, w_node, 'kw_defaults')
         w_kwarg = get_field(space, w_node, 'kwarg', True)
-        w_defaults = get_field(space, w_node, 'defaults', False)
+        w_defaults = get_field_seq(space, w_node, 'defaults')
         posonlyargs_w = space.unpackiterable(w_posonlyargs)
         _posonlyargs = [arg.from_object(space, w_item) for w_item in posonlyargs_w]
         args_w = space.unpackiterable(w_args)
@@ -5209,7 +5222,7 @@ class match_case(AST):
     def from_object(space, w_node):
         w_pattern = get_field(space, w_node, 'pattern', False)
         w_guard = get_field(space, w_node, 'guard', True)
-        w_body = get_field(space, w_node, 'body', False)
+        w_body = get_field_seq(space, w_node, 'body')
         _pattern = pattern.from_object(space, w_pattern)
         if _pattern is None:
             raise_required_value(space, w_node, 'pattern')
@@ -5394,7 +5407,7 @@ class MatchSequence(pattern):
 
     @staticmethod
     def from_object(space, w_node):
-        w_patterns = get_field(space, w_node, 'patterns', False)
+        w_patterns = get_field_seq(space, w_node, 'patterns')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', False)
@@ -5467,8 +5480,8 @@ class MatchMapping(pattern):
 
     @staticmethod
     def from_object(space, w_node):
-        w_keys = get_field(space, w_node, 'keys', False)
-        w_patterns = get_field(space, w_node, 'patterns', False)
+        w_keys = get_field_seq(space, w_node, 'keys')
+        w_patterns = get_field_seq(space, w_node, 'patterns')
         w_rest = get_field(space, w_node, 'rest', True)
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
@@ -5555,9 +5568,9 @@ class MatchClass(pattern):
     @staticmethod
     def from_object(space, w_node):
         w_cls = get_field(space, w_node, 'cls', False)
-        w_patterns = get_field(space, w_node, 'patterns', False)
-        w_kwd_attrs = get_field(space, w_node, 'kwd_attrs', False)
-        w_kwd_patterns = get_field(space, w_node, 'kwd_patterns', False)
+        w_patterns = get_field_seq(space, w_node, 'patterns')
+        w_kwd_attrs = get_field_seq(space, w_node, 'kwd_attrs')
+        w_kwd_patterns = get_field_seq(space, w_node, 'kwd_patterns')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', False)
@@ -5725,7 +5738,7 @@ class MatchOr(pattern):
 
     @staticmethod
     def from_object(space, w_node):
-        w_patterns = get_field(space, w_node, 'patterns', False)
+        w_patterns = get_field_seq(space, w_node, 'patterns')
         w_lineno = get_field(space, w_node, 'lineno', False)
         w_col_offset = get_field(space, w_node, 'col_offset', False)
         w_end_lineno = get_field(space, w_node, 'end_lineno', False)
