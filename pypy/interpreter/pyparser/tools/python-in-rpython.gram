@@ -441,20 +441,20 @@ for_stmt[Union[ast.For, ast.AsyncFor]]:
 
 with_stmt[Union[ast.With, ast.AsyncWith]]:
     | invalid_with_stmt_indent
+    # No version check here: these parentheses are ambiguous with a plain
+    # parenthesized expression -- "with (x() if y else z()):" matches this
+    # alternative too, and rejecting it broke perfectly good 3.8 code.
+    # CPython dropped the check in the gh-115881 fix (3.12.3).
     | 'with' '(' a=','.with_item+ ','? ')' ':' b=block {
-        self.check_version(
-           (3, 9),
-           "Parenthesized with items",
-            ast.With(items=a, body=b, type_comment=None, LOCATIONS)
-        )
+        ast.With(items=a, body=b, type_comment=None, LOCATIONS)
      }
     | 'with' a=','.with_item+ ':' tc=[TYPE_COMMENT] b=block {
         ast.With(items=a, body=b, type_comment=tc, LOCATIONS)
      }
     | ASYNC 'with' '(' a=','.with_item+ ','? ')' ':' b=block {
        self.check_version(
-           (3, 9),
-           "Parenthesized with items",
+           (3, 5),
+           "Async with statements are",
            ast.AsyncWith(items=a, body=b, type_comment=None, LOCATIONS)
         )
      }

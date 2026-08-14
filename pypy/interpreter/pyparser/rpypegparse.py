@@ -1433,7 +1433,7 @@ class PythonParser(Parser):
                             if b:
                                 tok = self.get_last_non_whitespace_token()
                                 end_lineno, end_col_offset = tok.end_lineno, tok.end_column
-                                return self . check_version ( ( 3 , 9 ) , "Parenthesized with items" , ast . With ( items = a , body = b , type_comment = None , lineno=start_lineno, col_offset=start_col_offset, end_lineno=end_lineno, end_col_offset=end_col_offset ) )
+                                return ast . With ( items = a , body = b , type_comment = None , lineno=start_lineno, col_offset=start_col_offset, end_lineno=end_lineno, end_col_offset=end_col_offset )
         self._index = mark
         literal = self.expect_type(520)
         if literal:
@@ -1465,7 +1465,7 @@ class PythonParser(Parser):
                                 if b:
                                     tok = self.get_last_non_whitespace_token()
                                     end_lineno, end_col_offset = tok.end_lineno, tok.end_column
-                                    return self . check_version ( ( 3 , 9 ) , "Parenthesized with items" , ast . AsyncWith ( items = a , body = b , type_comment = None , lineno=start_lineno, col_offset=start_col_offset, end_lineno=end_lineno, end_col_offset=end_col_offset ) )
+                                    return self . check_version ( ( 3 , 5 ) , "Async with statements are" , ast . AsyncWith ( items = a , body = b , type_comment = None , lineno=start_lineno, col_offset=start_col_offset, end_lineno=end_lineno, end_col_offset=end_col_offset ) )
         self._index = mark
         _async = self.expect_type(62)
         if _async:
