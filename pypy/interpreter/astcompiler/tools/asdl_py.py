@@ -202,13 +202,14 @@ class ASTNodeVisitor(ASDLVisitor):
                 return "space.text_or_none_w(%s)" % (value,)
             return "space.text_w(%s)" % (value,)
         elif field.type in ("int",):
-            # The optional end positions default to the matching start
-            # position, not to 0 -- see obj_to_int_default().  They are
-            # emitted after lineno/col_offset (attributes come last, in
-            # asdl order), so _lineno and _col_offset are already bound.
-            if field.name == "end_lineno":
+            # An *optional* end position defaults to the matching start
+            # position, not to 0 -- see obj_to_int_default().  It is emitted
+            # after lineno/col_offset (asdl order), so _lineno and
+            # _col_offset are already bound.  A *required* one (pattern,
+            # type_param) is not defaulted, matching obj2ast_pattern().
+            if field.opt and field.name == "end_lineno":
                 return "obj_to_int_default(space, %s, _lineno)" % (value,)
-            if field.name == "end_col_offset":
+            if field.opt and field.name == "end_col_offset":
                 return "obj_to_int_default(space, %s, _col_offset)" % (value,)
             return "obj_to_int(space, %s, %s)" % (value, field.opt)
         elif field.type in ("bool",):
@@ -286,7 +287,17 @@ class ASTNodeVisitor(ASDLVisitor):
         self.emit("")
         self.emit("@staticmethod", 1)
         self.emit("def from_object(space, w_node):", 1)
-        for field in all_fields:
+        # For a sum type CPython reads and converts the attributes (lineno,
+        # col_offset, end_lineno, end_col_offset) in obj2ast_<sum>(), i.e.
+        # before it dispatches on the concrete node type and touches that
+        # node's own fields -- see obj2ast_stmt() in Python/Python-ast.c.
+        # Follow it, so a bad position on this node is reported before we
+        # recurse into a child.  end_lineno/end_col_offset still come after
+        # lineno/col_offset, which obj_to_int_default() relies on.  Product
+        # types have no attributes to hoist and keep asdl order, which is
+        # what obj2ast_alias() and friends do.
+        conv_fields = extras + fields if extras else all_fields
+        for field in conv_fields:
             if field.seq:
                 # a missing sequence field is an empty sequence, never an
                 # error -- see get_field_seq()
@@ -295,10 +306,11 @@ class ASTNodeVisitor(ASDLVisitor):
             else:
                 self.emit("w_%s = get_field(space, w_node, '%s', %s)" % (
                         field.name, field.name, field.opt), 2)
-        for field in all_fields:
+        for field in conv_fields:
             unwrapping_code = self.get_field_extractor(field)
             for line in unwrapping_code:
                 self.emit(line, 2)
+        # The constructor signature is still fields-then-attributes.
         self.emit("return %s(%s)" % (
                 name, ', '.join("_%s" % (field.name,) for field in all_fields)), 2)
         self.emit("")
@@ -712,12 +724,12 @@ def main(argv):
     if len(argv) == 3:
         def_file, out_file = argv[1:]
     elif len(argv) == 1:
-        print "Assuming default values of Python.asdl and ast.py"
+        print("Assuming default values of Python.asdl and ast.py")
         here = os.path.dirname(__file__)
         def_file = os.path.join(here, "Python.asdl")
         out_file = os.path.join(here, "..", "ast.py")
     else:
-        print >> sys.stderr, "invalid arguments"
+        sys.stderr.write("invalid arguments\n")
         return 2
     mod = asdl.parse(def_file)
     data = ASDLData(mod)
