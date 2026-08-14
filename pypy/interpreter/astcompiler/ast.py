@@ -5,7 +5,8 @@ from rpython.rlib.objectmodel import specialize
 
 from pypy.interpreter import typedef
 from pypy.interpreter.baseobjspace import W_Root
-from pypy.interpreter.error import OperationError, oefmt
+from pypy.interpreter.error import (
+    OperationError, oefmt, oefmt_attribute_error)
 from pypy.interpreter.gateway import interp2app
 from pypy.interpreter.pyparser.parser import TokenASTBase
 
@@ -121,8 +122,24 @@ def W_AST_new(space, w_type, __args__):
 
 def W_AST_init(space, w_self, __args__):
     args_w, kwargs_w = __args__.unpack()
-    fields_w = space.fixedview(space.getattr(space.type(w_self),
-                               space.newtext("_fields")))
+    w_type = space.type(w_self)
+    w_fields_name = space.newtext("_fields")
+    try:
+        w_fields = space.getattr(w_type, w_fields_name)
+    except OperationError as e:
+        # gh-126105: CPython used to dereference the NULL _fields here and
+        # crash.  It now lets type_getattro's AttributeError out, and that
+        # message quotes tp_name -- which for ast.AST is the dotted spec
+        # name it was built with, PyType_FromSpec("ast.AST").  PyPy has no
+        # dotted name for a heap type, so %N would print just 'AST'.  Say
+        # the dotted spelling here; subclasses keep their own short name,
+        # exactly as CPython's type()-built node classes do.
+        if (e.match(space, space.w_AttributeError) and
+                space.is_w(w_type, space.gettypeobject(W_AST.typedef))):
+            raise oefmt_attribute_error(space, w_type, w_fields_name,
+                "type object 'ast.%N' has no attribute %R")
+        raise
+    fields_w = space.fixedview(w_fields)
     num_fields = len(fields_w) if fields_w else 0
     if args_w and len(args_w) > num_fields:
         suffix = 's' if num_fields == 1 else ''
@@ -148,7 +165,15 @@ def W_AST_init(space, w_self, __args__):
         space.setattr(w_self, space.newtext(field), w_value)
 
 
-W_AST.typedef = typedef.TypeDef("_ast.AST",
+# CPython builds ast.AST with PyType_FromSpec(&AST_type_spec), spec name
+# "ast.AST": a *mutable* heap type, whose __name__ is 'AST' and __module__
+# 'ast' because PyType_FromMetaclass splits the dotted spec name.  The node
+# types are already heap types -- State.make_new_type() calls
+# type(name, bases, dict) -- so this only brings their base into line, and
+# it is what lets test_ast delete AST._fields and put it back.
+W_AST.typedef = typedef.TypeDef("AST",
+    heaptype=True,
+    __module__='ast',
     _fields=_FieldsWrapper([]),
     _attributes=_FieldsWrapper([]),
     __reduce__=interp2app(W_AST.reduce_w),

@@ -18,7 +18,7 @@ class TypeDef(object):
     def __init__(self, __name, __base=None, __total_ordering__=None,
                  __buffer=None, __confirm_applevel_del__=False,
                  _text_signature_=None, variable_sized=False,
-                 __rpython_level_class__=None,
+                 __rpython_level_class__=None, heaptype=False,
                   **rawdict):
         "initialization-time only"
         self.name = __name
@@ -35,7 +35,13 @@ class TypeDef(object):
             if __buffer is None:
                 __buffer = base.buffer
         self.buffer = __buffer
-        self.heaptype = False
+        # heaptype=True asks for a *mutable* type, the equivalent of a
+        # CPython type built with PyType_FromSpec().  Almost every built-in
+        # wants the default; ast.AST is the exception, because CPython's is
+        # a heap type and app-level code assigns to AST._fields.  Note that
+        # a heap type's name is used verbatim, so it must not be dotted --
+        # pass __module__ instead (see W_TypeObject.getname/get_module).
+        self.heaptype = heaptype
         self.hasdict = '__dict__' in rawdict
         # no __del__: use an RPython _finalize_() method and register_finalizer
         if not __confirm_applevel_del__:

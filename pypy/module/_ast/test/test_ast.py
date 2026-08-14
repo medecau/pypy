@@ -22,8 +22,11 @@ class AppTestAST:
 
     def test_flags(self):
         from copyreg import _HEAPTYPE
-        assert self.ast.AST.__flags__ & _HEAPTYPE == 0
+        # CPython builds ast.AST with PyType_FromSpec(), i.e. a heap type
+        assert self.ast.AST.__flags__ & _HEAPTYPE == _HEAPTYPE
         assert self.ast.Module.__flags__ & _HEAPTYPE == _HEAPTYPE
+        assert self.ast.AST.__module__ == 'ast'
+        assert self.ast.AST.__name__ == 'AST'
 
     def test_build_ast(self):
         ast = self.ast
@@ -189,7 +192,7 @@ class AppTestAST:
             pass
         Y()
         exc = raises(TypeError, ast.AST, 2)
-        assert exc.value.args[0] == "_ast.AST constructor takes at most 0 positional argument"
+        assert exc.value.args[0] == "AST constructor takes at most 0 positional argument"
 
     def test_constructor(self):
         ast = self.ast
