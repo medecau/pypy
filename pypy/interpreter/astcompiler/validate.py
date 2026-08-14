@@ -155,6 +155,14 @@ class AstValidator(ast.ASTVisitor):
             self._validate_positions(stmt)
             stmt.walkabout(self)
 
+    def _validate_type_params(self, type_params):
+        if not type_params:
+            return
+        for type_param in type_params:
+            if type_param:
+                self._validate_positions(type_param)
+                type_param.walkabout(self)
+
     def _len(self, node):
         if node is None:
             return 0
@@ -227,6 +235,7 @@ class AstValidator(ast.ASTVisitor):
 
     def visit_FunctionDef(self, node):
         self._validate_body(node.body, "FunctionDef")
+        self._validate_type_params(node.type_params)
         node.args.walkabout(self)
         self._validate_exprs(node.decorator_list)
         if node.returns:
@@ -234,6 +243,7 @@ class AstValidator(ast.ASTVisitor):
 
     def visit_AsyncFunctionDef(self, node):
         self._validate_body(node.body, "AsyncFunctionDef")
+        self._validate_type_params(node.type_params)
         node.args.walkabout(self)
         self._validate_exprs(node.decorator_list)
         if node.returns:
@@ -244,6 +254,7 @@ class AstValidator(ast.ASTVisitor):
 
     def visit_ClassDef(self, node):
         self._validate_body(node.body, "ClassDef")
+        self._validate_type_params(node.type_params)
         self._validate_exprs(node.bases)
         self.visit_sequence(node.keywords)
         self._validate_exprs(node.decorator_list)
@@ -251,6 +262,24 @@ class AstValidator(ast.ASTVisitor):
         # XXX py3.5 missing   self._validate_expr(node.starargs)
         # XXX py3.5 missing if node.kwargs:
         # XXX py3.5 missing     self._validate_expr(node.kwargs)
+
+    def visit_TypeAlias(self, node):
+        if not isinstance(node.name, ast.Name):
+            raise ValidationTypeError("TypeAlias with non-Name name")
+        self._validate_expr(node.name, ast.Store)
+        self._validate_type_params(node.type_params)
+        self._validate_expr(node.value)
+
+    def visit_TypeVar(self, node):
+        self._validate_name(node.name)
+        if node.bound:
+            self._validate_expr(node.bound)
+
+    def visit_ParamSpec(self, node):
+        self._validate_name(node.name)
+
+    def visit_TypeVarTuple(self, node):
+        self._validate_name(node.name)
 
     def visit_Return(self, node):
         if node.value:
