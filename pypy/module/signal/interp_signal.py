@@ -11,7 +11,8 @@ from pypy.interpreter.executioncontext import (AsyncAction, AbstractActionFlag,
     PeriodicAsyncAction)
 from pypy.interpreter.gateway import unwrap_spec
 
-from rpython.rlib import jit, rgc, rposix, rposix_stat, rstackovf, rthread
+from rpython.rlib import (jit, rgc, rposix, rposix_stat, rstack, rstackovf,
+    rthread)
 from rpython.rlib.debug import (debug_start, debug_stop, debug_print,
     have_debug_prints_for)
 from rpython.rlib.objectmodel import we_are_translated
@@ -152,21 +153,30 @@ class CheckSignalAction(PeriodicAsyncAction):
                         # SIGINT, whose handler raises KeyboardInterrupt.  But it
                         # raises it unnormalized, and the exception class still
                         # has to be instantiated -- normalize_exception() does
-                        # that with a space.call_function().  Do it HERE, inside
-                        # the window the re-arm below protects.
+                        # that with a space.call_function(), and we are exactly
+                        # as deep in the stack as the program ever got.
                         #
-                        # Otherwise it happens a moment later in
-                        # handle_bytecode()'s record_context() instead
-                        # (pypy/interpreter/pyopcode.py), at the same stack depth
-                        # but with nothing watching: an overflow there escapes as
-                        # a bare RecursionError, the KeyboardInterrupt is gone,
-                        # and the program's own `except RecursionError:` swallows
-                        # what is left.  Traces of a hang show exactly that --
-                        # "attempt, raised-operr" and then silence, i.e. the
-                        # signal was delivered correctly and thrown away
-                        # downstream.
+                        # If that call runs out of stack it does not come back
+                        # here as a StackOverflow: a frame in between has
+                        # already turned it into an app-level RecursionError,
+                        # which then travels in place of the KeyboardInterrupt
+                        # and gets swallowed by the program's own
+                        # `except RecursionError:`.  PYPYLOG=sig-deliver traces
+                        # of a hang stop dead right here, at "raised-operr",
+                        # with neither "normalized" nor "overflow-rearm".
+                        #
+                        # There is no way to report that failure without losing
+                        # the signal, so borrow the headroom the JIT gives its
+                        # own critical paths and finish the job.  Instantiating
+                        # an exception class is shallow; running a little into
+                        # the reserve beats dropping an interrupt.  This is what
+                        # CPython's recursion headroom buys it in the same spot.
                         _sig_trace("raised-operr", n)
-                        e.normalize_exception(self.space)
+                        rstack._stack_criticalcode_start()
+                        try:
+                            e.normalize_exception(self.space)
+                        finally:
+                            rstack._stack_criticalcode_stop()
                         _sig_trace("normalized", n)
                         raise
                 except rstackovf.StackOverflow:
