@@ -51,6 +51,27 @@ def binaryoperation(operationname):
 opcodedesc = bytecode_spec.opcodedesc
 HAVE_ARGUMENT = bytecode_spec.HAVE_ARGUMENT
 
+def sync_traceback_from_value(space, operr):
+    """Copy an exception object's __traceback__ onto the OperationError.
+
+    An OperationError built around an exception that already exists does not
+    inherit that exception's traceback, and app-level code is free to have
+    replaced it in the meantime.  Both have to be reconciled before the error
+    travels on, or the frames it was raised through are lost.
+    """
+    from pypy.module.exceptions.interp_exceptions import W_BaseException
+    w_value = operr._w_value
+    if w_value is None or not isinstance(w_value, W_BaseException):
+        return
+    w_tb = w_value.w_traceback
+    if w_tb is None or space.is_w(w_tb, space.w_None):
+        operr.set_traceback(None)
+    else:
+        from pypy.interpreter.pytraceback import PyTraceback
+        if isinstance(w_tb, PyTraceback):
+            operr.set_traceback(w_tb)
+
+
 class __extend__(pyframe.PyFrame):
     """A PyFrame that knows about interpretation of standard Python opcodes
     minus the ones related to nested scopes."""
@@ -782,16 +803,7 @@ class __extend__(pyframe.PyFrame):
                             "No active exception to reraise")
             # sync the exceptions __traceback__ back to the
             # OperationError, in case user code modified it
-            from pypy.module.exceptions.interp_exceptions import W_BaseException
-            w_value = last_operr._w_value
-            if w_value is not None and isinstance(w_value, W_BaseException):
-                w_tb = w_value.w_traceback
-                if w_tb is None or space.is_w(w_tb, space.w_None):
-                    last_operr.set_traceback(None)
-                else:
-                    from pypy.interpreter.pytraceback import PyTraceback
-                    if isinstance(w_tb, PyTraceback):
-                        last_operr.set_traceback(w_tb)
+            sync_traceback_from_value(space, last_operr)
             # re-raise, no new traceback obj will be attached
             raise RaiseWithExplicitTraceback(last_operr)
         if nbargs == 2:
@@ -1908,7 +1920,7 @@ class __extend__(pyframe.PyFrame):
         w_typ = self.popvalue()
         check_except_star_type_valid(space, w_typ)
         w_eg = self.peekvalue()
-        w_match, w_rest = exception_group_match(space, w_eg, w_typ)
+        w_match, w_rest = exception_group_match(space, w_eg, w_typ, self)
         if space.is_w(w_match, space.w_None):
             self.pushvalue(w_match)
         else:
@@ -1926,7 +1938,15 @@ class __extend__(pyframe.PyFrame):
         if space.is_w(w_eg_or_None, space.w_None):
             w_push = space.w_None
         else:
-            w_push = SApplicationException(OperationError(space.type(w_eg_or_None), w_eg_or_None))
+            operr = OperationError(space.type(w_eg_or_None), w_eg_or_None)
+            # This exception has already travelled through the frames below
+            # us, and the fresh OperationError knows nothing about them.  The
+            # caller's normalize_exception() would then overwrite the value's
+            # own __traceback__ with its caller-only chain, so an exception
+            # that merely passed an except* it did not match came out the far
+            # side with no traceback at all.
+            sync_traceback_from_value(space, operr)
+            w_push = SApplicationException(operr)
         self.pushvalue(w_push)
 
 
@@ -2286,17 +2306,30 @@ def check_except_star_type_valid(space, w_typ):
     else:
         check(space, w_typ, w_BaseExceptionGroup)
 
-def exception_group_match(space, w_eg, w_typ):
+def exception_group_match(space, w_eg, w_typ, frame):
     if space.is_w(w_eg, space.w_None):
         return space.w_None, space.w_None
     assert space.isinstance_w(w_eg, space.w_Exception)
     w_BaseExceptionGroup = space.getattr(space.builtin, space.newtext('BaseExceptionGroup'))
-    w_ExceptionGroup = space.getattr(space.builtin, space.newtext('ExceptionGroup'))
     if space.exception_match(space.type(w_eg), w_typ):
         if space.isinstance_w(w_eg, w_BaseExceptionGroup):
             return w_eg, space.w_None
         w_list = space.newlist([w_eg])
-        w_wrapped = space.call_function(w_ExceptionGroup, space.newtext(''), w_list)
+        # BaseExceptionGroup, not ExceptionGroup: it demotes itself to an
+        # ExceptionGroup when every member is an Exception, so this is the
+        # wider of the two.  Wrapping with ExceptionGroup made
+        # `except* KeyboardInterrupt` fail outright with "Cannot nest
+        # BaseExceptions in an ExceptionGroup".
+        w_wrapped = space.call_function(w_BaseExceptionGroup,
+                                        space.newtext(''), w_list)
+        # gh-128799: the wrapper is created here, so here is the only place
+        # that can record where it came from.  Without this the group reaches
+        # app-level with no traceback of its own and the except* line is
+        # missing from the report.
+        if not frame.pycode.hidden_applevel:
+            from pypy.interpreter.pytraceback import PyTraceback
+            w_tb = PyTraceback(space, frame, frame.last_instr, None)
+            space.setattr(w_wrapped, space.newtext('__traceback__'), w_tb)
         return w_wrapped, space.w_None
     elif space.isinstance_w(w_eg, w_BaseExceptionGroup):
         w_tup = space.call_method(w_eg, 'split', w_typ)
