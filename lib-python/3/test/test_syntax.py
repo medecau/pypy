@@ -2141,10 +2141,7 @@ class SyntaxTestCase(unittest.TestCase):
                           "outside function")
 
     def test_break_outside_loop(self):
-        if sys.implementation.name == 'pypy':
-            msg = "not properly in loop"
-        else:
-            msg = "outside loop"
+        msg = "outside loop"
         self._check_error("break", msg, lineno=1)
         self._check_error("if 0: break", msg, lineno=1)
         self._check_error("if 0: break\nelse:  x=1", msg, lineno=1)

@@ -889,7 +889,7 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         self.emit_line_tracing_nop()
         loop_fblock = self.unwind_fblock_stack(False, br, find_loop_block=True)
         if loop_fblock is None:
-            self.error("'break' not properly in loop", br)
+            self.error("'break' outside loop", br)
         self.unwind_fblock(loop_fblock, False)
         assert loop_fblock.end is not None
         self.emit_jump(ops.JUMP_ABSOLUTE, loop_fblock.end)

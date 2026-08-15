@@ -453,6 +453,17 @@ class AnnotationScope(FunctionScope):
     can_be_optimized = True
     needs_classdict = False
 
+    def not_allowed_phrase(self):
+        # CPython keys these off the block type: TYPEVAR_BOUND_NOT_ALLOWED,
+        # TYPEALIAS_NOT_ALLOWED and TYPEPARAM_NOT_ALLOWED in symtable.c.  We
+        # only have the scope name, which encodes the same three cases.
+        name = self.name
+        if name.endswith(".<bound>"):
+            return "a TypeVar bound"
+        if name.endswith(".<type_params>"):
+            return "the definition of a generic"
+        return "a type alias"
+
     def __init__(self, name, lineno, col_offset):
         FunctionScope.__init__(self, name, lineno, col_offset)
 
@@ -463,13 +474,13 @@ class AnnotationScope(FunctionScope):
     #     return self.class_entry is not None
 
     def note_yield(self, yield_node):
-        self.error("yield expression cannot be used within an annotation scope", yield_node)
+        self.error("yield expression cannot be used within " + self.not_allowed_phrase(), yield_node)
 
     def note_yieldFrom(self, yieldFrom_node):
-        self.error("yield expression cannot be used within an annotation scope", yieldFrom_node)
+        self.error("yield expression cannot be used within " + self.not_allowed_phrase(), yieldFrom_node)
 
     def note_await(self, await_node):
-        self.error("await expression cannot be used within an annotation scope", await_node)
+        self.error("await expression cannot be used within " + self.not_allowed_phrase(), await_node)
 
 
 class ClassScope(Scope):
@@ -1018,7 +1029,7 @@ class SymtableBuilder(ast.GenericASTVisitor):
                 node)
         if isinstance(scope, AnnotationScope):
             self.error(
-                "named expression cannot be used within an annotation scope",
+                "named expression cannot be used within " + scope.not_allowed_phrase(),
                 node)
         if isinstance(scope, ComprehensionScope):
             for i in range(len(self.stack) - 1, -1, -1):
