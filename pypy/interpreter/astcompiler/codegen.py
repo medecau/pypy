@@ -1294,6 +1294,12 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         self.use_next_block(otherwise)
         self._visit_body(tr.orelse)
         self.use_next_block(end)
+        # Leave the join block without a position, as CPython does: a
+        # function whose last statement is a try/except* returns with
+        # f_lineno None, which is what pdb prints for it (gh-101517).  Only
+        # except* behaves this way -- plain except and finally both leave the
+        # handler's line in place, and anything following sets its own.
+        self.no_position_info()
 
     def _import_as(self, alias, imp):
         # in CPython this is roughly compile_import_as

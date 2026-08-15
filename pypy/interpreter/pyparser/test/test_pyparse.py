@@ -96,7 +96,7 @@ stuff = "nothing"
         assert exc.lineno == 1
         assert exc.offset == 4
         exc = pytest.raises(SyntaxError, parse, "\\").value
-        assert exc.msg == "unexpected end of file (EOF) in multi-line statement"
+        assert exc.msg == "unexpected EOF while parsing"
         assert exc.lineno == 1
         exc = pytest.raises(SyntaxError, parse, "(x||x").value
         assert exc.msg == "invalid syntax"

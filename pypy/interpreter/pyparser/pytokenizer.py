@@ -17,7 +17,10 @@ TYPE_COMMENT_PREFIX = 'type'
 TYPE_IGNORE = 'ignore'
 
 UNTERMINATED_STRING_ERROR = "unterminated %s%sstring literal (detected at line %s)"
-EOF_MULTI_LINE_STATEMENT_ERROR = "unexpected end of file (EOF) in multi-line statement"
+# CPython's wording for a backslash continuation that runs off the end of the
+# file.  An unclosed bracket gets "'(' was never closed" instead, which we
+# already match, and pyparse turns both into "incomplete input" for the REPL.
+EOF_MULTI_LINE_STATEMENT_ERROR = "unexpected EOF while parsing"
 
 
 def _end_of_line_column(line):
