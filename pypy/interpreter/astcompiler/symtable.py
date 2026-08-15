@@ -44,6 +44,8 @@ class Scope(object):
     can_be_optimized = False
     is_coroutine = False
     class_entry = None  # Set by AnnotationScope for class scope visibility
+    private_name = None   # class name to mangle __private names with
+    mangled_names = None  # if not None, the only names this scope mangles
 
     def __init__(self, name, lineno=0, col_offset=0):
         self.lineno = lineno
@@ -101,6 +103,12 @@ class Scope(object):
 
     def note_symbol(self, identifier, role, ast_node=None):
         """Record that identifier occurs in this scope."""
+        if role & SYM_TYPE_PARAM and self.mangled_names is not None:
+            # Before mangling, not after: mangle() reads this list to decide
+            # whether the name is one of the type parameters, so the very
+            # first mention of __T has to already be in it.
+            if identifier not in self.mangled_names:
+                self.mangled_names.append(identifier)
         mangled = self.mangle(identifier)
         new_role = role
         if mangled in self.roles:
@@ -170,10 +178,23 @@ class Scope(object):
         return False
 
     def mangle(self, name):
-        if self.parent:
-            return self.parent.mangle(name)
-        else:
+        if self.mangled_names is not None and name not in self.mangled_names:
+            # A generic class's type-param scope mangles the type parameters
+            # themselves -- so that `class Foo[__T]` can refer to __T in the
+            # class body, where it reads as _Foo__T -- but nothing else.
+            # CPython's _Py_MaybeMangle().
             return name
+        return self._mangle_private(name)
+
+    def _mangle_private(self, name):
+        # Corresponds to CPython's st_private, which is compiler-global: the
+        # innermost enclosing class name wins, and a scope nested inside a
+        # type-param scope inherits that scope's class name too.
+        if self.private_name is not None:
+            return misc.mangle(name, self.private_name)
+        if self.parent:
+            return self.parent._mangle_private(name)
+        return name
 
     def add_child(self, child_scope):
         """Note a new child scope."""
@@ -306,6 +327,19 @@ class Scope(object):
                     # vars, so it will be passed through by the interpreter, but
                     # we leave the scope alone, so it can be local on its own.
                     self.free_vars.append(name)
+                elif self.class_entry is not None:
+                    # An annotation scope that can see an enclosing class
+                    # namespace: a name free in one of our children but read
+                    # out of that namespace was given SCOPE_GLOBAL_IMPLICIT
+                    # by _finalize_name and then never passed on, so codegen
+                    # went looking for a closure slot that did not exist and
+                    # died with a KeyError.  CPython's DEF_FREE_CLASS does
+                    # the same hand-off.  Only the GLOBAL_* cases: a name
+                    # already recorded as SCOPE_FREE is in free_vars.
+                    scope_here = self.symbols[name]
+                    if (scope_here == SCOPE_GLOBAL_IMPLICIT or
+                            scope_here == SCOPE_GLOBAL_EXPLICIT):
+                        self.free_vars.append(name)
         self._check_optimization()
         free.update(new_free)
 
@@ -439,9 +473,9 @@ class ClassScope(Scope):
 
     def __init__(self, clsdef):
         Scope.__init__(self, clsdef.name, clsdef.lineno, clsdef.col_offset)
-
-    def mangle(self, name):
-        return misc.mangle(name, self.name)
+        # was an override of mangle(); as private_name it also reaches scopes
+        # nested inside this one, which is what CPython's st_private does
+        self.private_name = clsdef.name
 
     def _pass_special_names(self, local, new_bound):
         #assert '__class__' in local
@@ -569,6 +603,12 @@ class SymtableBuilder(ast.GenericASTVisitor):
             # For classes, register .generic_base which holds Generic[T, ...]
             # This is used to automatically add Generic to bases like CPython does
             self.note_symbol('.generic_base', SYM_ASSIGNED | SYM_USED)
+            # A generic class's type params are mangled with the class name,
+            # because the class body will look them up under the mangled
+            # spelling.  Only they are -- hence the list.  CPython sets
+            # st_private + ste_mangled_names here, for ClassDef only.
+            self.scope.private_name = node.name
+            self.scope.mangled_names = []
 
         self.visit_sequence(node.type_params)
 

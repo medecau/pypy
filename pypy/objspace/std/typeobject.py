@@ -1760,22 +1760,26 @@ def mro_blockinglist(candidate, orderlists):
     return None # good candidate
 
 def mro_error(space, orderlists):
-    cycle = []
     candidate = orderlists[-1][0]
     if candidate in orderlists[-1][1:]:
         # explicit error message for this specific case
         raise oefmt(space.w_TypeError, "duplicate base class '%N'", candidate)
-    while candidate not in cycle:
-        cycle.append(candidate)
-        nextblockinglist = mro_blockinglist(candidate, orderlists)
-        candidate = nextblockinglist[0]
-    del cycle[:cycle.index(candidate)]
-    cycle.append(candidate)
-    cycle.reverse()
-    names = [cls.getname(space) for cls in cycle]
+    # The head of each list that could not be merged is a class the bases
+    # disagree about the order of; that is the set CPython's set_mro_error()
+    # names.  Reporting all of these as a "cycle among base classes" was
+    # wrong for every ordinary C3 failure, which is not a cycle at all --
+    # `class E(A, B)` with `class B(A)` got one too.
+    seen_w = []
+    names = []
+    for lst in orderlists:
+        w_cls = lst[0]
+        if w_cls not in seen_w:
+            seen_w.append(w_cls)
+            names.append(w_cls.getname(space))
     # Can't use oefmt() here, since names is a list of unicodes
     raise OperationError(space.w_TypeError, space.newtext(
-        "cycle among base classes: " + ' < '.join(names)))
+        "Cannot create a consistent method resolution\n"
+        "order (MRO) for bases " + ', '.join(names)))
 
 
 class TypeCache(SpaceCache):
