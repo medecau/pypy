@@ -834,10 +834,19 @@ class PythonCodeMaker(ast.ASTVisitor):
                     block.cant_add_instructions = False
                     j -= 1
                     target.marked -= 2 # one fewer incoming links
+                    first = True
                     for instr in target.instructions:
                         instr = instr.copy()
-                        if instr.position_info[0] == -1:
+                        # Only the *first* instruction of the inlined exit
+                        # takes the jump's position, as CPython's
+                        # duplicate_exits_without_lineno() does
+                        # (new_target->b_instr[0].i_loc = last->i_loc).
+                        # Stamping the whole block gave the trailing
+                        # RETURN_VALUE a line, so a frame that ended there
+                        # reported f_lineno instead of None.
+                        if first and instr.position_info[0] == -1:
                             instr.position_info = op.position_info
+                        first = False
                         copy = instr.copy()
                         if copy.jump:
                             copy.jump.marked += 2
