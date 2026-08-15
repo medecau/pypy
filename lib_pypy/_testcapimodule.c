@@ -5988,6 +5988,52 @@ type_get_version(PyObject *self, PyObject *type)
 }
 
 static PyObject *
+test_frame_getvar(PyObject *self, PyObject *args)
+{
+    PyObject *frame, *name;
+    if (!PyArg_ParseTuple(args, "OO", &frame, &name)) {
+        return NULL;
+    }
+    if (!PyFrame_Check(frame)) {
+        PyErr_SetString(PyExc_TypeError, "argument must be a frame");
+        return NULL;
+    }
+    return PyFrame_GetVar((PyFrameObject *)frame, name);
+}
+
+static PyObject *
+test_frame_getvarstring(PyObject *self, PyObject *args)
+{
+    PyObject *frame;
+    const char *name;
+    if (!PyArg_ParseTuple(args, "Oy", &frame, &name)) {
+        return NULL;
+    }
+    if (!PyFrame_Check(frame)) {
+        PyErr_SetString(PyExc_TypeError, "argument must be a frame");
+        return NULL;
+    }
+    return PyFrame_GetVarString((PyFrameObject *)frame, name);
+}
+
+/* CPython calls PyUnstable_Type_AssignVersionTag() here.  PyPy assigns
+   version tags internally and exposes no way to ask for one, so report
+   whether the type has a valid one rather than inventing an answer.  Every
+   test in test_type_cache is @cpython_only, so nothing consumes the value;
+   the module only needs this to exist to get past its import. */
+static PyObject *
+type_assign_version(PyObject *self, PyObject *type)
+{
+    if (!PyType_Check(type)) {
+        PyErr_SetString(PyExc_TypeError, "argument must be a type");
+        return NULL;
+    }
+    int res = PyType_HasFeature((PyTypeObject *)type,
+                                Py_TPFLAGS_VALID_VERSION_TAG) ? 1 : 0;
+    return PyLong_FromLong(res);
+}
+
+static PyObject *
 type_modified(PyObject *self, PyObject *type)
 {
     if (!PyType_Check(type)) {
@@ -6959,7 +7005,11 @@ static PyMethodDef TestMethods[] = {
     {"test_py_is_funcs", test_py_is_funcs, METH_NOARGS},
     {"fatal_error", test_fatal_error, METH_VARARGS,
      PyDoc_STR("fatal_error(message, release_gil=False): call Py_FatalError(message)")},
+    {"frame_getvar", test_frame_getvar, METH_VARARGS, NULL},
+    {"frame_getvarstring", test_frame_getvarstring, METH_VARARGS, NULL},
     {"type_get_version", type_get_version, METH_O, PyDoc_STR("type->tp_version_tag")},
+    {"type_assign_version", type_assign_version, METH_O,
+     PyDoc_STR("PyUnstable_Type_AssignVersionTag()")},
     {"type_modified", type_modified, METH_O, PyDoc_STR("PyType_Modified")},
     {"type_assign_specific_version_unsafe", type_assign_specific_version_unsafe, METH_VARARGS,
      PyDoc_STR("forcefully assign type->tp_version_tag")},

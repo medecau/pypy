@@ -3026,7 +3026,18 @@ class TopLevelCodeGenerator(PythonCodeGenerator):
 
     def _compile(self, tree):
         if isinstance(tree, ast.Module):
-            self.first_lineno = 1
+            if tree.body:
+                self.first_lineno = 1
+            else:
+                # A module with no statements at all has only the implicit
+                # `return None`, and CPython puts the module prologue on line
+                # 0, so an empty file reports line 0 -- pdb prints
+                # "main.py(0)".  We have no prologue instruction to hang that
+                # on, and encode_single_position() cannot represent a line
+                # below co_firstlineno, so start the code object at 0 instead.
+                # The deviation is that co_firstlineno is 0 rather than
+                # CPython's 1, and only for a module with an empty body.
+                self.first_lineno = 0
 
         self._maybe_setup_annotations()
         tree.walkabout(self)
