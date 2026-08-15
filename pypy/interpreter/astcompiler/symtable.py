@@ -178,19 +178,23 @@ class Scope(object):
         return False
 
     def mangle(self, name):
-        if self.mangled_names is not None and name not in self.mangled_names:
+        if self.mangled_names is not None:
             # A generic class's type-param scope mangles the type parameters
             # themselves -- so that `class Foo[__T]` can refer to __T in the
             # class body, where it reads as _Foo__T -- but nothing else.
             # CPython's _Py_MaybeMangle().
-            return name
+            if name not in self.mangled_names:
+                return name
+            return misc.mangle(name, self.private_name)
         return self._mangle_private(name)
 
     def _mangle_private(self, name):
-        # Corresponds to CPython's st_private, which is compiler-global: the
-        # innermost enclosing class name wins, and a scope nested inside a
-        # type-param scope inherits that scope's class name too.
-        if self.private_name is not None:
+        # Corresponds to CPython's st_private: the innermost enclosing class
+        # name wins.  A type-param scope is skipped on the way up, because
+        # its class name covers its own type parameters and nothing else --
+        # `class Y[T: __X](make_base(lambda: __X))` must leave the __X in
+        # that lambda alone.
+        if self.private_name is not None and self.mangled_names is None:
             return misc.mangle(name, self.private_name)
         if self.parent:
             return self.parent._mangle_private(name)
