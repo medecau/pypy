@@ -955,11 +955,19 @@ def _create_new_type(space, w_typetype, w_name, w_bases, w_dict, __args__):
     if w_classcell:
         _store_type_in_classcell(space, w_type, w_classcell, dict_w)
 
+    # PEP 695: taken out before __init__ so it never lands in the type dict
+    w_classdictcell = dict_w.get("__classdictcell__", None)
+    if w_classdictcell:
+        del dict_w['__classdictcell__']
+
     W_TypeObject.__init__(w_type, space, name, bases_w or [space.w_object],
                           dict_w, is_heaptype=True)
 
 
     w_type.ready()
+
+    if w_classdictcell:
+        _store_dict_in_classdictcell(space, w_type, w_classdictcell)
 
     _set_names(space, w_type)
     _init_subclass(space, w_type, __args__)
@@ -974,6 +982,16 @@ def _store_type_in_classcell(space, w_type, w_classcell, dict_w):
                     "__classcell__ must be a nonlocal cell, not %T",
                     w_classcell)
     del dict_w['__classcell__']
+
+def _store_dict_in_classdictcell(space, w_type, w_classdictcell):
+    from pypy.interpreter.nestedscope import Cell
+    if not isinstance(w_classdictcell, Cell):
+        raise oefmt(space.w_TypeError,
+                    "__classdictcell__ must be a nonlocal cell, not %T",
+                    w_classdictcell)
+    # getdict() is a live view of the type's namespace, so a bound evaluated
+    # later through this cell sees attributes assigned after class creation.
+    w_classdictcell.set(w_type.getdict(space))
 
 def _calculate_metaclass(space, w_metaclass, bases_w):
     """Determine the most derived metatype"""

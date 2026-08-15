@@ -3426,6 +3426,15 @@ class ClassCodeGenerator(PythonCodeGenerator):
         self._handle_body(cls.body)
 
         self.no_position_info()
+        # Hand the __classdict__ cell to type.__new__ so it can rebind it to
+        # the finished class's dict.  Until then it holds the mapping
+        # LOAD_LOCALS returned at the top of the body, which stops being the
+        # class namespace the moment the class exists -- so a lazily
+        # evaluated type-param bound read a frozen snapshot.
+        classdict_scope = self.scope.lookup("__classdict__")
+        if classdict_scope == symtable.SCOPE_CELL:
+            self.emit_op_arg(ops.LOAD_CLOSURE, self.cell_vars["__classdict__"])
+            self.name_op("__classdictcell__", ast.Store, None)
         # return the (empty) __class__ cell
         scope = self.scope.lookup("__class__")
         if scope == symtable.SCOPE_CELL_CLASS:
