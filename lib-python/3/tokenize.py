@@ -621,6 +621,19 @@ def _tab_error(lnum, line):
 _FStringStart = r"([fFbBrRuU]*)(\'\'\'|\"\"\"|\'|\")"
 
 
+def _extend_identifier(line, token, end):
+    # The Name pattern is r'\w+', and \w misses characters that are
+    # XID_Continue but not alphanumeric -- the variation selectors
+    # (U+E0100..U+E01EF, category Mn) among them.  CPython tokenizes those as
+    # part of the name; splitting them off produced an ERRORTOKEN, so
+    # untokenize(tokenize(src)) did not round-trip for such a name.
+    n = len(line)
+    while end < n and (token + line[end]).isidentifier():
+        token += line[end]
+        end += 1
+    return token, end
+
+
 def _py_tokenize(source, encoding=None, extra_tokens=False):
     """Pure-Python tokenizer used on PyPy when the _tokenize C extension is unavailable.
     Implements the CPython 3.11 generate_tokens() algorithm using the regex patterns
@@ -991,6 +1004,8 @@ def _py_tokenize(source, encoding=None, extra_tokens=False):
                         break
                     yield TokenInfo(STRING, token, spos, epos, line)
                 elif initial.isidentifier():
+                    token, end = _extend_identifier(line, token, end)
+                    epos, pos = (lnum, end), end
                     yield TokenInfo(NAME, token, spos, epos, line)
                 elif initial == '\\':
                     bs_continued = 1
@@ -1061,6 +1076,8 @@ def _py_tokenize(source, encoding=None, extra_tokens=False):
                 else:
                     yield TokenInfo(STRING, token, spos, epos, line)
             elif initial.isidentifier():
+                token, end = _extend_identifier(line, token, end)
+                epos, pos = (lnum, end), end
                 yield TokenInfo(NAME, token, spos, epos, line)
             elif initial == '\\':
                 bs_continued = 1; break
