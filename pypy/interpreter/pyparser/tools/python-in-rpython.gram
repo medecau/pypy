@@ -1492,15 +1492,16 @@ invalid_parameters_helper: # This is only there to avoid type errors
     | a=slash_with_default { self.dummy_name() }
     | a=param_with_default+ { self.dummy_name() }
 invalid_lambda_parameters[NoReturn]:
+    # ordered as in invalid_parameters above, and for the same reason
+    | a="/" ',' {
+        self.raise_syntax_error_known_location("at least one argument must precede /", a) }
+    | (lambda_slash_no_default | lambda_slash_with_default) lambda_param_maybe_default* a='/' {
+        self.raise_syntax_error_known_location("/ may appear only once", a) }
     | lambda_slash_no_default? lambda_param_no_default* invalid_lambda_parameters_helper a=lambda_param_no_default {
         self.raise_syntax_error_known_location("parameter without a default follows parameter with a default", a)
      }
     | lambda_param_no_default* a='(' ','.lambda_param+ ','? b=')' {
         self.raise_syntax_error_known_range("Lambda expression parameters cannot be parenthesized", a, b) }
-    | a="/" ',' {
-        self.raise_syntax_error_known_location("at least one argument must precede /", a) }
-    | (lambda_slash_no_default | lambda_slash_with_default) lambda_param_maybe_default* a='/' {
-        self.raise_syntax_error_known_location("/ may appear only once", a) }
     | (lambda_slash_no_default | lambda_slash_with_default)? lambda_param_maybe_default* '*' (',' | lambda_param_no_default) lambda_param_maybe_default* a='/' {
         self.raise_syntax_error_known_location("/ must be ahead of *", a) }
     | lambda_param_maybe_default+ '/' a='*' {
