@@ -658,10 +658,20 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
                     funcflags |= 0x02
             self._make_function_body(func, funcflags)
 
-        # Apply decorators (same for both generic and non-generic)
+        # Apply decorators (same for both generic and non-generic).  They are
+        # applied innermost-first, so walk the list backwards and give each
+        # CALL_FUNCTION the position of the decorator it actually applies --
+        # compiler_apply_decorators() in CPython's compile.c does the same.
+        # Otherwise every one of them inherits the `def` position and the
+        # decorator lines never appear in a traceback or a line event.
         if func.decorator_list:
-            for i in range(len(func.decorator_list)):
+            for i in range(len(func.decorator_list) - 1, -1, -1):
+                dec = func.decorator_list[i]
+                if dec.lineno > 0:
+                    self.update_position(dec)
                 self.emit_op_arg(ops.CALL_FUNCTION, 1)
+            if func.lineno > 0:
+                self.update_position(func)
         self.name_op(func.name, ast.Store, func)
 
     @specialize.argtype(1)
@@ -720,10 +730,16 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
             # Non-generic: compile class directly using shared helper
             self._make_class_body(cls)
 
-        # Apply decorators (same for both)
+        # Apply decorators (same for both).  Innermost first, each CALL at the
+        # position of its own decorator -- see _visit_function above.
         if cls.decorator_list:
-            for i in range(len(cls.decorator_list)):
+            for i in range(len(cls.decorator_list) - 1, -1, -1):
+                dec = cls.decorator_list[i]
+                if dec.lineno > 0:
+                    self.update_position(dec)
                 self.emit_op_arg(ops.CALL_FUNCTION, 1)
+            if cls.lineno > 0:
+                self.update_position(cls)
         # Store into <name>
         self.name_op(cls.name, ast.Store, cls)
 
@@ -1247,9 +1263,16 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
             self.emit_jump(ops.JUMP_FORWARD, next_except)
 
             self.use_next_block(pop_next_except)
+            # this POP_TOP belongs to the `except*` clause that did not match
+            self.update_position(handler)
             self.emit_op(ops.POP_TOP)
 
             self.use_next_block(next_except)
+        # The reraise-star tail is bookkeeping the user never wrote, so it
+        # gets no position at all, as CPython's does.  Giving it the handler's
+        # line made the tracer replay the `except*` line, and the handler body
+        # line with it, for an exception that matched no handler.
+        self.no_position_info()
         self.emit_op_arg(ops.LIST_APPEND, 1)
         self.emit_op(ops.PREP_RERAISE_STAR)
         self.emit_op(ops.DUP_TOP)
@@ -1263,8 +1286,6 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         self.emit_jump(ops.JUMP_FORWARD, end)
 
         self.use_next_block(reraise_block)
-        if handler is not None:
-            self.update_position(handler)
         self.pop_frame_block(F_EXCEPTION_GROUP_HANDLER, None)
         # pypy difference: get rid of exception
         self.emit_op(ops.ROT_TWO)
@@ -1500,6 +1521,12 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         witem = wih.items[pos]
         assert isinstance(witem, ast.withitem)
         witem.context_expr.walkabout(self)
+        # PEP 657: every instruction belonging to *this* context manager --
+        # the __enter__ call, both __exit__ calls, the cleanup handler --
+        # carries the position of the context manager expression, not that of
+        # the whole `with` statement, whose span covers the body too.  Same as
+        # compiler_with()/compiler_async_with() in CPython's compile.c.
+        self.update_position(witem.context_expr)
         if not is_async:
             self.emit_jump(ops.SETUP_WITH, cleanup)
             fblock_kind = F_WITH
@@ -1526,7 +1553,7 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         self.emit_op(ops.POP_BLOCK)
         self.pop_frame_block(fblock_kind, body_block)
 
-        self.update_position(wih)
+        self.update_position(witem.context_expr)
         # end of body, successful outcome, start cleanup
         self.call_exit_with_nones()
         if is_async:
@@ -1539,7 +1566,7 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
 
         # exceptional outcome
         self.use_next_block(cleanup)
-        self.update_position(wih)
+        self.update_position(witem.context_expr)
         self.emit_op(ops.WITH_EXCEPT_START)
         if is_async:
             self.emit_op_arg(ops.GET_AWAITABLE, 2)
