@@ -5012,39 +5012,39 @@ class PythonParser(Parser):
         return None
 
     def invalid_parameters(self): # type Optional[NoReturn]
-        # invalid_parameters: slash_no_default? param_no_default* invalid_parameters_helper param_no_default | param_no_default* '(' param_no_default+ ','? ')' | "/" ',' | (slash_no_default | slash_with_default) param_maybe_default* '/' | [(slash_no_default | slash_with_default)] param_maybe_default* '*' (',' | param_no_default) param_maybe_default* '/' | param_maybe_default+ '/' '*'
+        # invalid_parameters: "/" ',' | (slash_no_default | slash_with_default) param_maybe_default* '/' | slash_no_default? param_no_default* invalid_parameters_helper param_no_default | param_no_default* '(' param_no_default+ ','? ')' | [(slash_no_default | slash_with_default)] param_maybe_default* '*' (',' | param_no_default) param_maybe_default* '/' | param_maybe_default+ '/' '*'
         mark = self._index
         if self._verbose: log_start(self, 'invalid_parameters')
-        opt = self.slash_no_default()
-        _loop0_171 = self._loop0_171()
-        invalid_parameters_helper = self.invalid_parameters_helper()
-        if invalid_parameters_helper:
-            a = self.param_no_default()
-            if a:
-                return self . raise_syntax_error_known_location ( "parameter without a default follows parameter with a default" , a )
-        self._index = mark
-        _loop0_172 = self._loop0_172()
-        a = self.expect_type(10)
-        if a:
-            _loop1_173 = self._loop1_173()
-            if _loop1_173:
-                opt = self.expect_type(15)
-                b = self.expect_type(11)
-                if b:
-                    return self . raise_syntax_error_known_range ( "Function parameters cannot be parenthesized" , a , b )
-        self._index = mark
         a = self.expect("/")
         if a:
             literal = self.expect_type(15)
             if literal:
                 return self . raise_syntax_error_known_location ( "at least one argument must precede /" , a )
         self._index = mark
-        _tmp_174 = self._tmp_174()
-        if _tmp_174:
-            _loop0_175 = self._loop0_175()
+        _tmp_171 = self._tmp_171()
+        if _tmp_171:
+            _loop0_172 = self._loop0_172()
             a = self.expect_type(20)
             if a:
                 return self . raise_syntax_error_known_location ( "/ may appear only once" , a )
+        self._index = mark
+        opt = self.slash_no_default()
+        _loop0_173 = self._loop0_173()
+        invalid_parameters_helper = self.invalid_parameters_helper()
+        if invalid_parameters_helper:
+            a = self.param_no_default()
+            if a:
+                return self . raise_syntax_error_known_location ( "parameter without a default follows parameter with a default" , a )
+        self._index = mark
+        _loop0_174 = self._loop0_174()
+        a = self.expect_type(10)
+        if a:
+            _loop1_175 = self._loop1_175()
+            if _loop1_175:
+                opt = self.expect_type(15)
+                b = self.expect_type(11)
+                if b:
+                    return self . raise_syntax_error_known_range ( "Function parameters cannot be parenthesized" , a , b )
         self._index = mark
         opt = self._tmp_176()
         _loop0_177 = self._loop0_177()
@@ -8503,52 +8503,10 @@ class PythonParser(Parser):
         self._index = mark
         return None
 
-    def _loop0_171(self): # type Optional[Any]
-        # _loop0_171: param_no_default
+    def _tmp_171(self): # type Optional[Any]
+        # _tmp_171: slash_no_default | slash_with_default
         mark = self._index
-        if self._verbose: log_start(self, '_loop0_171')
-        children = []
-        while True:
-            param_no_default = self.param_no_default()
-            if not param_no_default:
-                break
-            children.append(param_no_default)
-            mark = self._index
-        self._index = mark
-        return children
-
-    def _loop0_172(self): # type Optional[Any]
-        # _loop0_172: param_no_default
-        mark = self._index
-        if self._verbose: log_start(self, '_loop0_172')
-        children = []
-        while True:
-            param_no_default = self.param_no_default()
-            if not param_no_default:
-                break
-            children.append(param_no_default)
-            mark = self._index
-        self._index = mark
-        return children
-
-    def _loop1_173(self): # type Optional[Any]
-        # _loop1_173: param_no_default
-        mark = self._index
-        if self._verbose: log_start(self, '_loop1_173')
-        children = []
-        while True:
-            param_no_default = self.param_no_default()
-            if not param_no_default:
-                break
-            children.append(param_no_default)
-            mark = self._index
-        self._index = mark
-        return children
-
-    def _tmp_174(self): # type Optional[Any]
-        # _tmp_174: slash_no_default | slash_with_default
-        mark = self._index
-        if self._verbose: log_start(self, '_tmp_174')
+        if self._verbose: log_start(self, '_tmp_171')
         slash_no_default = self.slash_no_default()
         if slash_no_default:
             return slash_no_default
@@ -8559,16 +8517,58 @@ class PythonParser(Parser):
         self._index = mark
         return None
 
-    def _loop0_175(self): # type Optional[Any]
-        # _loop0_175: param_maybe_default
+    def _loop0_172(self): # type Optional[Any]
+        # _loop0_172: param_maybe_default
         mark = self._index
-        if self._verbose: log_start(self, '_loop0_175')
+        if self._verbose: log_start(self, '_loop0_172')
         children = []
         while True:
             param_maybe_default = self.param_maybe_default()
             if not param_maybe_default:
                 break
             children.append(param_maybe_default)
+            mark = self._index
+        self._index = mark
+        return children
+
+    def _loop0_173(self): # type Optional[Any]
+        # _loop0_173: param_no_default
+        mark = self._index
+        if self._verbose: log_start(self, '_loop0_173')
+        children = []
+        while True:
+            param_no_default = self.param_no_default()
+            if not param_no_default:
+                break
+            children.append(param_no_default)
+            mark = self._index
+        self._index = mark
+        return children
+
+    def _loop0_174(self): # type Optional[Any]
+        # _loop0_174: param_no_default
+        mark = self._index
+        if self._verbose: log_start(self, '_loop0_174')
+        children = []
+        while True:
+            param_no_default = self.param_no_default()
+            if not param_no_default:
+                break
+            children.append(param_no_default)
+            mark = self._index
+        self._index = mark
+        return children
+
+    def _loop1_175(self): # type Optional[Any]
+        # _loop1_175: param_no_default
+        mark = self._index
+        if self._verbose: log_start(self, '_loop1_175')
+        children = []
+        while True:
+            param_no_default = self.param_no_default()
+            if not param_no_default:
+                break
+            children.append(param_no_default)
             mark = self._index
         self._index = mark
         return children
