@@ -5877,7 +5877,7 @@ class PythonParser(Parser):
         return None
 
     def invalid_def_raw(self): # type Optional[NoReturn]
-        # invalid_def_raw: ASYNC? 'def' NAME '(' params? ')' ['->' expression] ':' NEWLINE !INDENT
+        # invalid_def_raw: ASYNC? 'def' NAME type_params? '(' params? ')' ['->' expression] ':' NEWLINE !INDENT
         mark = self._index
         if self._verbose: log_start(self, 'invalid_def_raw')
         opt = self.expect_type(62)
@@ -5885,12 +5885,13 @@ class PythonParser(Parser):
         if a:
             name = self.name()
             if name:
+                opt_1 = self.type_params()
                 literal = self.expect_type(10)
                 if literal:
-                    opt_1 = self.params()
+                    opt_2 = self.params()
                     literal_1 = self.expect_type(11)
                     if literal_1:
-                        opt_2 = self._tmp_231()
+                        opt_3 = self._tmp_231()
                         literal_2 = self.expect_type(14)
                         if literal_2:
                             _newline = self.expect_type(4)
@@ -5901,14 +5902,15 @@ class PythonParser(Parser):
         return None
 
     def invalid_class_def_raw(self): # type Optional[NoReturn]
-        # invalid_class_def_raw: 'class' NAME ['(' arguments? ')'] NEWLINE | 'class' NAME ['(' arguments? ')'] ':' NEWLINE !INDENT
+        # invalid_class_def_raw: 'class' NAME type_params? ['(' arguments? ')'] NEWLINE | 'class' NAME type_params? ['(' arguments? ')'] ':' NEWLINE !INDENT
         mark = self._index
         if self._verbose: log_start(self, 'invalid_class_def_raw')
         literal = self.expect_type(514)
         if literal:
             name = self.name()
             if name:
-                opt = self._tmp_232()
+                opt = self.type_params()
+                opt_1 = self._tmp_232()
                 n = self.expect_type(4)
                 if n:
                     return self . raise_syntax_error_known_location ( "expected ':'" , n )
@@ -5917,7 +5919,8 @@ class PythonParser(Parser):
         if a:
             name = self.name()
             if name:
-                opt = self._tmp_233()
+                opt = self.type_params()
+                opt_1 = self._tmp_233()
                 literal = self.expect_type(14)
                 if literal:
                     _newline = self.expect_type(4)
