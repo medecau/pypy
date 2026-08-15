@@ -3009,12 +3009,6 @@ class TestEdgeCases(unittest.TestCase):
         self.addCleanup(sys.settrace, sys.gettrace())
         sys.settrace(None)
 
-    @support.impl_detail(
-        "the assertion depends on refcounting: sys.settrace(foo) has to drop "
-        "the last reference to the A() instance and run its __del__ -- which "
-        "reinstalls the tracer -- before settrace returns. PyPy's GC "
-        "finalizes later, so bar is never installed",
-        pypy=False)
     def test_reentrancy(self):
         def foo(*args):
             ...
