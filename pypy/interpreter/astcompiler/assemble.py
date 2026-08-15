@@ -827,18 +827,6 @@ class PythonCodeMaker(ast.ASTVisitor):
                 # path leading to automatically inserted return or reraise,
                 # without line number
 
-                if (target.marked >> 1) <= 1:
-                    # CPython only duplicates an exit block that has more than
-                    # one predecessor; a jump-target exit reached from exactly
-                    # one place is left alone and keeps NO_LOCATION, which is
-                    # what makes f_lineno None once the frame has ended (a
-                    # function whose last statement is a try/except* is the
-                    # case that shows it).  Inlining it here would append it
-                    # to a block that does have a line, and
-                    # propagate_positions() would then hand that line to the
-                    # return.
-                    continue
-
                 # if it's an unconditional jump, duplicate it
                 if op.opcode in (ops.JUMP_FORWARD, ops.JUMP_ABSOLUTE):
                     assert block.cant_add_instructions
