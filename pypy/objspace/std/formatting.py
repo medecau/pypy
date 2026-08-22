@@ -542,9 +542,7 @@ def make_formatter_subclass(do_unicode):
                 if space.isinstance_w(w_value, space.w_bytes):
                     s = space.bytes_w(w_value)
                 elif space.isinstance_w(w_value, space.w_bytearray):
-                    buf = w_value.buffer_w(space, 0)
-                    s = buf.as_str()
-                    buf.releasebuffer()
+                    s = w_value.buffer_w(space, 0).as_str()
                 else:
                     s = ''
                 if len(s) == 1:
@@ -571,9 +569,8 @@ def make_formatter_subclass(do_unicode):
                 return
             if space.isinstance_w(w_value, space.w_bytearray):
                 buf = w_value.buffer_w(space, 0)
-                s = buf.as_str()
-                buf.releasebuffer()
-                self.std_wp(s)
+                # convert the array of the buffer to a py 2 string
+                self.std_wp(buf.as_str())
                 return
 
             w_bytes_method = space.lookup(w_value, "__bytes__")
@@ -586,9 +583,8 @@ def make_formatter_subclass(do_unicode):
                 return
             if space.isinstance_w(w_value, space.w_memoryview):
                 buf = w_value.buffer_w(space, 0)
-                s = buf.as_str()
-                buf.releasebuffer()
-                self.std_wp(s)
+                # convert the array of the buffer to a py 2 string
+                self.std_wp(buf.as_str())
                 return
 
             raise oefmt(space.w_TypeError,
@@ -621,9 +617,7 @@ def format(space, w_fmt, values_w, w_valuedict, fmt_type):
     "Entry point"
     if fmt_type != FORMAT_UNICODE:
         if fmt_type == FORMAT_BYTEARRAY:
-            buf = w_fmt.buffer_w(space, 0)
-            fmt = buf.as_str()
-            buf.releasebuffer()
+            fmt = w_fmt.buffer_w(space, 0).as_str()
         else:
             fmt = space.bytes_w(w_fmt)
         formatter = StringFormatter(space, fmt, values_w, w_valuedict)

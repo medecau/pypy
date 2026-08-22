@@ -272,28 +272,6 @@ class wrap_ssizeargproc(W_PyCWrapperObject):
         index = space.int_w(space.index(w_index))
         return generic_cpy_call(space, func_target, w_self, index)
 
-def getindex(space, w_self, w_arg):
-    # like CPython's getindex: adjust a negative index by the sequence
-    # length from the sq_length slot, if present.
-    index = space.int_w(space.index(w_arg))
-    if index < 0:
-        pto = _get_ob_type(space, w_self)
-        as_sequence = pto.c_tp_as_sequence
-        if as_sequence and as_sequence.c_sq_length:
-            n = generic_cpy_call(space, as_sequence.c_sq_length, w_self)
-            if widen(n) == -1:
-                space.fromcache(State).check_and_raise_exception(always=True)
-            index += widen(n)
-    return index
-
-class wrap_sq_item(W_PyCWrapperObject):
-    def call(self, space, w_self, __args__):
-        self.check_args(__args__, 1)
-        func = self.get_func_to_call()
-        func_target = rffi.cast(ssizeargfunc, func)
-        index = getindex(space, w_self, __args__.arguments_w[0])
-        return generic_cpy_call(space, func_target, w_self, index)
-
 class wrap_sq_setitem(W_PyCWrapperObject):
     def call(self, space, w_self, __args__):
         self.check_args(__args__, 2)
@@ -301,7 +279,7 @@ class wrap_sq_setitem(W_PyCWrapperObject):
         func_target = rffi.cast(ssizeobjargproc, func)
         w_index = __args__.arguments_w[0]
         w_value = __args__.arguments_w[1]
-        index = getindex(space, w_self, w_index)
+        index = space.int_w(space.index(w_index))
         res = generic_cpy_call(space, func_target, w_self, index, w_value)
         if rffi.cast(lltype.Signed, res) == -1:
             space.fromcache(State).check_and_raise_exception(always=True)
@@ -312,7 +290,7 @@ class wrap_sq_delitem(W_PyCWrapperObject):
         func = self.get_func_to_call()
         func_target = rffi.cast(ssizeobjargproc, func)
         w_index = __args__.arguments_w[0]
-        index = getindex(space, w_self, w_index)
+        index = space.int_w(space.index(w_index))
         null = rffi.cast(PyObject, 0)
         res = generic_cpy_call(space, func_target, w_self, index, null)
         if rffi.cast(lltype.Signed, res) == -1:
@@ -426,22 +404,7 @@ class wrap_getbuffer(W_PyCWrapperObject):
                                 needs_decref=True,
                                 releasebufferproc = rbp)
             fq.register_finalizer(buf)
-            return buf.wrap(space, owns_export=True)
-
-
-class wrap_releasebuffer(W_PyCWrapperObject):
-    def call(self, space, w_self, __args__):
-        self.check_args(__args__, 1)
-        w_view = __args__.arguments_w[0]
-        if not space.isinstance_w(w_view, space.w_memoryview):
-            raise oefmt(space.w_TypeError, "expected a memoryview object")
-        # w_get_obj() itself raises ValueError if w_view was already
-        # released, matching bytearray's descr_releasebuffer.
-        if w_view.w_get_obj(space) is not w_self:
-            raise oefmt(space.w_ValueError,
-                "memoryview's buffer is not this object")
-        w_view.descr_release(space)
-        return space.w_None
+            return buf.wrap(space)
 
 def get_richcmp_func(OP_CONST):
     class wrap_richcmp(W_PyCWrapperObject):
@@ -792,23 +755,16 @@ def make_bf_getbuffer(space, typedef, name, attr):
 @slot_factory('tp_as_buffer.c_bf_releasebuffer')
 def make_bf_releasebuffer(space, typedef, name, attr):
     w_type = space.gettypeobject(typedef)
-    name = 'bf_releasebuffer'
-    if space.is_w(w_type, space.w_bytearray):
-        # Native _exports tracking, independent of any __release_buffer__
-        # override a Python subclass may add.
-        @slot_function([PyObject, Py_bufferP], lltype.Void, error=CANNOT_FAIL)
-        @func_renamer("cpyext_%s_%s" % (name, typedef.name))
-        def slot_bf_releasebuffer(space, w_self, view):
-            w_self._release_buffer_w()
-        return slot_bf_releasebuffer
     release_fn = w_type.lookup('__release_buffer__')
     if release_fn is None:
         return None
+    name = 'bf_releasebuffer'
     @slot_function([PyObject, Py_bufferP], lltype.Void, error=CANNOT_FAIL)
     @func_renamer("cpyext_%s_%s" % (name, typedef.name))
     def slot_bf_releasebuffer(space, w_self, view):
-        # The slot returns void; discard the return value of __release_buffer__.
-        space.call_function(release_fn, w_self, space.w_None)
+        return
+        # XXX call this
+        # return space.call_function(release_fn, w_self, view)
     return slot_bf_releasebuffer
 
 @slot_factory('tp_descr_get')
@@ -1150,7 +1106,7 @@ static slotdef slotdefs[] = {
            "__mul__($self, value, /)\n--\n\nReturn self*value.n"),
     SQSLOT("__rmul__", sq_repeat, NULL, wrap_ssizeargproc,
            "__rmul__($self, value, /)\n--\n\nReturn self*value."),
-    SQSLOT("__getitem__", sq_item, slot_sq_item, wrap_sq_item,
+    SQSLOT("__getitem__", sq_item, slot_sq_item, wrap_ssizeargproc,
            "__getitem__($self, key, /)\n--\n\nReturn self[key]."),
     SQSLOT("__setitem__", sq_ass_item, slot_sq_ass_item, wrap_sq_setitem,
            "__setitem__($self, key, value, /)\n--\n\nSet self[key] to value."),
@@ -1190,7 +1146,7 @@ slotdefs = eval(slotdefs_str)
 # PyPy addition, was added to CPython 3.12
 slotdefs += (
     TPSLOT("__buffer__", "tp_as_buffer.c_bf_getbuffer", "slot_bf_getbuffer", "wrap_getbuffer", ""),
-    TPSLOT("__release_buffer__", "tp_as_buffer.c_bf_releasebuffer", "slot_bf_releasebuffer", "wrap_releasebuffer", ""),
+    TPSLOT("__release_buffer__", "tp_as_buffer.c_bf_releasebuffer", "slot_bf_releasebuffer", None, ""),
 )
 
 # partial sort to solve some slot conflicts:

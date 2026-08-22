@@ -6,7 +6,6 @@ from rpython.rlib.objectmodel import (
 from rpython.rlib.rstring import StringBuilder
 
 from pypy.interpreter.baseobjspace import W_Root
-from pypy.interpreter.py_buffer import W_BufferExporter
 from pypy.interpreter.buffer import SimpleView, StringBuffer
 from pypy.interpreter.error import OperationError, oefmt
 from pypy.interpreter.gateway import (
@@ -18,7 +17,7 @@ from pypy.objspace.std.formatting import mod_format, FORMAT_BYTES
 from pypy.objspace.std.unicodeobject import (encode_object, getdefaultencoding,
            decode_object)
 
-class W_AbstractBytesObject(W_BufferExporter):
+class W_AbstractBytesObject(W_Root):
     __slots__ = ()
     exact_class_applevel_name = 'bytes'
 
@@ -454,11 +453,6 @@ class W_BytesObject(W_AbstractBytesObject):
         space.check_buf_flags(flags, True)
         return SimpleView(StringBuffer(self._value), w_obj=self)
 
-    def bf_getbuffer(self, space, view, flags):
-        from pypy.interpreter.py_buffer import fill_py_buffer_1d
-        space.check_buf_flags(flags, True)
-        fill_py_buffer_1d(view, self, StringBuffer(self._value), readonly=True)
-
     def descr_getbuffer(self, space, w_flags):
         #from pypy.objspace.std.bufferobject import W_Buffer
         #return W_Buffer(StringBuffer(self._value))
@@ -503,10 +497,7 @@ class W_BytesObject(W_AbstractBytesObject):
         except OperationError as e:
             if not e.match(space, space.w_TypeError):
                 raise
-        buf = space.buffer_w(w_other, space.BUF_SIMPLE)
-        result = buf.as_str()
-        buf.releasebuffer()
-        return result
+        return space.buffer_w(w_other, space.BUF_SIMPLE).as_str()
 
     def _chr(self, char):
         assert len(char) == 1
@@ -833,9 +824,7 @@ def _convert_from_buffer_or_iterable(space, w_source):
         if not e.match(space, space.w_TypeError):
             raise
     else:
-        result = buf.as_str()
-        buf.releasebuffer()
-        return result
+        return buf.as_str()
 
     if space.isinstance_w(w_source, space.w_unicode):
         raise oefmt(space.w_TypeError,

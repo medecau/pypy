@@ -2,11 +2,10 @@ from rpython.rlib.rstruct.error import StructError
 from rpython.rlib.buffer import StringBuffer, SubBuffer, RawBuffer
 from rpython.rlib.mutbuffer import MutableStringBuffer
 
-from pypy.interpreter.error import oefmt, OperationError
+from pypy.interpreter.error import oefmt
 
 class BufferInterfaceNotFound(Exception):
     pass
-
 
 
 class BufferView(object):
@@ -71,15 +70,15 @@ class BufferView(object):
     def releasebuffer(self):
         pass
 
-    # tip's pyopcode.source_as_str uses "with buf: source = buf.as_str()",
-    # so BufferView has to be a context manager.
+    # Upstream's BufferView is a context manager (their PEP 688 refactor) and
+    # tip's pyopcode.source_as_str relies on it: "with buf: source = ...".
+    # releasebuffer() already exists here and is a no-op by default, so this
+    # is just the wrapper, not a change in release semantics.
     def __enter__(self):
         return self
 
     def __exit__(self, exctype, excvalue, exctb):
         self.releasebuffer()
-
-    def needs_release(self):
         return False
 
     def value_from_bytes(self, space, s):
@@ -199,8 +198,8 @@ class BufferView(object):
 
         return space.newlist(items)
 
-    def wrap(self, space, owns_export=True):
-        return space.newmemoryview(self, owns_export=owns_export)
+    def wrap(self, space):
+        return space.newmemoryview(self)
 
 
 class RawBufferView_Base(BufferView):
@@ -229,12 +228,6 @@ class RawBufferView_Base(BufferView):
     def as_writebuf(self):
         assert not self.data.readonly
         return self.data
-
-    def releasebuffer(self):
-        self.data.releasebuffer()
-
-    def needs_release(self):
-        return self.data.needs_release()
 
 
 class RawBufferView(RawBufferView_Base):
@@ -400,18 +393,6 @@ class BufferSlice(BufferView):
     def w_getitem(self, space, idx):
         return self.parent.w_getitem(space, self.parent_index(idx))
 
-    def as_readbuf(self):
-        if self.step == 1:
-            byte_offset = self.start * self.parent.getstrides()[0]
-            return SubBuffer(self.parent.as_readbuf(), byte_offset, self.getlength())
-        return StringBuffer(self.as_str())
-
-    def as_writebuf(self):
-        if self.step != 1:
-            raise BufferInterfaceNotFound
-        byte_offset = self.start * self.parent.getstrides()[0]
-        return SubBuffer(self.parent.as_writebuf(), byte_offset, self.getlength())
-
     def new_slice(self, start, step, slicelength):
         real_start = start + self.start
         real_step = self.step * step
@@ -475,117 +456,4 @@ class ReadonlyWrapper(BufferView):
 
     def new_slice(self, start, step, slicelength):
         return ReadonlyWrapper(BufferSlice(self, start, step, slicelength, w_obj=self.w_obj))
-
-
-class NonOwningReleaseView(BufferView):
-    """Wraps a BufferView but with a no-op releasebuffer.
-
-    Used when handing out a BufferView from an object that already owns
-    the underlying export (e.g. memoryview(bytearray) returning its
-    internal view).  The memoryview's own finalizer is responsible for
-    calling releasebuffer on the wrapped view exactly once; callers that
-    go through buffer_w must not also decrement the shared _exports
-    counter.
-    """
-    _immutable_ = True
-
-    def __init__(self, view):
-        self.view = view
-        self.readonly = view.readonly
-        self.w_obj = view.w_obj
-
-    def getlength(self):
-        return self.view.getlength()
-
-    def as_str(self):
-        return self.view.as_str()
-
-    def getbytes(self, start, size):
-        return self.view.getbytes(start, size)
-
-    def setbytes(self, start, string):
-        return self.view.setbytes(start, string)
-
-    def get_raw_address(self):
-        return self.view.get_raw_address()
-
-    def as_readbuf(self):
-        return self.view.as_readbuf()
-
-    def as_writebuf(self):
-        return self.view.as_writebuf()
-
-    def getformat(self):
-        return self.view.getformat()
-
-    def getitemsize(self):
-        return self.view.getitemsize()
-
-    def getndim(self):
-        return self.view.getndim()
-
-    def getshape(self):
-        return self.view.getshape()
-
-    def getstrides(self):
-        return self.view.getstrides()
-
-    def releasebuffer(self):
-        # no-op: the owning memoryview is responsible for releasing.
-        pass
-
-    def new_slice(self, start, step, slicelength):
-        return NonOwningReleaseView(self.view.new_slice(start, step, slicelength))
-
-
-class DunderReleaseView(NonOwningReleaseView):
-    """Wraps the BufferView obtained from a memoryview returned by a
-    Python-level __buffer__ override (PEP 688).  On release:
-
-    1. Notifies: calls the exporter's __release_buffer__(mv), passing
-       back the same memoryview that __buffer__ returned.  w_base_type
-       (may be None) is the builtin type, if any, that provides a
-       *default* __release_buffer__ for this exporter (e.g. bytearray);
-       CPython only invokes __release_buffer__ when it resolves to a
-       genuine Python-level override below that builtin, since calling a
-       builtin's own default automatically (nothing was actually
-       overridden) would wrongly complain about an unrelated buffer
-       whenever only __buffer__ was overridden to return something else.
-       w_base_type=None (the generic case, e.g. plain objects) always
-       invokes whatever is found.
-    2. Force-releases mv, but only when it genuinely wraps the exporter's
-       own buffer (mv.obj is w_exporter): CPython does this regardless of
-       what step 1's __release_buffer__ override did (even if it never
-       calls super()), so a builtin exporter's own invariants (e.g.
-       bytearray's resize lock) stay balanced.  When mv wraps something
-       else entirely, nothing is force-released -- the exporter/override
-       is fully responsible for that buffer's lifetime.
-    """
-    _immutable_ = True
-
-    def __init__(self, view, space, w_exporter, w_mv, w_base_type=None):
-        NonOwningReleaseView.__init__(self, view)
-        self.space = space
-        self.w_exporter = w_exporter
-        self.w_mv = w_mv
-        self.w_base_type = w_base_type
-
-    def releasebuffer(self):
-        space = self.space
-        w_exporter = self.w_exporter
-        w_mv = self.w_mv
-        w_impl = space.lookup(w_exporter, '__release_buffer__')
-        if w_impl is not None:
-            if (self.w_base_type is None or
-                    space.is_overloaded(w_exporter, self.w_base_type,
-                                        '__release_buffer__')):
-                space.get_and_call_function(w_impl, w_exporter, w_mv)
-        try:
-            owns_match = space.getattr(w_mv, space.newtext('obj')) is w_exporter
-        except OperationError as e:
-            if not e.match(space, space.w_ValueError):
-                raise
-            owns_match = False
-        if owns_match:
-            space.call_method(w_mv, 'release')
 

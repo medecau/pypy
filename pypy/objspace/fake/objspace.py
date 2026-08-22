@@ -14,14 +14,13 @@ from rpython.translator.c.genc import CStandaloneBuilder
 from pypy.tool.option import make_config
 from pypy.interpreter import argument, gateway
 from pypy.interpreter.baseobjspace import W_Root, ObjSpace, SpaceCache
-from pypy.interpreter.py_buffer import W_BufferExporter
 from pypy.interpreter.buffer import StringBuffer, SimpleView
 from pypy.interpreter.mixedmodule import MixedModule
 from pypy.interpreter.typedef import TypeDef, GetSetProperty
 from pypy.objspace.std.sliceobject import W_SliceObject
 
 
-class W_MyObject(W_BufferExporter):
+class W_MyObject(W_Root):
     typedef = None
 
     def getdict(self, space):
@@ -48,10 +47,6 @@ class W_MyObject(W_BufferExporter):
 
     def buffer_w(self, space, flags):
         return SimpleView(StringBuffer("foobar"), w_obj=self)
-
-    def bf_getbuffer(self, space, view, flags):
-        from pypy.interpreter.py_buffer import fill_py_buffer_1d
-        fill_py_buffer_1d(view, self, StringBuffer("foobar"), readonly=True)
 
     def text_w(self, space):
         return NonConstant("foobar")
@@ -269,7 +264,7 @@ class FakeObjSpace(ObjSpace):
     def newseqiter(self, x):
         return w_some_obj()
 
-    def newmemoryview(self, x, owns_export=True):
+    def newmemoryview(self, x):
         return w_some_obj()
 
     @not_rpython
