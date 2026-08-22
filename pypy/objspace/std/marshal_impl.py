@@ -105,19 +105,20 @@ def marshal(space, w_obj, m):
 
     # any unknown object implementing the buffer protocol is
     # accepted and encoded as a plain string
-    from pypy.interpreter.py_buffer import py_buffer_as_str
+    # NB: upstream uses space.acquire_py_buffer()/py_buffer_as_str() here,
+    # from pypy/interpreter/py_buffer.py.  That module and the two space
+    # methods are part of their PEP 688 buffer refactor (49db7e2b), which
+    # arrives at its own step of this merge series; until then, keep our
+    # readbuf_w() form.
     try:
-        view = space.acquire_py_buffer(w_obj, space.BUF_SIMPLE)
+        s = space.readbuf_w(w_obj)
     except OperationError as e:
         if e.match(space, space.w_TypeError):
             raise oefmt(space.w_ValueError, "unmarshallable object")
         raise
-    try:
-        typecode = write_ref(TYPE_STRING, w_obj, m)
-        if typecode != FLAG_DONE:
-            m.atom_str(typecode, py_buffer_as_str(view))
-    finally:
-        space.release_py_buffer(view)
+    typecode = write_ref(TYPE_STRING, w_obj, m)
+    if typecode != FLAG_DONE:
+        m.atom_str(typecode, s.as_str())
 
 
 @marshaller(W_NoneObject)
