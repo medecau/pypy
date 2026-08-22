@@ -265,12 +265,15 @@ def test_parseerror_lineno():
     assert excinfo.value.msg == emsg
 
 def test_multiline_fstring_error_lineno():
-    # An error in a multi-line f-string should report end_lineno as lineno,
-    # and text should be only the end line (not the full multi-line span).
+    # Under PEP 701 tokenization the error is reported where the offending
+    # replacement field actually is -- line 1 here, not the end line -- and
+    # text is only that line.  Checked against CPython 3.13:
+    #   lineno=1, msg="f-string: valid expression required before '}'",
+    #   text='f"""{}\n'
     with raises(SyntaxError) as excinfo:
         eval('f"""{}\nfoo"""')
-    assert excinfo.value.lineno == 2
-    assert excinfo.value.msg == "f-string: empty expression not allowed"
+    assert excinfo.value.lineno == 1
+    assert excinfo.value.msg == "f-string: valid expression required before '}'"
     assert excinfo.value.text is not None
     assert '\n' not in excinfo.value.text.rstrip('\n')  # single line
 
@@ -427,4 +430,6 @@ def test_empty_expression_closing_brace():
     for s in ["f'{}'", "f'{ }'", "f' {} '"]:
         with raises(SyntaxError) as info:
             eval(s)
-        assert str(info.value).startswith("f-string: empty expression not allowed")
+        # 3.12 wording; 3.11 said "f-string: empty expression not allowed"
+        assert str(info.value).startswith(
+            "f-string: valid expression required before '}'")

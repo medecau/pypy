@@ -1008,7 +1008,9 @@ class AppTestTypeObject:
         assert Abc.__name__ == 'Def'
         raises(TypeError, "Abc.__name__ = 42")
         raises(TypeError, "Abc.__name__ = b'A'")
-        raises(UnicodeEncodeError, "Abc.__name__ = 'A\udcdcB'")
+        # pass the surrogate as a value, not as source text: compiling it
+        # would now fail in the tokenizer's UTF-8 check first
+        raises(UnicodeEncodeError, setattr, Abc, '__name__', 'A\udcdcB')
         for v, err in [('G\x00hi', "type name must not contain null characters"),
                        ]:
             try:
