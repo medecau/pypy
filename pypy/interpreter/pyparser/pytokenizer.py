@@ -1324,6 +1324,13 @@ def _maybe_raise_invalid_float_exponent(line, lnum, pos, max, token_list):
         i += 1
     else:
         sign_pos = -1
+        if i < max and potential_identifier_char(line[i]):
+            # Not an exponent at all: "1else" is the number 1 followed by a
+            # keyword, which CPython accepts with a SyntaxWarning.  Leave it
+            # to the number-followed-by-name logic further down, which warns
+            # for the keywords and still raises "invalid decimal literal"
+            # for anything else (1eX, 1e_5).
+            return
     if i < max and line[i] in NUMCHARS:
         return  # valid exponent
     err_pos = sign_pos if sign_pos >= 0 else i - 1
