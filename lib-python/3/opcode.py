@@ -256,8 +256,8 @@ hasfree.append(139)
 # jrel_op('JUMP_BACKWARD', 140)    # Number of words to skip (backwards)
 # name_op('LOAD_SUPER_ATTR', 141)
 def_op('CALL_FUNCTION_EX', 142)  # Flags
-def_op('LOAD_FAST_AND_CLEAR', 143)  # Local variable number  # PEP 709
-haslocal.append(143)
+# def_op('LOAD_FAST_AND_CLEAR', 143)  # Local variable number
+# haslocal.append(143)
 
 def_op('EXTENDED_ARG', 144)
 EXTENDED_ARG = 144
@@ -302,11 +302,6 @@ hasfree.append(176)
 def_op('BUILD_LIST_FROM_ARG', 203)
 def_op('CALL_METHOD_KW', 204)
 def_op('LOAD_REVDB_VAR', 205)         # reverse debugger (syntax example: $5)
-# PEP 709's save/restore counterpart.  CPython has this as a pseudo-op that
-# the compiler rewrites to STORE_FAST, because its stack can hold NULL; ours
-# cannot, so it has to be a real opcode with its own maybe-None handler.
-def_op('STORE_FAST_MAYBE_NULL', 206)
-haslocal.append(206)
 
 # Instrumented instructions
 MIN_INSTRUMENTED_OPCODE = 237
@@ -351,7 +346,7 @@ pseudo_op('LOAD_SUPER_METHOD', 263, ['LOAD_SUPER_ATTR'])
 pseudo_op('LOAD_ZERO_SUPER_METHOD', 264, ['LOAD_SUPER_ATTR'])
 pseudo_op('LOAD_ZERO_SUPER_ATTR', 265, ['LOAD_SUPER_ATTR'])
 
-# STORE_FAST_MAYBE_NULL is a real opcode here, not a pseudo-op -- see above.
+pseudo_op('STORE_FAST_MAYBE_NULL', 266, ['STORE_FAST'])
 
 MAX_PSEUDO_OPCODE = MIN_PSEUDO_OPCODE + len(_pseudo_ops) - 1
 
