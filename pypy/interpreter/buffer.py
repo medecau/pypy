@@ -70,6 +70,17 @@ class BufferView(object):
     def releasebuffer(self):
         pass
 
+    # Upstream's BufferView is a context manager (their PEP 688 refactor) and
+    # tip's pyopcode.source_as_str relies on it: "with buf: source = ...".
+    # releasebuffer() already exists here and is a no-op by default, so this
+    # is just the wrapper, not a change in release semantics.
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exctype, excvalue, exctb):
+        self.releasebuffer()
+        return False
+
     def value_from_bytes(self, space, s):
         from pypy.module.struct.formatiterator import UnpackFormatIterator
         buf = StringBuffer(s)
