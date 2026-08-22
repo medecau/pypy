@@ -229,14 +229,15 @@ def fork_exec(space, w_process_args, w_executable_list,
                                      len(groups_w), flavor='raw')
             for i, w_group in enumerate(groups_w):
                 try:
-                    gid_value = space.c_uid_t_w(w_group)
+                    gid_val = space.int_w(w_group)
                 except OperationError as e:
-                    if not e.match(space, space.w_OverflowError):
-                        raise
-                    # CPython turns a failed gid conversion into
-                    # ValueError("invalid group id") (_posixsubprocess.c)
-                    raise oefmt(space.w_ValueError, "invalid group id")
-                l_groups[i] = rffi.cast(gid_t, gid_value)
+                    if e.match(space, space.w_OverflowError):
+                        raise oefmt(space.w_ValueError,
+                                    "group id is greater than maximum")
+                    raise
+                if gid_val < 0:
+                    raise oefmt(space.w_ValueError, "group id is negative")
+                l_groups[i] = rffi.cast(gid_t, gid_val)
             num_groups = len(groups_w)
             call_setgroups = 1
 

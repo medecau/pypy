@@ -271,6 +271,35 @@ class AbstractAttribute(object):
     def __repr__(self):
         return self.repr()
 
+    def view(self):
+        from dotviewer import graphclient
+        import pytest
+        from rpython.translator.tool.make_dot import DotGen
+        dotgen = DotGen('resop')
+        seen = set()
+        self._dot(dotgen, seen, color="green")
+        p = pytest.ensuretemp("mapdict").join("temp.dot")
+        p.write(dotgen.generate(target=None))
+        graphclient.display_dot_file(str(p))
+
+    def _dotlabel(self):
+        return [self.__class__.__name__]
+
+    def _dot(self, dotgen, seen, color="white"):
+        if self in seen:
+            return
+        seen.add(self)
+        dotgen.emit_node(str(id(self)), shape="box", label="\\l".join(self._dotlabel() + ['']), fillcolor=color)
+        if hasattr(self, 'back'):
+            dotgen.emit_edge(str(id(self)), str(id(self.back)), "back")
+            self.back._dot(dotgen, seen)
+        if self.cache_attrs is None:
+            return
+        for (attrname, kind), holder in self.cache_attrs.iteritems():
+            label = [attrname, attrkind_name(kind), str(holder.typ)]
+            dotgen.emit_edge(str(id(self)), str(id(holder.attr)), " ".join(label))
+            holder.attr._dot(dotgen, seen)
+
 
 class Terminator(AbstractAttribute):
     _immutable_fields_ = ['w_cls', 'allow_unboxing?']
@@ -314,6 +343,12 @@ class Terminator(AbstractAttribute):
 
     def remove_dict_entries(self, obj):
         return self.copy(obj)
+
+    def _dotlabel(self):
+        res = [self.__class__.__name__, str(self.w_cls)]
+        if self.allow_unboxing:
+            res.append("allow unboxing")
+        return res
 
     def repr(self):
         return "<%s w_cls=%s>" % (self.__class__.__name__, self.w_cls)
@@ -478,6 +513,14 @@ class PlainAttribute(AbstractAttribute):
         if self.attrkind != DICT:
             self._copy_attr(obj, new_obj)
         return new_obj
+
+    def _dotlabel(self):
+        res = [self.name, attrkind_name(self.attrkind),
+               "order: %s" % self.order,
+               "storage index: %s" % self.storageindex]
+        if not self.ever_mutated:
+            res.append("immutable")
+        return res
 
     def repr(self):
         return "<PlainAttribute %s %s %s%s %s>" % (
@@ -934,7 +977,7 @@ class ObjectWithoutDict(W_Root):
 
 class Object(W_Root):
     # used for tests, and to have a fake object that can be used to back
-    # instance dictionaries
+    # instance dictionaries. also for the result of delete, copy, etc
     objectmodel.import_from_mixin(MapdictStorageMixin)
 
 _share_methods(BaseUserClassMapdict, Object)
@@ -1472,7 +1515,8 @@ def LOAD_ATTR_slowpath(pycode, w_obj, nameindex, map):
                 # we have a data descriptor, which means the dictionary value
                 # (if any) has no relevance.
                 from pypy.interpreter.typedef import Member
-                if isinstance(w_descr, Member):    # it is a slot -- easy case
+                if isinstance(w_descr, Member) and space.issubtype_w(w_type, w_descr.w_cls):
+                    # it is a slot that belongs to this type -- easy case
                     attrname, attrkind = ("slot", SLOTS_STARTING_FROM + w_descr.index)
             elif not space.type(w_descr).is_heaptype():
                 # There is a non-data descriptor in the class. This would mean
@@ -1580,7 +1624,8 @@ def STORE_ATTR_slowpath(pycode, w_obj, nameindex, map, w_value, entry):
                 pass # we have a MutableCell in the class: give up
             elif space.is_data_descr(w_descr):
                 from pypy.interpreter.typedef import Member
-                if isinstance(w_descr, Member):    # it is a slot -- easy case
+                if isinstance(w_descr, Member) and space.issubtype_w(w_type, w_descr.w_cls):
+                    # it is a slot that belongs to this type -- easy case
                     attrname, attrkind = ("slot", SLOTS_STARTING_FROM + w_descr.index)
             if attrkind != INVALID:
                 attr = map.find_map_attr(attrname, attrkind)

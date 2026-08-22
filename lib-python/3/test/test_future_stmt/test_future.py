@@ -20,7 +20,13 @@ def get_error_location(msg):
 class FutureTest(unittest.TestCase):
 
     def check_syntax_error(self, err, basename, lineno, offset=1):
-        self.assertIn('%s.py, line %d' % (basename, lineno), str(err))
+        #PyPy change: PyPy may format multi-line spans as "lines X-Y" instead of "line X"
+        err_str = str(err)
+        self.assertTrue(
+            '%s.py, line %d' % (basename, lineno) in err_str or
+            '%s.py, lines %d-' % (basename, lineno) in err_str,
+            '%r not found in %r' % ('%s.py, line(s) %d' % (basename, lineno), err_str)
+        )
         self.assertEqual(os.path.basename(err.filename), basename + '.py')
         self.assertEqual(err.lineno, lineno)
         self.assertEqual(err.offset, offset)

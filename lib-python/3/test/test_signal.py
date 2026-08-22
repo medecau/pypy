@@ -13,7 +13,7 @@ import threading
 import time
 import unittest
 from test import support
-from test.support import os_helper
+from test.support import os_helper, cpython_only
 from test.support.script_helper import assert_python_ok, spawn_python
 from test.support import threading_helper
 try:

@@ -1,8 +1,14 @@
+import sys as _sys
 from rpython.rlib.rutf8 import Utf8StringBuilder
 from rpython.rlib.objectmodel import specialize
+from rpython.rlib.rstring import replace as rstring_replace
 from pypy.interpreter.pyparser.error import SyntaxError
 from pypy.interpreter.error import oefmt, OperationError
 from pypy.interpreter.astcompiler import ast
+
+# Large float/complex literals overflow to inf in the AST.
+# Unparse them back to this overflowing decimal literal (matches ast.unparse).
+_INFSTR = "1e" + str(_sys.float_info.max_10_exp + 1)
 
 
 PRIORITY_TUPLE = 0
@@ -91,9 +97,18 @@ class UnparseVisitor(Utf8BuilderVisitor):
             self.space.isinstance_w(node.value, self.space.w_bytes)
             or self.space.isinstance_w(node.value, self.space.w_unicode)
         ):
+            if node.kind is not None and not self.space.is_w(node.kind, self.space.w_None):
+                self.append_ascii("u")
             res = self.space.repr(node.value)
         else:
             res = self.space.str(node.value)
+            # Substitute overflow infinities with the proper decimal literal
+            # so that ast.unparse roundtrips correctly (matches CPython behavior)
+            s = self.space.text_w(res)
+            if 'inf' in s or 'nan' in s:
+                s = rstring_replace(s, "inf", _INFSTR)
+                s = rstring_replace(s, "nan", "(" + _INFSTR + "-" + _INFSTR + ")")
+                res = self.space.newtext(s)
         self.append_w_str(res)
 
     def visit_Name(self, node):
@@ -346,9 +361,10 @@ class UnparseVisitor(Utf8BuilderVisitor):
         raise SyntaxError.fromast("'yield expression' can not be used within an annotation", node)
 
     def visit_YieldFrom(self, node):
-        # 'yield from' is no more allowed in an annotation than a plain
-        # yield is (test_future_stmt test_annotations_forbidden)
-        raise SyntaxError.fromast("'yield expression' can not be used within an annotation", node)
+        raise SyntaxError.fromast("'yield from' expression cannot be used in annotation", node)
+
+    def visit_NamedExpr(self, node):
+        raise SyntaxError.fromast("'named expression' can not be used within an annotation", node)
 
     def visit_Call(self, node):
         self.append_expr(node.func, PRIORITY_ATOM)
@@ -449,13 +465,6 @@ class UnparseVisitor(Utf8BuilderVisitor):
     def visit_Await(self, node):
         raise SyntaxError.fromast("'await' expression cannot be used within an annotation", node)
 
-    def visit_NamedExpr(self, node):
-        # here rather than only on AnnotationUnparseVisitor below: the
-        # expressions inside an f-string come back through this visitor, so
-        # "test: f'{(x := 10)}'" reached the default visitor and raised
-        # SystemError (test_future_stmt test_annotations_forbidden)
-        raise SyntaxError.fromast("'named expression' can not be used within an annotation", node)
-
 
 class AnnotationUnparseVisitor(UnparseVisitor):
     """UnparseVisitor variant for annotation stringification.
@@ -485,10 +494,9 @@ class FstringVisitor(Utf8BuilderVisitor):
                 self.space.newtext("expression type not supported yet:" + str(node)))
 
     def visit_Constant(self, node):
-        from rpython.rlib import rstring
         s, l = self.space.utf8_len_w(node.value)
-        s = rstring.replace(s, "{", "{{")
-        s = rstring.replace(s, "}", "}}")
+        s = rstring_replace(s, "{", "{{")
+        s = rstring_replace(s, "}", "}}")
         self.append_utf8(s)
 
     def visit_FormattedValue(self, node):

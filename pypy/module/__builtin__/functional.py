@@ -453,16 +453,17 @@ class W_Range(W_Root):
 
     def descr_new(space, w_subtype, __args__):
         args_w = __args__.arguments_w
-        argc = len(args_w)
-        if argc == 0:
+        nargs = len(args_w)
+        if nargs == 0:
             raise oefmt(space.w_TypeError,
                         "range expected at least 1 argument, got 0")
-        if argc > 3:
+        if nargs > 3:
             raise oefmt(space.w_TypeError,
-                        "range expected at most 3 arguments, got %d", argc)
-        w_start = space.index(args_w[0])
-        w_stop = args_w[1] if argc >= 2 else None
-        w_step = args_w[2] if argc >= 3 else None
+                        "range expected at most 3 arguments, got %d", nargs)
+        w_start = args_w[0]
+        w_stop  = args_w[1] if nargs >= 2 else None
+        w_step  = args_w[2] if nargs == 3 else None
+        w_start = space.index(w_start)
         promote_step = False
         if w_step is None:  # no step argument provided
             w_step = space.newint(1)
@@ -907,7 +908,7 @@ def W_Map___new__(space, w_subtype, __args__):
     args_w = __args__.arguments_w
     w_map = space.gettypeobject(W_Map.typedef)
     w_init = space.newtext("__init__")
-    if (space.is_w(w_subtype, w_map) or 
+    if (space.is_w(w_subtype, w_map) or
         space.is_w(space.getattr(w_subtype, w_init), space.getattr(w_map, w_init))):
         if __args__.keyword_names_w:
             raise oefmt(space.w_TypeError,
@@ -999,7 +1000,7 @@ def W_Filter___new__(space, w_subtype, __args__):
     args_w = __args__.arguments_w
     w_filter = space.gettypeobject(W_Filter.typedef)
     w_init = space.newtext("__init__")
-    if (space.is_w(w_subtype, w_filter) or 
+    if (space.is_w(w_subtype, w_filter) or
         space.is_w(space.getattr(w_subtype, w_init), space.getattr(w_filter, w_init))):
         if __args__.keyword_names_w:
             raise oefmt(space.w_TypeError,

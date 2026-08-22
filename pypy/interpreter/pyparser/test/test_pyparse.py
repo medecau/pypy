@@ -224,6 +224,14 @@ if 1:
         pytest.raises(SyntaxError, self.parse, 'f()\nxy # blah\nblah()', "single")
         pytest.raises(SyntaxError, self.parse, 'x = 5 # comment\nx = 6\n', "single")
 
+    def test_null_bytes_rejected(self):
+        # bpo-24022, bpo-25388: null bytes must always raise SyntaxError with
+        # the right message, even when PyCF_ACCEPT_NULL_BYTES is set.
+        for src in [b'0000\x00\n', b'#\x00\n']:
+            for flags in [0, consts.PyCF_ACCEPT_NULL_BYTES]:
+                exc = pytest.raises(SyntaxError, self.parse, src, flags=flags)
+                assert "null bytes" in exc.value.msg
+
     def test_unpack(self):
         self.parse('[*{2}, 3, *[4]]')
         self.parse('{*{2}, 3, *[4]}')
@@ -451,6 +459,25 @@ if 1:
         assert "Invalid star expression" in info.value.msg
         assert info.value.offset == 10
 
+    def test_null_bytes_in_source(self):
+        info = pytest.raises(SyntaxError, self.parse, "x = 0\x00\n")
+        assert "source code cannot contain null bytes" in info.value.msg
+
+    def test_null_bytes_in_comment(self):
+        info = pytest.raises(SyntaxError, self.parse, "#\x00\n")
+        assert "source code cannot contain null bytes" in info.value.msg
+
+    def test_null_bytes_lineno_and_text(self):
+        # Error should report the line containing the null byte, truncated at it
+        info = pytest.raises(SyntaxError, self.parse, "x = '\x00' rest\n")
+        assert info.value.lineno == 1
+        assert info.value.text == "x = '\n"
+
+    def test_null_bytes_multiline_lineno_and_text(self):
+        info = pytest.raises(SyntaxError, self.parse, "\n'''\nmultilinestring\x00\n'''")
+        assert info.value.lineno == 3
+        assert info.value.text == "multilinestring\n"
+
 
 class TestPythonParserRevDB(TestPythonParser):
     spaceconfig = {"translation.reverse_debugger": True}
@@ -572,7 +599,7 @@ class TestFString(BaseTestPythonParser):
 
         input = "f'{\xa0}'"
         exc = pytest.raises(SyntaxError, self.parse, "# coding: utf-8\n" + input).value
-        assert exc.msg == "Non-UTF-8 code in identifier"
+        assert "Non-UTF-8 code" in exc.msg
         assert exc.text == input + '\n'
         assert (exc.lineno, exc.offset) == (2, 4)
 

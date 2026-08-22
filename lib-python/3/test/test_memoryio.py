@@ -445,6 +445,7 @@ class PyBytesIOTest(MemoryTestMixin, MemorySeekTestMixin, unittest.TestCase):
         buf = memio.getbuffer()
         self.assertEqual(bytes(buf), b"1234567890")
         memio.seek(5)
+        buf.release()  # PyPy change: GC does not call releasebuffer
         buf = memio.getbuffer()
         self.assertEqual(bytes(buf), b"1234567890")
         # Trying to change the size of the BytesIO while a buffer is exported
@@ -462,8 +463,7 @@ class PyBytesIOTest(MemoryTestMixin, MemorySeekTestMixin, unittest.TestCase):
         self.assertEqual(memio.getvalue(), b"123abc7890")
         # After the buffer gets released, we can resize and close the BytesIO
         # again
-        del buf
-        support.gc_collect()
+        buf.release()  # PyPy change: GC does not call releasebuffer
         memio.truncate()
         memio.close()
         self.assertRaises(ValueError, memio.getbuffer)
@@ -483,6 +483,8 @@ class PyBytesIOTest(MemoryTestMixin, MemorySeekTestMixin, unittest.TestCase):
             buf.release()
             self.assertRaises(BufferError, memio.write, b'x')
             buf2.release()
+        else:
+            buf.release()
         memio.write(b'x')
 
     def test_getbuffer_gc_collect(self):

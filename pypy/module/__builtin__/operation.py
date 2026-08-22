@@ -110,6 +110,43 @@ otherwise the same type as the number. ndigits may be negative."""
 
 # ____________________________________________________________
 
+iter_sentinel = gateway.applevel('''
+    # App-level implementation of the iter(callable,sentinel) operation.
+    # Uses a class instead of a generator to avoid "generator already executing"
+    # when the callable re-enters the iterator (e.g. exhausts it during the call).
+
+    class _CallableIterator:
+        def __init__(self, callable_, sentinel):
+            self._callable = callable_
+            self._sentinel = sentinel
+            self._exhausted = False
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            if self._exhausted:
+                raise StopIteration
+            try:
+                result = self._callable()
+            except StopIteration:
+                self._exhausted = True
+                raise
+            if self._exhausted:
+                # callable re-entered and exhausted us; discard result
+                raise StopIteration
+            if result == self._sentinel:
+                self._exhausted = True
+                raise StopIteration
+            return result
+
+    def iter_sentinel(callable_, sentinel):
+        if not callable(callable_):
+            raise TypeError('iter(v, w): v must be callable')
+        return _CallableIterator(callable_, sentinel)
+
+''', filename=__file__).interphook("iter_sentinel")
+
 def iter(space, w_collection_or_callable, w_sentinel=None):
     """iter(collection) -> iterator over the elements of the collection.
 

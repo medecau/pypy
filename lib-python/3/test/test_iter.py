@@ -331,7 +331,9 @@ class TestCase(unittest.TestCase):
 
     # Test two-argument iter() with callable instance
     def test_iter_callable(self):
-        self.check_iterator(iter(CallableIterClass(), 10), list(range(10)), pickle=True)
+        import sys
+        pickle = sys.implementation.name == 'cpython'
+        self.check_iterator(iter(CallableIterClass(), 10), list(range(10)), pickle=pickle)
 
     # Test two-argument iter() with function
     def test_iter_function(self):

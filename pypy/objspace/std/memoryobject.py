@@ -266,6 +266,7 @@ class W_MemoryView(W_Root):
 
         start = self._start_from_tuple(space, w_index)
         val = self.view.bytes_from_value(space, w_obj)
+        self._check_released(space)
         self.view.setbytes(start, val)
 
     def _decode_index(self, space, w_index, is_slice):

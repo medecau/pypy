@@ -15,7 +15,7 @@ from rpython.rlib.rstring import StringBuilder
 from rpython.rlib.rutf8 import (check_utf8, next_codepoint_pos,
                                 codepoints_in_utf8, codepoints_in_utf8,
                                 Utf8StringBuilder)
-from rpython.rlib import rlocale, jit
+from rpython.rlib import jit
 from rpython.rlib.objectmodel import always_inline
 
 
@@ -303,25 +303,8 @@ def _determine_encoding(space, encoding, w_buffer):
         # _Py_GetLocaleEncoding, which has this at the top
         return space.newtext("utf-8")
 
-    # On legacy systems or darwin, try app-level
-    # locale.getpreferredencoding(False) (CPython 3.10+ dropped the
-    # _bootlocale shim and calls _Py_GetLocaleEncoding, which for our
-    # purposes is equivalent to locale.getpreferredencoding(False))
-    try:
-        w_locale = space.call_method(space.builtin, '__import__',
-                                     space.newtext('locale'))
-        w_encoding = space.call_method(w_locale, 'getpreferredencoding',
-                                       space.w_False)
-    except OperationError as e:
-        # getpreferredencoding() may also raise ImportError
-        if not e.match(space, space.w_ImportError):
-            raise
-        return space.newtext('ascii')
-    else:
-        if space.isinstance_w(w_encoding, space.w_text):
-            return w_encoding
-
-    raise oefmt(space.w_IOError, "could not determine default encoding")
+    from pypy.module._locale.interp_locale import _getencoding
+    return space.newtext(_getencoding())
 
 @unwrap_spec(stacklevel=int)
 def text_encoding(space, w_encoding, stacklevel=2):
@@ -1035,6 +1018,9 @@ class W_TextIOWrapper(W_TextIOBase):
         self._check_attached(space)
         self._check_closed(space)
         self._writeflush(space)
+        if space.is_w(w_limit, space.w_None):
+            raise oefmt(space.w_TypeError,
+                        "'NoneType' object cannot be interpreted as an integer")
         limit = convert_size(space, w_limit)
         text, lgt = self._readline(space, limit)
         return space.newutf8(text, lgt)
@@ -1143,15 +1129,14 @@ class W_TextIOWrapper(W_TextIOBase):
 
         b = space.bytes_w(w_bytes)
 
-        if len(b) >= self.chunk_size:
-            # _textiowrapper_writeflush() calls buffer.write().
+        if len(b) >= self.chunk_size and self.pending_bytes:
+            # self._writeflush() calls buffer.write().
             # self->pending_bytes can be appended during buffer->write()
             # or other thread.
             # We need to loop until buffer becomes empty.
             # https://github.com/python/cpython/issues/118138
             # https://github.com/python/cpython/issues/119506
-            while self.pending_bytes:
-                self._writeflush(space)
+            self._writeflush_loop(space)
 
         if not self.pending_bytes:
             self.pending_bytes = [b]
@@ -1176,6 +1161,11 @@ class W_TextIOWrapper(W_TextIOBase):
             space.call_method(self.w_decoder, "reset")
 
         return space.newint(textlen)
+
+    def _writeflush_loop(self, space):
+        # in extra function, so the jit still traces into write_w
+        while self.pending_bytes:
+            self._writeflush(space)
 
     def _writeflush(self, space):
         # jit inlinable fast path

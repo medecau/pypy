@@ -90,10 +90,8 @@ class W_Root(object):
     def getname(self, space):
         try:
             return space.utf8_w(space.getattr(self, space.newtext('__name__')))
-        except OperationError as e:
-            if e.match(space, space.w_TypeError) or e.match(space, space.w_AttributeError):
-                return '?'
-            raise
+        except OperationError:
+            return '?'
 
     def getaddrstring(self, space):
         # slowish
@@ -1574,7 +1572,7 @@ class ObjSpace(object):
             if objdescr is None or not err.match(self, self.w_TypeError):
                 raise
             raise oefmt(self.w_TypeError,
-                        "%s indices must be integers or slices, not '%T'",
+                        "%s indices must be integers or slices, not %T",
                         objdescr, w_obj)
         try:
             # allow_conversion=False it's not really necessary because the
@@ -1688,7 +1686,7 @@ class ObjSpace(object):
         if self.is_none(w_obj):
             e = oefmt(self.w_TypeError, "a %s is required, not None", expected)
         else:
-            e = oefmt(self.w_TypeError, "a %s is required, not '%T'", expected, w_obj)
+            e = oefmt(self.w_TypeError, "a %s is required, not %T", expected, w_obj)
         raise e
 
     @specialize.arg(1)
@@ -2133,6 +2131,42 @@ class ObjSpace(object):
             # CPython falls back to str(x) when there is no __qualname__
             return 'None'
         return self.type(w_function).getname(self) + ' object'
+    def object_functionstr(self, w_function):
+        """Like CPython's _PyObject_FunctionStr: returns 'module.qualname()' or
+        'qualname()' using __qualname__/__module__, falling back to str(x)."""
+        from pypy.interpreter.function import Function, _Method
+        if isinstance(w_function, Function):
+            # fast path: direct attribute access for Python functions
+            qualname = w_function.qualname
+            w_module = w_function.fget___module__(self)
+            if not self.is_w(w_module, self.w_None):
+                try:
+                    module = self.text_w(w_module)
+                    if module and module != 'builtins':
+                        return module + '.' + qualname + '()'
+                except OperationError:
+                    pass
+            return qualname + '()'
+        if isinstance(w_function, _Method):
+            return self.object_functionstr(w_function.w_function)
+        # generic path: try __qualname__ like CPython
+        w_qualname = self.findattr(w_function, self.newtext('__qualname__'))
+        if w_qualname is not None:
+            try:
+                qualname = self.text_w(w_qualname)
+                w_module = self.findattr(w_function, self.newtext('__module__'))
+                if w_module is not None and not self.is_w(w_module, self.w_None):
+                    module = self.text_w(w_module)
+                    if module and module != 'builtins':
+                        return module + '.' + qualname + '()'
+                return qualname + '()'
+            except OperationError:
+                pass
+        # fallback to str(x) like CPython
+        try:
+            return self.text_w(self.str(w_function))
+        except OperationError:
+            return self.type(w_function).getname(self) + ' object'
 
 
 class AppExecCache(SpaceCache):

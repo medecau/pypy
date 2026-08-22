@@ -41,9 +41,13 @@ class TestAstUnparser:
     def test_num(self):
         self.check("1")
         self.check("1.64")
+        import sys
+        infstr = "1e" + str(sys.float_info.max_10_exp + 1)
+        self.check("1e1000", infstr)
+        self.check("1e1000j", infstr + "j")
 
     def test_str(self):
-        self.check("u'a'", "'a'")
+        self.check("u'a'")
 
     def test_bytes(self):
         self.check("b'a'")

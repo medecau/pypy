@@ -110,7 +110,18 @@ class TestTermios(object):
         assert len([i for i in f[-1] if isinstance(i, int)]) == 0
         assert isinstance(f[-1][termios.VMIN], bytes)
         assert isinstance(f[-1][termios.VTIME], bytes)
-        # When ICANON is not set, VMIN and VTIME should be ints
+        print('ok!')
+        """)
+        f = udir.join("test_icanon.py")
+        f.write(source)
+        child = self.spawn(['--withmod-termios', '--withmod-fcntl', str(f)])
+        child.expect('ok!')
+
+    def test_no_icanon(self):
+        source = py.code.Source("""
+        import termios
+        import fcntl
+        f = termios.tcgetattr(2)
         f[3] &= ~termios.ICANON
         termios.tcsetattr(2, termios.TCSANOW, f)
         f = termios.tcgetattr(2)
@@ -119,7 +130,7 @@ class TestTermios(object):
         assert isinstance(f[-1][termios.VTIME], int)
         print('ok!')
         """)
-        f = udir.join("test_ioctl_termios.py")
+        f = udir.join("test_no_icanon.py")
         f.write(source)
         child = self.spawn(['--withmod-termios', '--withmod-fcntl', str(f)])
         child.expect('ok!')

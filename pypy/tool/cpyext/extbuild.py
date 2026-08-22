@@ -261,7 +261,7 @@ def get_sys_info_app(base_dir):
     def get_python_inc():
         return _sysconfig.get_path('include')
     if sys.platform == 'win32':
-        compile_extra = ["/we4013"]
+        compile_extra = ["/we4013", "/std:c11"]
         link_extra = ["/LIBPATH:" + os.path.join(sys.exec_prefix, 'libs')]
     elif sys.platform.startswith('linux'):
         compile_extra = [

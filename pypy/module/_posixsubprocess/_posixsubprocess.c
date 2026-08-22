@@ -402,8 +402,7 @@ pypy_subprocess_child_exec(
            int (*preexec_fn)(void*),
            void *preexec_fn_arg)
 {
-    int i, saved_errno, unused, reached_preexec = 0;
-    int err_from_chdir = 0;
+    int i, saved_errno, unused, reached_preexec = 0, failed_chdir = 0;
     int result;
     const char* err_msg = "";
     /* Buffer large enough to hold a hex integer.  We can't malloc. */
@@ -467,7 +466,7 @@ pypy_subprocess_child_exec(
 
     if (cwd) {
         if (chdir(cwd) == -1) {
-            err_from_chdir = 1;
+            failed_chdir = 1;
             goto error;
         }
     }
@@ -571,11 +570,10 @@ error:
         unused = write(errpipe_write, ":", 1);
         if (!reached_preexec) {
             /* Indicate to the parent that the error happened before exec(). */
-            if (err_from_chdir) {
+            if (failed_chdir)
                 unused = write(errpipe_write, "noexec:chdir", 12);
-            } else {
+            else
                 unused = write(errpipe_write, "noexec", 6);
-            }
         }
         /* We can't call strerror(saved_errno).  It is not async signal safe.
          * The parent process will look the error message up. */

@@ -444,7 +444,13 @@ class MIFrame(object):
                 name = self.metainterp.framestack[-2].jitcode.name
             else:
                 name = self.jitcode.name
-            loc = self.metainterp.jitdriver_sd.warmstate.get_location_str(self.greenkey)
+            metainterp = self.metainterp
+            if not metainterp.current_merge_points:
+                loc = "unknown language location"
+            else:
+                jd_sd = metainterp.jitdriver_sd
+                greenkey = metainterp.current_merge_points[0][0][:jd_sd.num_green_args]
+                loc = jd_sd.warmstate.get_location_str(greenkey)
             debug_print(error, name, loc)
         if invalid:
             raise SwitchToBlackhole(Counters.ABORT_BAD_LOOP)
@@ -2365,6 +2371,8 @@ class MetaInterpStaticData(object):
                     # value of the vtable
                     d[ConstInt(vtable)._get_hash_()] = typeid
             self.globaldata.vtable2typeid = d
+        if not d: # happens in a few backend tests eg test_ztranslation_jit_stats.py
+            raise KeyError
         return d[known_class._get_hash_()]
 
 # ____________________________________________________________

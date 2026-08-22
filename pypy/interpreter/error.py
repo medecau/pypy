@@ -214,7 +214,7 @@ class OperationError(Exception):
                 w_type = self._check_instantiation_result(space, w_type, w_value)
             else:
                 w_valuetype = space.exception_getclass(w_value)
-                if space.exception_issubclass_w(w_valuetype, w_type):
+                if space.abstract_issubclass_w(w_valuetype, w_type, allow_override=True):
                     # raise Type, Instance: let etype be the exact type of value
                     w_type = w_valuetype
                 else:
@@ -459,8 +459,11 @@ class OperationError(Exception):
         if not space.is_w(w_value, w_context):
             if not isinstance(w_value, W_BaseException):
                 raise oefmt(space.w_SystemError, "not an instance of Exception: %T", w_value)
-            _break_context_cycle(space, w_value, w_context)
-            w_value.descr_setcontext(space, w_context)
+            # Only set __context__ if not already set, matching CPython's
+            # behavior: a pre-existing __context__ is left unchanged.
+            if w_value.w_context is None:
+                _break_context_cycle(space, w_value, w_context)
+                w_value.descr_setcontext(space, w_context)
 
     def chain_exceptions_from_cause(self, space, exception):
         # XXX does this code really make sense?

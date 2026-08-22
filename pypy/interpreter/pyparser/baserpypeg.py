@@ -645,6 +645,16 @@ class Parser:
                 "%s only supported in Python %s and above." % (error_msg, min_version),
                 node)
 
+    def check_version_for_parenthesized_with(self, a, opt, node):
+        """Only version-gate parenthesized with when it's genuinely the new
+        syntax: multiple items or a trailing comma.  A single expression in
+        parens without trailing comma is just expression grouping, valid in
+        all Python versions (gh-115881)."""
+        if opt or len(a) > 1:
+            return self.check_version(
+                (3, 9), "Parenthesized with items", node)
+        return node
+
     def raise_indentation_error(self, msg):
         """Raise an indentation error."""
         if (self.compile_info.flags & consts.PyCF_ALLOW_INCOMPLETE_INPUT and
@@ -781,7 +791,27 @@ class Parser:
         try:
             w_string = parsestr(space, encoding, tok.value, tok, self)
         except error.OperationError as e:
-            # FIXME: Put this logic in more places?
+            if e.match(space, space.w_UnicodeDecodeError):
+                # Produce CPython-compatible message for non-UTF-8 source bytes
+                # inside string literals (gh96611).
+                e.normalize_exception(space)
+                w_exc = e.get_w_value(space)
+                w_enc = space.getattr(w_exc, space.newtext('encoding'))
+                if space.text_w(w_enc) == 'utf-8':
+                    w_obj = space.getattr(w_exc, space.newtext('object'))
+                    w_start = space.getattr(w_exc, space.newtext('start'))
+                    bad_bytes = space.bytes_w(w_obj)
+                    start_pos = space.int_w(w_start)
+                    if 0 <= start_pos < len(bad_bytes):
+                        bad_byte = ord(bad_bytes[start_pos])
+                    else:
+                        bad_byte = 0x80
+                    hex_byte = hex(bad_byte)[2:]
+                    if len(hex_byte) < 2:
+                        hex_byte = '0' + hex_byte
+                    errmsg = "Non-UTF-8 code starting with '\\x" + hex_byte + "'"
+                    raise self.raise_syntax_error_known_location(errmsg, tok)
+                # fall through to generic unicode error handling
             if e.match(space, space.w_UnicodeError):
                 kind = '(unicode error) '
             elif e.match(space, space.w_ValueError):
@@ -792,7 +822,6 @@ class Parser:
                 raise
             # Unicode/ValueError/SyntaxError (without position information) in
             # literal: turn into SyntaxError with position information
-            # XXX: parsestr gets the token, so it should have position info?
             e.normalize_exception(space)
             errmsg = space.text_w(space.str(e.get_w_value(space)))
             raise self.raise_syntax_error_known_location('%s%s' % (kind, errmsg), tok)
@@ -1177,7 +1206,6 @@ class Parser:
             tok = self.diagnose()
             line = tok.line
         else:
-            # End is used only to get the proper text
             line = "".join(
                 self.get_lines(range(start_lineno, end_lineno + 1))
             )
@@ -1235,6 +1263,11 @@ class Parser:
         """Raise a syntax error that occurred at a given AST node or Token."""
         start_lineno, start_col_offset = self.extract_pos_start(node_or_tok)
         end_lineno, end_col_offset = self.extract_pos_end(node_or_tok)
+        # For multi-line tokens (e.g. an f-string spanning several lines),
+        # CPython reports the *end* position as the error location.
+        if end_lineno > start_lineno:
+            start_lineno = end_lineno
+            start_col_offset = end_col_offset
         self._raise_syntax_error(message, start_lineno, start_col_offset, end_lineno, end_col_offset)
 
     def raise_syntax_error_on_next_token(self, message):

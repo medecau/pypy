@@ -69,6 +69,7 @@ class TestTranforms(BytecodeTestCase):
         # aren't very many tests of lnotab), if peepholer wasn't scheduled
         # to be replaced anyway.
 
+    @cpython_only
     def test_unot(self):
         # UNARY_NOT POP_JUMP_IF_FALSE  -->  POP_JUMP_IF_TRUE'
         def unot(x):
@@ -118,6 +119,7 @@ class TestTranforms(BytecodeTestCase):
         self.assertInBytecode(f, 'RETURN_CONST', None)
         self.check_lnotab(f)
 
+    @cpython_only
     def test_while_one(self):
         # Skip over:  LOAD_CONST trueconst  POP_JUMP_IF_FALSE xx
         def f():
@@ -130,6 +132,7 @@ class TestTranforms(BytecodeTestCase):
             self.assertInBytecode(f, elem)
         self.check_lnotab(f)
 
+    @cpython_only
     def test_pack_unpack(self):
         for line, elem in (
             ('a, = a,', 'RETURN_CONST',),
@@ -143,6 +146,7 @@ class TestTranforms(BytecodeTestCase):
                 self.assertNotInBytecode(code, 'UNPACK_SEQUENCE')
                 self.check_lnotab(code)
 
+    @cpython_only
     def test_folding_of_tuples_of_constants(self):
         for line, elem in (
             ('a = 1,2,3', (1, 2, 3)),
@@ -229,6 +233,7 @@ class TestTranforms(BytecodeTestCase):
         self.check_lnotab(g)
 
 
+    @cpython_only
     def test_folding_of_binops_on_constants(self):
         for line, elem in (
             ('a = 2+3+4', 9),                   # chained fold
@@ -572,6 +577,7 @@ class TestTranforms(BytecodeTestCase):
         self.assertEqual(format('x = %s!', '%% %s'), 'x = %% %s!')
         self.assertEqual(format('x = %s, y = %d', 12, 34), 'x = 12, y = 34')
 
+    @cpython_only
     def test_format_errors(self):
         with self.assertRaisesRegex(TypeError,
                     'not enough arguments for format string'):
@@ -640,6 +646,7 @@ class TestTranforms(BytecodeTestCase):
                     code = compile_pattern_with_fast_locals(pattern)
                     self.assertNotInBytecode(code, "SWAP")
 
+    @cpython_only
     def test_static_swaps_match_sequence(self):
         swaps = {"*_, b, c", "a, *_, c", "a, b, *_"}
         forms = ["{}, {}, {}", "{}, {}, *{}", "{}, *{}, {}", "*{}, {}, {}"]

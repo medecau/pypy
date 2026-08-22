@@ -753,7 +753,8 @@ class NumberStringParser:
                                (self.fname, self.original_base))
 
     def __init__(self, s, literal, base, fname, allow_underscores=False,
-                 no_implicit_octal=False, start=0, end=-1, max_str_digits=0):
+                 no_implicit_octal=False, start=0, end=-1, max_str_digits=0,
+                 disallow_whitespace_after_sign=False):
         self.fname = fname
         sign = 1
         self.s = s
@@ -765,10 +766,12 @@ class NumberStringParser:
         if self._startswith1('-'):
             sign = -1
             self.start += 1
-            self._strip_spaces()
+            if not disallow_whitespace_after_sign:
+                self._strip_spaces()
         elif self._startswith1('+'):
             self.start += 1
-            self._strip_spaces()
+            if not disallow_whitespace_after_sign:
+                self._strip_spaces()
         self.sign = sign
         self.original_base = base
         self.allow_underscores = allow_underscores

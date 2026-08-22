@@ -126,6 +126,7 @@ consts: ('None',)
 """
 
 import inspect
+import re
 import sys
 import threading
 import doctest

@@ -19,6 +19,7 @@ class TypeDef(object):
                  __buffer=None, __confirm_applevel_del__=False,
                  _text_signature_=None, variable_sized=False,
                  __rpython_level_class__=None, heaptype=False,
+                 method_descriptor=False,
                   **rawdict):
         "initialization-time only"
         self.name = __name
@@ -47,7 +48,11 @@ class TypeDef(object):
         if not __confirm_applevel_del__:
             assert '__del__' not in rawdict
         self.weakrefable = '__weakref__' in rawdict
-        self.doc = rawdict.get('__doc__', None)
+        doc_candidate = rawdict.get('__doc__', None)
+        if isinstance(doc_candidate, str):
+            self.doc = doc_candidate
+        else:
+            self.doc = None
         self.text_signature = _text_signature_
         for base in bases:
             self.hasdict |= base.hasdict
@@ -59,6 +64,7 @@ class TypeDef(object):
         assert __total_ordering__ in (None, ), "__total_ordering__ was buggy, mostly unused, and has been removed"
         self.variable_sized = variable_sized
         self.rpy_cls = __rpython_level_class__
+        self.method_descriptor = method_descriptor
         self._install_shortcuts()
 
     def add_entries(self, **rawdict):
@@ -66,6 +72,11 @@ class TypeDef(object):
         for key, value in rawdict.items():
             if isinstance(value, (interp2app, GetSetProperty)):
                 value.name = key
+            if isinstance(value, interp2app):
+                # Mark as a type method so _generate_text_signature uses
+                # CPython-compatible $first_arg convention instead of
+                # $module + first_arg.
+                value._is_type_method = True
         self.rawdict.update(rawdict)
 
     def _freeze_(self):
@@ -736,6 +747,7 @@ PyCode.typedef = TypeDef('code',
     co_lnotab = GetSetProperty(PyCode.fget_co_lnotab),
     co_lines = interp2app(PyCode.co_lines),
     replace = interp2app(PyCode.descr_replace),
+    _varname_from_oparg = interp2app(PyCode.descr__varname_from_oparg),
     __weakref__ = make_weakref_descr(PyCode),
     )
 PyCode.typedef.acceptable_as_base_class = False
@@ -807,6 +819,9 @@ getset_func_name = GetSetProperty(Function.fget_func_name,
                                   Function.fset_func_name)
 getset_func_qualname = GetSetProperty(Function.fget_func_qualname,
                                       Function.fset_func_qualname)
+getset_func_objclass = GetSetProperty(Function.fget_func_objclass)
+getset_func_text_signature = GetSetProperty(Function.fget_func_text_signature,
+                                             Function.fset_func_text_signature)
 getset_func_annotations = GetSetProperty(Function.fget_func_annotations,
                                         Function.fset_func_annotations,
                                         Function.fdel_func_annotations)
@@ -814,6 +829,8 @@ getset_func_annotations = GetSetProperty(Function.fget_func_annotations,
 getset_func_dict = GetSetProperty(descr_get_dict, descr_set_dict, cls=Function)
 
 Function.typedef = TypeDef("function",
+    _text_signature_="(code, globals, name=None, argdefs=None, closure=None)",
+    method_descriptor=True,
     __new__ = interp2app(Function.descr_function__new__.im_func),
     __call__ = interp2app(Function.descr_function_call,
                           descrmismatch='__call__'),
@@ -825,6 +842,8 @@ Function.typedef = TypeDef("function",
     __doc__ = getset_func_doc,
     __name__ = getset_func_name,
     __qualname__ = getset_func_qualname,
+    __objclass__ = getset_func_objclass,
+    __text_signature__ = getset_func_text_signature,
     __dict__ = getset_func_dict,
     __defaults__ = getset_func_defaults,
     __defaults_count__ = GetSetProperty(Function.fget_defaults_count),

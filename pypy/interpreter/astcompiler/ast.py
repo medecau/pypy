@@ -576,6 +576,7 @@ class FunctionDef(stmt):
         _name = space.text_or_none_w(w_name)
         if _name is None:
             raise_required_value(space, w_node, 'name')
+        _name = space.text_w(w_name)
         _args = arguments.from_object(space, w_args)
         if _args is None:
             raise_required_value(space, w_node, 'args')
@@ -695,6 +696,7 @@ class AsyncFunctionDef(stmt):
         _name = space.text_or_none_w(w_name)
         if _name is None:
             raise_required_value(space, w_node, 'name')
+        _name = space.text_w(w_name)
         _args = arguments.from_object(space, w_args)
         if _args is None:
             raise_required_value(space, w_node, 'args')
@@ -821,6 +823,7 @@ class ClassDef(stmt):
         _name = space.text_or_none_w(w_name)
         if _name is None:
             raise_required_value(space, w_node, 'name')
+        _name = space.text_w(w_name)
         bases_w = space.unpackiterable(w_bases)
         _bases = [expr.from_object(space, w_item) for w_item in bases_w]
         keywords_w = space.unpackiterable(w_keywords)
@@ -3994,6 +3997,7 @@ class Attribute(expr):
         _attr = space.text_or_none_w(w_attr)
         if _attr is None:
             raise_required_value(space, w_node, 'attr')
+        _attr = space.text_w(w_attr)
         _ctx = expr_context.from_object(space, w_ctx)
         if _ctx is None:
             raise_required_value(space, w_node, 'ctx')
@@ -4179,6 +4183,7 @@ class Name(expr):
         _id = space.text_or_none_w(w_id)
         if _id is None:
             raise_required_value(space, w_node, 'id')
+        _id = space.text_w(w_id)
         _ctx = expr_context.from_object(space, w_ctx)
         if _ctx is None:
             raise_required_value(space, w_node, 'ctx')
@@ -5042,6 +5047,7 @@ class arg(AST):
         _arg = space.text_or_none_w(w_arg)
         if _arg is None:
             raise_required_value(space, w_node, 'arg')
+        _arg = space.text_w(w_arg)
         _annotation = expr.from_object(space, w_annotation)
         _type_comment = check_string(space, w_type_comment, 1)
         _lineno = obj_to_int(space, w_lineno, False)
@@ -5160,6 +5166,7 @@ class alias(AST):
         _name = space.text_or_none_w(w_name)
         if _name is None:
             raise_required_value(space, w_node, 'name')
+        _name = space.text_w(w_name)
         _asname = space.text_or_none_w(w_asname)
         _lineno = obj_to_int(space, w_lineno, False)
         _col_offset = obj_to_int(space, w_col_offset, False)

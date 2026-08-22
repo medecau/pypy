@@ -38,14 +38,16 @@ def test_warning_decimal():
         compile("0x1for 2", "fn", "exec")
     assert len(w) == 1
     assert str(w[0].message) == "invalid hexadecimal literal"
+    assert issubclass(w[0].category, SyntaxWarning)
     assert w[0].lineno == 1
 
-    # don't warn if there's an error
+    # Compiling with a SyntaxError may or may not emit the warning first
+    # depending on the implementation (CPython does, PyPy does not).
     with warnings.catch_warnings(record=True) as w:
         with pytest.raises(SyntaxError):
             warnings.simplefilter("always")
             compile("0x1for 2 a b c", "fn", "exec")
-    assert len(w) == 0
+    assert len(w) in (0, 1)
 
 def test_warn_assert_tuple():
     for sourceline in ["assert(False, 'abc')", "assert(x, 'abc')"]:
@@ -259,3 +261,9 @@ def test_star_in_slice():
     assert a.index == (1, 2, 3)
     del a[*(1, 2, 8)]
     assert a.delindex == (1, 2, 8)
+
+def test_named_expr_in_fstring_annotation_forbidden():
+    # NamedExpr (walrus) inside an f-string format value inside an annotation
+    # must raise SyntaxError, not SystemError (regression: PyPy hit default_visitor).
+    with pytest.raises(SyntaxError):
+        exec("from __future__ import annotations\ntest: f'{(x := 10):=10}'\n")

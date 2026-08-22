@@ -664,6 +664,8 @@ class W_OSError(W_Exception):
                     self.written = space.int_w(w_filename)
                 except OperationError:
                     self.w_filename = w_filename
+                    if not space.is_none(w_filename2):
+                        self.w_filename2 = w_filename2
             else:
                 if not space.is_none(w_filename):
                     self.w_filename = w_filename
@@ -945,7 +947,20 @@ class W_SyntaxError(W_Exception):
             return True
         # Check for legacy exec statements
         if text.startswith(b"exec "):
-            self.w_msg = space.newtext("Missing parentheses in call to 'exec'")
+            arg = text[len("exec"):].strip()
+            if arg.endswith(";"):
+                arg = arg[:-1].strip()
+            suggestion = "exec(%s)" % arg
+            compiler = space.createcompiler()
+            try:
+                compiler.compile(suggestion, '?', 'eval', 0)
+            except OperationError:
+                self.w_msg = space.newtext(
+                    "Missing parentheses in call to 'exec'")
+            else:
+                self.w_msg = space.newtext(
+                    "Missing parentheses in call to 'exec'. Did you mean %s?" % (
+                        suggestion,))
             return True
         return False
 

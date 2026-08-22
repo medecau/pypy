@@ -61,6 +61,7 @@ def parsestr(space, encoding, s, token=None, astbuilder=None):
                              'Internal error: parser passed unquoted literal')
     ps += 1
     q = len(s) - 1
+    assert q >= 0
     if s[q] != quote:
         raise_app_valueerror(space, 'Internal error: parser passed unmatched '
                                     'quotes in literal')
@@ -80,17 +81,9 @@ def parsestr(space, encoding, s, token=None, astbuilder=None):
     substr = s[ps : q]
     # Disallow non-ascii characters (but not escapes)
     for i, c in enumerate(substr):
-        if ord(c) > 0x80:
-            # CPython reports this over the whole literal token
-            # (RAISE_SYNTAX_ERROR_KNOWN_LOCATION), not at the offending
-            # character, and without a trailing period
+        if ord(c) > 0x7F:
             raise SyntaxError("bytes can only contain ASCII literal characters",
-                token.lineno,
-                token.column + 1,
-                end_lineno=token.end_lineno,
-                end_offset=token.end_column + 1)
-            raise oefmt(space.w_SyntaxError,
-                        )
+                token.lineno, token.column + ps + i + 1)
 
     if rawmode or '\\' not in substr:
         return space.newbytes(substr)
@@ -98,17 +91,12 @@ def parsestr(space, encoding, s, token=None, astbuilder=None):
     v, first_escape_error_char, first_escape_error_pos = _PyString_DecodeEscape(
         space, substr, 'strict', encoding)
     if first_escape_error_char != '':
+        if len(first_escape_error_char) == 4:
+            msg = "invalid octal escape sequence '%s'" % first_escape_error_char
+        else:
+            msg = "invalid escape sequence '%s'" % first_escape_error_char
         if astbuilder:
-            msg, _ = unicodehelper.format_invalid_escape_message(
-                first_escape_error_char, distinguish_octal=True)
-            # 3.12 upgraded compile-time literal escape warnings to
-            # SyntaxWarning (the default category deprecation_warn picks
-            # from feature_version); the runtime codec path below stays
-            # DeprecationWarning.
-            # 'ps' is where substr starts inside the raw token, so that
-            # escape_warn can report the escape's own column.
-            astbuilder.escape_warn(msg, token, substr, ps,
-                                   first_escape_error_pos)
+            astbuilder.deprecation_warn(msg, token)
 
     return space.newbytes(v)
 
@@ -273,9 +261,6 @@ def _PyString_DecodeEscape(space, s, errors, recode_encoding):
             assert ps >= 0
             if first_escape_error_char == '':
                 first_escape_error_char = "\\" + ch
-                # the backslash, like the octal case above and like
-                # unicodehelper.str_decode_unicode_escape
-                first_escape_error_pos = ps - 1
             continue
             # an arbitrary number of unescaped UTF-8 bytes may follow.
 
@@ -287,12 +272,10 @@ def PyString_DecodeEscape(space, s, errors, recode_encoding):
     buf, first_escape_error_char, _pos = _PyString_DecodeEscape(
         space, s, errors, recode_encoding)
     if first_escape_error_char != '':
-        # first_escape_error_char may contain a raw byte >= 0x80 (escape_decode
-        # accepts arbitrary bytes, unlike bytes literals); build the warning
-        # text as valid UTF-8 rather than pasting the raw byte into it.
-        msg, msg_len = unicodehelper.format_invalid_escape_message(
-            first_escape_error_char)
-        space.warn(space.newutf8(msg, msg_len), space.w_DeprecationWarning)
+        if len(first_escape_error_char) == 4:
+            space.warn(space.newtext("invalid octal escape sequence '%s'" % first_escape_error_char), space.w_DeprecationWarning)
+        else:
+            space.warn(space.newtext("invalid escape sequence '%s'" % first_escape_error_char), space.w_DeprecationWarning)
     return buf, first_escape_error_char
 
 
@@ -309,13 +292,11 @@ def decode_unicode_escape(space, string, astbuilder, token, offset=0):
         errorhandler=state.decode_error_handler,
         ud_handler=unicodedata_handler)
     if first_escape_error_char is not None and astbuilder is not None:
-        msg, _ = unicodehelper.format_invalid_escape_message(
-            first_escape_error_char, distinguish_octal=True)
-        # walk 'string' (what the decoder was given), not the decoded result:
-        # first_escape_error_pos indexes the former, and a decoded "\n" escape
-        # would otherwise be counted as a real line break
-        astbuilder.escape_warn(msg, token, string, offset,
-                               first_escape_error_pos)
+        if len(first_escape_error_char) > 1:
+            msg = "invalid octal escape sequence '\\%s'" % first_escape_error_char
+        else:
+            msg = "invalid escape sequence '\\%s'" % first_escape_error_char
+        astbuilder.deprecation_warn(msg, token)
     return s, ulen, blen
 
 def isxdigit(ch):

@@ -4,6 +4,7 @@ from test import support
 from test.support import import_helper
 from test.support import warnings_helper
 import unittest
+import sys
 
 class TestUntestedModules(unittest.TestCase):
     def test_untested_modules_can_be_imported(self):

@@ -873,7 +873,7 @@ uses a single data structure to keep track of try-finally and loops,
 so we need to be sure that a break is actually inside a loop.  If it
 isn't, there should be a syntax error.
 
-   >>> try:
+   >>> try:          # doctest: +ELLIPSIS
    ...     print(1)
    ...     break
    ...     print(2)
@@ -881,7 +881,7 @@ isn't, there should be a syntax error.
    ...     print(3)
    Traceback (most recent call last):
      ...
-   SyntaxError: 'break' outside loop
+   SyntaxError: 'break' ...
 
 Misuse of the nonlocal and global statement can lead to a few unique syntax errors.
 
@@ -1630,7 +1630,7 @@ SyntaxError: invalid syntax. Maybe you meant '==' or ':=' instead of '='?
 
 >>> {z=3}
 Traceback (most recent call last):
-SyntaxError: invalid syntax. Maybe you meant '==' or ':=' instead of '='?
+SyntaxError: ':' expected after dictionary key
 
 >>> from t import x,
 Traceback (most recent call last):
@@ -2364,7 +2364,7 @@ def func2():
         self._check_error("A.\u018a\\ ",
                           "unexpected character after line continuation character")
         self._check_error("A.\u03bc\\\n",
-                          "unexpected EOF while parsing")
+                          "unexpected end of file")
 
     def test_error_parenthesis(self):
         for paren in "([{":

@@ -1,14 +1,15 @@
+from rpython.rlib import objectmodel
+from pypy.objspace.std.mapdict import (
+        _make_storage_mixin_size_n,
+       BaseUserClassMapdict, MapdictDictSupport, MapdictStorageMixin)
+from pypy.objspace.std.test.test_mapdict import Class
+from pypy.objspace.std.objectobject import W_ObjectObject
+from pypy.objspace.std.test.test_dictmultiobject import FakeSpace
+
 import pytest
-pytest.skip("This cannot possibly work on pypy3")
 import sys
 try:
-    import __pypy__
-except ImportError:
-    pass
-else:
-    pytest.skip("makes no sense under pypy!")
-try:
-    from hypothesis import given, strategies, settings
+    from hypothesis import given, strategies, settings, example, HealthCheck
 except ImportError:
     pytest.skip("requires hypothesis")
 
@@ -21,7 +22,7 @@ base_initargs = strategies.sampled_from([
     ("type(sys), OldBase", ("fake", ), True),
     ])
 
-attrnames = strategies.sampled_from(["a", "b", "c"])
+attrnames = strategies.sampled_from(["a", "b", "c"] + ["attr%s" % i for i in range(10)])
 
 def make_value_attr(val):
     return val, str(val)
@@ -69,10 +70,10 @@ def make_code(draw):
     inst = cls(*initargs)
     code.append("    pass")
     code.append("a = A(*%s)" % (initargs, ))
-    for attr in draw(strategies.lists(attrnames, min_size=1)):
+    for attr in draw(strategies.lists(attrnames, min_size=10)):
         op = draw(strategies.sampled_from(["read", "read", "read",
-                      "write", "writemeth", "writeclass", "writebase",
-                      "del", "delclass"]))
+                      "write", "write", "write", "del", "del", "writemeth",
+                      "writeclass", "writebase", "delclass"]))
         if op == "read":
             try:
                 res = getattr(inst, attr)
@@ -125,8 +126,10 @@ def make_code(draw):
     return "\n    ".join(code)
 
 
+@pytest.mark.skip(reason="can't work on py3")
 @given(code=make_code())
 #@settings(max_examples=5000)
+@settings(deadline=None)
 def test_random_attrs(code, space):
     print code
     exec "if 1:\n    " + code
@@ -174,6 +177,7 @@ class genericstoragecls(W_ObjectObject):
 
 space = FakeSpace()
 
+@settings(deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(make_sequence())
 def test_random_attrs_lowlevel_objclass(sequence):
     try:
@@ -181,6 +185,7 @@ def test_random_attrs_lowlevel_objclass(sequence):
     except Exception:
         raise
 
+@settings(deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(make_sequence())
 def test_random_attrs_lowlevel_generic(sequence):
     try:
