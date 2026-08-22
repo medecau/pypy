@@ -278,7 +278,8 @@ class PegParser(object):
             # which is expected to work independently of them.  It's
             # certainly the case for all futures in Python <= 2.7.
             tokens = pytokenizer.generate_tokens(source_lines, flags,
-                                                 real_newline_at_eof)
+                                                 real_newline_at_eof,
+                                                 compile_info.filename)
         except (error.TokenError, error.TokenIndentationError) as e:
             e.filename = compile_info.filename
             if (isinstance(e, error.TokenError) and

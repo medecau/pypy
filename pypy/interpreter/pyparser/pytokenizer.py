@@ -248,8 +248,9 @@ class TokenizerState(object):
         self.strstart_is_triple_quoted = False
 
 class Tokenizer(object):
-    def __init__(self, flags, newline_at_eof=True):
+    def __init__(self, flags, newline_at_eof=True, filename='<unknown>'):
         self.flags = flags
+        self.filename = filename
         # Whether the source really ends with a newline -- either because it
         # did, or because this is 'exec' mode, where CPython's tokenizer
         # appends one too.  It decides how a trailing backslash is reported;
@@ -890,7 +891,7 @@ def _odd_backslash_prefix(line, first_pos):
     return (first_pos - i) % 2
 
 
-def generate_tokens(lines, flags, newline_at_eof=True):
+def generate_tokens(lines, flags, newline_at_eof=True, filename='<unknown>'):
     """
     This is a rewrite of pypy.module.parser.pytokenize.generate_tokens since
     the original function is not RPYTHON (uses yield)
@@ -920,11 +921,11 @@ def generate_tokens(lines, flags, newline_at_eof=True):
     err1 = None
     token_list = []
     try:
-        token_list = _generate_tokens(lines, flags, newline_at_eof)
+        token_list = _generate_tokens(lines, flags, newline_at_eof, filename)
     except TokenError as e:
         err1 = e
 
-    t = Tokenizer(flags, newline_at_eof)
+    t = Tokenizer(flags, newline_at_eof, filename)
     try:
         token_list2 = t.tokenize_lines(orig_lines[:])
     except TokenError as err2:
@@ -952,7 +953,7 @@ def generate_tokens(lines, flags, newline_at_eof=True):
             assert tok1 == tok2
     return token_list2
 
-def _generate_tokens(lines, flags, newline_at_eof=True):
+def _generate_tokens(lines, flags, newline_at_eof=True, filename='<unknown>'):
     token_list = []
     lnum = 0
     continued = False
