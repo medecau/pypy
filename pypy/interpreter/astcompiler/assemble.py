@@ -1591,6 +1591,10 @@ _static_opcode_stack_effects = {
 
     ops.LOAD_FAST: 1,
     ops.STORE_FAST: -1,
+    # PEP 709 save/restore pair: each is a plain push/pop, and they are
+    # always emitted adjacently so a save or a restore is TOS-neutral.
+    ops.LOAD_FAST_AND_CLEAR: 1,
+    ops.STORE_FAST_MAYBE_NULL: -1,
     ops.DELETE_FAST: 0,
 
     ops.LOAD_ATTR: 0,
