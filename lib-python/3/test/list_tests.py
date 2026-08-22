@@ -5,7 +5,7 @@ Tests common to list and UserList.UserList
 import sys
 from functools import cmp_to_key
 
-from test import seq_tests
+from test import seq_tests, support
 from test.support import ALWAYS_EQ, NEVER_EQ, C_RECURSION_LIMIT
 
 
