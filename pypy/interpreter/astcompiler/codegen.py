@@ -10,9 +10,9 @@ import struct
 
 from rpython.rlib.objectmodel import specialize, we_are_translated
 from pypy.interpreter.astcompiler import ast, assemble, symtable, consts, misc
+from pypy.interpreter.astcompiler.assemble import _SETUP_FINALLY, _SETUP_CLEANUP, _SETUP_WITH, _POP_BLOCK
 from pypy.interpreter.astcompiler import optimize # For side effects
 from pypy.interpreter.pyparser.error import SyntaxError
-from pypy.interpreter.miscutils import string_sort
 from pypy.tool import stdlib_opcode as ops
 
 C_INT_MAX = (2 ** (struct.calcsize('i') * 8)) / 2 - 1
@@ -201,6 +201,13 @@ class FrameBlockInfo(object):
         self.block = block
         self.end = end
         self.datum = datum # an ast node needed for specific kinds of blocks
+        # For F_WITH/F_ASYNC_WITH: the block at which body-proper ends when
+        # the body unwinds via break/continue/return.  unwind_fblock sets
+        # this the first time it fires so that handle_withitem's body
+        # exception-table entry ends before the inline unwind code (which
+        # must not be covered by this with's cleanup, else __exit__ would
+        # run twice when it raises during call_exit_with_nones).
+        self.body_segment_end = None
 
     def __repr__(self):
         # for debugging
@@ -250,15 +257,6 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         self.temporary_name_counter = 1
         self.qualname = qualname
         self._allow_top_level_await = compile_info.flags & consts.PyCF_ALLOW_TOP_LEVEL_AWAIT
-        # PEP 709 bookkeeping for inlined comprehensions.  All three must be
-        # set before _compile runs; _active_inlined_names maps the (mangled)
-        # names bound by the inlined comprehensions currently being emitted
-        # to a nesting count, _inlined_iter_names stacks the hidden slot
-        # holding each one's iterator.
-        self._active_inlined_names = {}
-        self._inlined_iter_names = []
-        self._inlined_comp_scopes = []
-        self._inlined_comp_counter = 0
         self._compile(tree)
 
     def _compile(self, tree):
@@ -304,9 +302,9 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         elif kind == F_WHILE_LOOP or kind == F_EXCEPTION_HANDLER or kind == F_EXCEPTION_GROUP_HANDLER:
             pass
         elif kind == F_TRY_EXCEPT:
-            self.emit_op(ops.POP_BLOCK)
+            self.emit_op(_POP_BLOCK)
         elif kind == F_FINALLY_TRY:
-            self.emit_op(ops.POP_BLOCK)
+            self.emit_op(_POP_BLOCK)
             if preserve_tos:
                 self.push_frame_block(F_POP_VALUE, None)
             # emit the finally block, restoring the line number when done
@@ -318,16 +316,29 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
                 self.pop_frame_block(F_POP_VALUE, None)
             self.no_position_info() # make the unwind be artificial
         elif kind == F_FINALLY_END:
+            # new-mode stack: [..., prev_exc, exc] (placed by PUSH_EXC_INFO).
+            # POP_EXCEPT pops prev_exc from value stack (-1 effect).
             if preserve_tos:
-                self.emit_op(ops.ROT_TWO)
-            self.emit_op(ops.POP_TOP) # remove SApplicationException
-            self.emit_op(ops.POP_EXCEPT)
+                self.emit_op(ops.ROT_THREE)  # [..., prev_exc, exc, tos] -> [..., tos, prev_exc, exc]
+            self.emit_op(ops.POP_TOP)        # pop exc
+            self.emit_op(ops.POP_EXCEPT)     # pop prev_exc, restore sys.exc_info
 
         elif kind == F_WITH or kind == F_ASYNC_WITH:
             node = fblock.datum
             assert isinstance(node, ast.withitem)
+            # Switch to a new block before call_exit_with_nones so that the
+            # with-body scope (opened by _SETUP_WITH) ends here.
+            # POP_BLOCK below closes that scope; the inline unwind code that
+            # follows is NOT covered by the with's cleanup handler, preventing
+            # __exit__ from being called twice if it raises.  Only the first
+            # unwind site records the boundary; later early-exit paths that merge
+            # here keep the (coarser) earlier POP_BLOCK position.
+            inline_unwind = self.new_block()
+            self.use_next_block(inline_unwind)
+            if fblock.body_segment_end is None:
+                fblock.body_segment_end = inline_unwind
+                self.emit_op(_POP_BLOCK)  # end with-body scope on early exit
             self.update_position(node.context_expr)
-            self.emit_op(ops.POP_BLOCK)
             if preserve_tos:
                 self.emit_op(ops.ROT_TWO)
             self.call_exit_with_nones()
@@ -338,9 +349,12 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
             self.emit_op(ops.POP_TOP)
             self.no_position_info()
         elif kind == F_HANDLER_CLEANUP:
-            if fblock.datum:
-                self.emit_op(ops.POP_BLOCK)
-            self.emit_op(ops.POP_EXCEPT)
+            self.emit_op(_POP_BLOCK)  # end inner cleanup scope (SETUP_CLEANUP cleanup_end)
+            self.emit_op(_POP_BLOCK)  # end outer cleanup scope (SETUP_CLEANUP outer_cleanup)
+            # new-mode: prev_exc is on value stack below tos (if preserve_tos)
+            if preserve_tos:
+                self.emit_op(ops.ROT_TWO)  # bring prev_exc to TOS
+            self.emit_op(ops.POP_EXCEPT)   # pop prev_exc, restore sys.exc_info
             if fblock.datum:
                 self.load_const(self.space.w_None)
                 excepthandler = fblock.datum
@@ -391,30 +405,6 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         self.check_forbidden_name(identifier, node, ctx)
 
         scope = self.scope.lookup(identifier)
-        if (self._active_inlined_names and
-                self.scope.mangle(identifier) in self._active_inlined_names):
-            # PEP 709: bound by an enclosing inlined comprehension, so it
-            # lives in a fast local of the enclosing function -- possibly a
-            # hidden one the symbol table does not know about.
-            scope = symtable.SCOPE_LOCAL
-        elif scope == symtable.SCOPE_UNKNOWN and self._inlined_comp_scopes:
-            # A name used only inside the comprehension body is invisible
-            # to the enclosing scope's symbol table: its resolution lives
-            # in the comprehension scope.  Globals (and builtins, which
-            # resolve as implicit globals) are the only case that can
-            # reach here -- a comp-free name always has a binding some
-            # enclosing scope's table knows about, so its parent lookup
-            # is never UNKNOWN.  Without this, 'range' in an inlined
-            # '[i for i in range(3)]' compiled to LOAD_NAME, which
-            # crashes in an optimized frame (no w_locals mapping).
-            for i in range(len(self._inlined_comp_scopes) - 1, -1, -1):
-                cscope = self._inlined_comp_scopes[i]
-                cresolution = cscope.lookup(identifier)
-                if cresolution != symtable.SCOPE_UNKNOWN:
-                    if (cresolution == symtable.SCOPE_GLOBAL_IMPLICIT or
-                            cresolution == symtable.SCOPE_GLOBAL_EXPLICIT):
-                        scope = cresolution
-                    break
         op = ops.NOP
         container = self.names
         if scope == symtable.SCOPE_LOCAL:
@@ -658,20 +648,13 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
                     funcflags |= 0x02
             self._make_function_body(func, funcflags)
 
-        # Apply decorators (same for both generic and non-generic).  They are
-        # applied innermost-first, so walk the list backwards and give each
-        # CALL_FUNCTION the position of the decorator it actually applies --
-        # compiler_apply_decorators() in CPython's compile.c does the same.
-        # Otherwise every one of them inherits the `def` position and the
-        # decorator lines never appear in a traceback or a line event.
+        # Apply decorators (same for both generic and non-generic)
         if func.decorator_list:
-            for i in range(len(func.decorator_list) - 1, -1, -1):
-                dec = func.decorator_list[i]
-                if dec.lineno > 0:
-                    self.update_position(dec)
+            n = len(func.decorator_list)
+            for i in range(n):
+                self.update_position(func.decorator_list[n - 1 - i])
                 self.emit_op_arg(ops.CALL_FUNCTION, 1)
-            if func.lineno > 0:
-                self.update_position(func)
+            self.update_position(func)
         self.name_op(func.name, ast.Store, func)
 
     @specialize.argtype(1)
@@ -730,16 +713,13 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
             # Non-generic: compile class directly using shared helper
             self._make_class_body(cls)
 
-        # Apply decorators (same for both).  Innermost first, each CALL at the
-        # position of its own decorator -- see _visit_function above.
+        # Apply decorators (same for both)
         if cls.decorator_list:
-            for i in range(len(cls.decorator_list) - 1, -1, -1):
-                dec = cls.decorator_list[i]
-                if dec.lineno > 0:
-                    self.update_position(dec)
+            n = len(cls.decorator_list)
+            for i in range(n):
+                self.update_position(cls.decorator_list[n - 1 - i])
                 self.emit_op_arg(ops.CALL_FUNCTION, 1)
-            if cls.lineno > 0:
-                self.update_position(cls)
+            self.update_position(cls)
         # Store into <name>
         self.name_op(cls.name, ast.Store, cls)
 
@@ -765,6 +745,9 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
             self.check_forbidden_name(target.attr, target)
             target.value.walkabout(self)
             self.emit_op(ops.DUP_TOP)
+            attr_col = target.end_col_offset - len(target.attr)
+            attr_position = (target.end_lineno, target.end_lineno, attr_col, target.end_col_offset)
+            self.update_position(attr_position)
             self.emit_op_name(ops.LOAD_ATTR, self.names, target.attr)
             assign.value.walkabout(self)
             self.emit_op(inplace_operations(assign.op))
@@ -819,6 +802,8 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         if asrt.msg:
             asrt.msg.walkabout(self)
             self.emit_op_arg(ops.CALL_FUNCTION, 1)
+        # the traceback caret should point at the assert condition
+        self.update_position(asrt.test)
         self.emit_op_arg(ops.RAISE_VARARGS, 1)
         if end is not None:
             self.use_next_block(end)
@@ -859,6 +844,7 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
 
     def visit_If(self, if_):
         end = self.new_block()
+        saved_depth = self._stack_depth  # break/return/continue in body can corrupt
         test_constant = if_.test.as_constant_truth(
             self.space, self.compile_info)
         if test_constant == optimize.CONST_FALSE:
@@ -879,17 +865,18 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
             if_.test.accept_jump_if(self, False, otherwise)
             self._visit_body(if_.body)
             if if_.orelse:
-                self.no_position_info()
-                self.emit_jump(ops.JUMP_FORWARD, end)
+                self.emit_jump_noline(ops.JUMP_FORWARD, end)
                 self.use_next_block(otherwise)
+                self._stack_depth = saved_depth
                 self._visit_body(if_.orelse)
         self.use_next_block(end)
+        self._stack_depth = saved_depth
 
     def visit_Break(self, br):
         self.emit_line_tracing_nop()
         loop_fblock = self.unwind_fblock_stack(False, br, find_loop_block=True)
         if loop_fblock is None:
-            self.error("'break' outside loop", br)
+            self.error("'break' not properly in loop", br)
         self.unwind_fblock(loop_fblock, False)
         assert loop_fblock.end is not None
         self.emit_jump(ops.JUMP_ABSOLUTE, loop_fblock.end)
@@ -907,10 +894,8 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         end = self.new_block()
         # self.emit_jump(ops.SETUP_LOOP, end)
         self.push_frame_block(F_FOR_LOOP, start, end)
+        saved_depth = self._stack_depth
         fr.iter.walkabout(self)
-        # PEP 657: GET_ITER/FOR_ITER belong to the iterable expression, not
-        # to the whole 'for' statement (test_iter test_exception_locations)
-        self.update_position(fr.iter)
         self.emit_op(ops.GET_ITER)
         self.use_next_block(start)
         self.emit_jump(ops.FOR_ITER, cleanup)
@@ -919,6 +904,8 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         self.no_position_info()
         self.emit_jump(ops.JUMP_ABSOLUTE, start)
         self.use_next_block(cleanup)
+        # Restore: FOR_ITER exhaustion pops the iterator; depth is back to pre-loop.
+        self._stack_depth = saved_depth
         self.pop_frame_block(F_FOR_LOOP, start)
         self._visit_body(fr.orelse)
         self.use_next_block(end)
@@ -928,32 +915,73 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
             self.error("'async for' outside async function", fr)
         b_start = self.new_block()
         b_except = self.new_block()
+        b_reraise = self.new_block()
         b_end = self.new_block()
 
         fr.iter.walkabout(self)
-        self.update_position(fr.iter)   # PEP 657, as in visit_For
         self.emit_op(ops.GET_AITER)
 
         self.use_next_block(b_start)
         self.push_frame_block(F_FOR_LOOP, b_start, b_end)
 
-        self.emit_jump(ops.SETUP_EXCEPT, b_except)
+        b_anext = self.use_next_block()
+        b_after_yield = self.new_block()
+        # Narrow SETUP_FINALLY/POP_BLOCK pair covering only GET_ANEXT/YIELD_FROM.
+        # The inner scope overrides any enclosing SETUP_WITH/SETUP_ASYNC_WITH for
+        # these two instructions, routing StopAsyncIteration to b_except.
+        self.emit_jump(_SETUP_FINALLY, b_except)
         self.emit_op(ops.GET_ANEXT)
         self.load_const(self.space.w_None)
         self.emit_op(ops.YIELD_FROM)
-        self.emit_op(ops.POP_BLOCK)
+        self.emit_op(_POP_BLOCK)
+        self.use_next_block(b_after_yield)
         fr.target.walkabout(self)
         self._visit_body(fr.body)
         self.no_position_info()
         self.emit_jump(ops.JUMP_ABSOLUTE, b_start)
         self.pop_frame_block(F_FOR_LOOP, b_start)
 
-        # except block for errors from __anext__
+        self._emit_async_for_handler(b_except, b_reraise, b_end,
+                                     position_node=fr.iter, orelse=fr.orelse)
+
+    def _emit_async_for_handler(self, b_except, b_reraise, b_end,
+                                position_node=None, orelse=None):
+        """Emit the StopAsyncIteration-checking exception handler block shared
+        by visit_AsyncFor and _comp_async_generator.
+
+        Covers: use_next_block(b_except) ... use_next_block(b_end).
+        position_node: if given, update source position before PUSH_EXC_INFO.
+        orelse: if given, visit those nodes before jumping to b_end."""
+        # Exception table handler for GET_ANEXT / YIELD_FROM.
+        # Entry stack (from table dispatch): [..., aiter, w_exc].
         self.use_next_block(b_except)
-        # use the 'for' as the position of END_ASYNC_FOR
-        self.update_position(fr.iter)
-        self.emit_op(ops.END_ASYNC_FOR)
-        self._visit_body(fr.orelse)
+        if position_node is not None:
+            self.update_position(position_node)
+        self.emit_op(ops.PUSH_EXC_INFO)
+        # Stack: [..., aiter, w_prev, w_exc]
+        # StopAsyncIteration is a builtin; emit LOAD_GLOBAL directly because
+        # this name is not in the scope table (user code never wrote it).
+        self.emit_op_arg(ops.LOAD_GLOBAL, self.add_name(self.names, "StopAsyncIteration"))
+        self.emit_op(ops.CHECK_EXC_MATCH)
+        self.emit_jump(ops.POP_JUMP_IF_FALSE, b_reraise)
+        # StopAsyncIteration: normal end of iteration.
+        self.emit_op(ops.POP_TOP)    # pop w_exc
+        self.emit_op(ops.POP_EXCEPT) # pop w_prev, restore sys.exc_info
+        self.emit_op(ops.POP_TOP)    # pop aiter
+        if orelse is not None:
+            self._visit_body(orelse)
+        self.emit_jump(ops.JUMP_ABSOLUTE, b_end)
+
+        # Non-StopAsyncIteration: re-raise into the enclosing handler.
+        # Stack: [..., aiter, prev, exc].  Restore sys.exc_info (POP_EXCEPT
+        # on prev), drop aiter, then RERAISE 0 with just exc on top.  Use
+        # ROT_THREE to move exc below aiter+prev, POP_EXCEPT prev, POP_TOP
+        # aiter, RERAISE 0 exc.
+        self.use_next_block(b_reraise)
+        self.emit_op(ops.ROT_THREE)  # [aiter, prev, exc] -> [exc, aiter, prev]
+        self.emit_op(ops.POP_EXCEPT)  # pop prev, restore sys.exc_info
+        self.emit_op(ops.POP_TOP)     # pop aiter
+        self.emit_op_arg(ops.RERAISE, 0)
 
         self.use_next_block(b_end)
 
@@ -990,20 +1018,44 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
             self.use_next_block(end)
 
     def _visit_try_except(self, tr):
+        # copies CPython compiler_try_except (compile.c)
+        #
+        #   try_body              ; table: body -> exc          (lasti=False)
+        #   [orelse]
+        #   JUMP_FORWARD end      ; skip handlers
+        #   <exc handler entry>
+        #   SETUP_CLEANUP outer_cleanup
+        #   PUSH_EXC_INFO                                       ; stack: [prev, exc]
+        #   (for each handler i:)
+        #     check_i             ; table entry i: check + STORE -> outer_cleanup (lasti=True)
+        #     body_i              ; table: body_i -> inner_cleanup_i (lasti=True)
+        #     POP_EXCEPT; LOAD None; STORE name; DEL name; JUMP end
+        #     inner_cleanup_i:    ; stack [prev, lasti, exc]
+        #        LOAD None; STORE name; DEL name
+        #        RERAISE 1
+        #   no_match:
+        #     RERAISE 0                                        ; caught by outer_cleanup
+        #   outer_cleanup:        ; stack [prev, lasti, exc]
+        #     COPY 3; POP_EXCEPT; RERAISE 1
+        #   end:
         body = self.new_block()
         exc = self.new_block()
-        otherwise = self.new_block()
         end = self.new_block()
-        # XXX CPython uses SETUP_FINALLY here too
-        self.emit_jump(ops.SETUP_EXCEPT, exc)
+        outer_cleanup = self.new_block()
+        saved_depth = self._stack_depth
         body = self.use_next_block(body)
+        self.emit_jump(_SETUP_FINALLY, exc)  # open try-body scope; seeds exc.forced_initial_depth
         self.push_frame_block(F_TRY_EXCEPT, body)
         self._visit_body(tr.body)
         self.pop_frame_block(F_TRY_EXCEPT, body)
         self.no_position_info()
-        self.emit_op(ops.POP_BLOCK)
-        self.emit_jump(ops.JUMP_FORWARD, otherwise)
+        self.emit_op(_POP_BLOCK)  # close try-body scope
+        self._visit_body(tr.orelse)
+        self.emit_jump_noline(ops.JUMP_FORWARD, end)
         self.use_next_block(exc)
+        # stack: [..., prev_exc, exc]  (after PUSH_EXC_INFO executed at handler entry)
+        self.emit_jump(_SETUP_CLEANUP, outer_cleanup)  # open outer scope; seeds forced_initial_depth
+        self.emit_op(ops.PUSH_EXC_INFO)
         self.push_frame_block(F_EXCEPTION_HANDLER, None)
         handler = None
         for i, handler in enumerate(tr.handlers):
@@ -1011,83 +1063,88 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
             self.update_position(handler)
             next_except = self.new_block()
             if handler.type:
-                self.emit_op(ops.DUP_TOP)
                 handler.type.walkabout(self)
-                self.emit_jump(ops.JUMP_IF_NOT_EXC_MATCH, next_except)
+                self.emit_op(ops.CHECK_EXC_MATCH)
+                self.emit_jump(ops.POP_JUMP_IF_FALSE, next_except)
             else:
                 if i != len(tr.handlers) - 1:
                     self.error(
                         "bare 'except:' must be the last except block", handler)
+            cleanup_end = self.new_block()
             if handler.name:
-                ## generate the equivalent of:
-                ##
-                ## try:
-                ##     # body
-                ## except type as name:
-                ##     try:
-                ##         # body
-                ##     finally:
-                ##         name = None
-                ##         del name
-                #
-                cleanup_end = self.new_block()
                 self.name_op(handler.name, ast.Store, handler)
-                self.emit_op(ops.POP_TOP)
-                # second try
-                self.emit_jump(ops.SETUP_FINALLY, cleanup_end)
-                cleanup_body = self.use_next_block()
-                self.push_frame_block(F_HANDLER_CLEANUP, cleanup_body, None, handler)
-                # second # body
-                self._visit_body(handler.body)
-                self.pop_frame_block(F_HANDLER_CLEANUP, cleanup_body)
-                self.no_position_info() # artificial instructions
-                self.emit_op(ops.POP_BLOCK)
-                self.emit_op(ops.POP_EXCEPT)
-                # name = None; del name
-                self.load_const(self.space.w_None)
-                self.name_op(handler.name, ast.Store, handler)
-                self.name_op(handler.name, ast.Del, handler)
-                self.emit_jump(ops.JUMP_FORWARD, end)
-
-                # finally
-                self.use_next_block(cleanup_end)
-                self.no_position_info() # artificial instructions
-                # name = None; del name
-                self.load_const(self.space.w_None)
-                self.name_op(handler.name, ast.Store, handler)
-                self.name_op(handler.name, ast.Del, handler)
-
-                self.emit_op_arg(ops.RERAISE, 1)
             else:
-                self.emit_op(ops.POP_TOP)
-                self.emit_op(ops.POP_TOP)
-                cleanup_body = self.use_next_block()
+                self.emit_op(ops.POP_TOP)  # pop exc, stack: [prev_exc]
+            cleanup_body = self.use_next_block()
+            # Open inner cleanup scope for the handler body; seeds cleanup_end.forced_initial_depth.
+            # The outer_cleanup scope (opened above PUSH_EXC_INFO) covers the check region.
+            self.emit_jump(_SETUP_CLEANUP, cleanup_end)
+            if handler.name:
+                self.push_frame_block(F_HANDLER_CLEANUP, cleanup_body, None, handler)
+            else:
                 self.push_frame_block(F_HANDLER_CLEANUP, cleanup_body)
-                self._visit_body(handler.body)
-                self.pop_frame_block(F_HANDLER_CLEANUP, cleanup_body)
-                self.no_position_info() # artificial instructions
-                self.emit_op(ops.POP_EXCEPT)
-                self.emit_jump(ops.JUMP_FORWARD, end)
-            #
+            self._visit_body(handler.body)
+            self.pop_frame_block(F_HANDLER_CLEANUP, cleanup_body)
+            self.no_position_info()
+            self.emit_op(_POP_BLOCK)  # close inner cleanup scope
+            self.emit_op(_POP_BLOCK)  # close outer_cleanup scope
+            self.emit_op(ops.POP_EXCEPT)
+            if handler.name:
+                self.load_const(self.space.w_None)
+                self.name_op(handler.name, ast.Store, handler)
+                self.name_op(handler.name, ast.Del, handler)
+            self.emit_jump(ops.JUMP_FORWARD, end)
+
+            # cleanup_end (inner cleanup): reached by exception table when the
+            # handler body raises.  Stack [prev, lasti, exc].  Clear the name,
+            # then RERAISE 1 reads lasti, pops exc, reraises.  The reraise is
+            # caught by the next outer_cleanup table entry (added on the next
+            # loop iteration, or after the loop for the last handler).
+            self.use_next_block(cleanup_end)
+            self.no_position_info()
+            if handler.name:
+                self.load_const(self.space.w_None)
+                self.name_op(handler.name, ast.Store, handler)
+                self.name_op(handler.name, ast.Del, handler)
+            self.emit_op_arg(ops.RERAISE, 1)
             self.use_next_block(next_except)
         if handler is not None:
             self.update_position(handler)
         self.pop_frame_block(F_EXCEPTION_HANDLER, None)
-        # pypy difference: get rid of exception
-        self.emit_op(ops.POP_TOP)
-        self.emit_op(ops.RERAISE) # reraise uses the SApplicationException
-        self.use_next_block(otherwise)
-        self._visit_body(tr.orelse)
+        # no_match: fallthrough from the last POP_JUMP_IF_FALSE.  Stack
+        # [prev, lasti, exc].  RERAISE 0 pops exc and reraises; caught by
+        # the outer_cleanup scope opened above PUSH_EXC_INFO.
+        self.emit_op_arg(ops.RERAISE, 0)
+        self.emit_op(_POP_BLOCK)  # close outer_cleanup scope
+
+        # outer_cleanup: reached when a handler's code or the no-match path
+        # raises.  Stack [prev, lasti, exc].  COPY 3 duplicates prev,
+        # POP_EXCEPT pops the duplicate and restores sys.exc_info to prev,
+        # RERAISE 1 reads lasti and reraises exc upward.  Any enclosing
+        # with-statement's SETUP_WITH scope naturally covers this block.
+        self.use_next_block(outer_cleanup)
+        self.no_position_info()
+        self.emit_op_arg(ops.COPY, 3)
+        self.emit_op(ops.POP_EXCEPT)
+        self.emit_op_arg(ops.RERAISE, 1)
         self.use_next_block(end)
+        # Restore: try/except is stack-neutral.
+        self._stack_depth = saved_depth
 
     def _visit_try_finally(self, tr, has_handlers, trybody, finalbody):
         body = self.new_block()
         end = self.new_block()
         exit = self.new_block()
+        # CPython 3.11-parity layout: body -> end (depth=0, no lasti), handler
+        # does PUSH_EXC_INFO + finally body + RERAISE 0.  An outer_cleanup
+        # covering the PUSH_EXC_INFO...RERAISE 0 range catches reraises from
+        # it and emits COPY 3; POP_EXCEPT; RERAISE 1 -- restoring sys.exc_info
+        # and propagating with the original raise site preserved in lasti.
+        outer_cleanup = self.new_block()
 
-        # try block
-        self.emit_jump(ops.SETUP_FINALLY, end)
-        self.use_next_block(body)
+        saved_depth = self._stack_depth
+        body = self.use_next_block(body)
+        self.emit_jump(_SETUP_FINALLY, end)  # open try-body scope; seeds end.forced_initial_depth
         self.push_frame_block(F_FINALLY_TRY, body, end, tr)
         if has_handlers:
             if isinstance(tr, ast.Try):
@@ -1098,40 +1155,60 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         else:
             self._visit_body(trybody)
         self.no_position_info()
-        self.emit_op(ops.POP_BLOCK)
+        self.emit_op(_POP_BLOCK)  # close try-body scope
 
-        # finally block, unexceptional case
+        # finally block, unexceptional case: inline (CPython: VISIT_SEQ finalbody then JUMP exit)
         self.pop_frame_block(F_FINALLY_TRY, body)
         self._visit_body(finalbody)
-        self.emit_jump(ops.JUMP_FORWARD, exit)
+        self.emit_jump_noline(ops.JUMP_FORWARD, exit)
 
-        # finally block, exceptional case
-        self.use_next_block(end)
+        # finally block, exceptional case: stack at entry is [exc] (depth 1).
+        self.no_position_info()  # SETUP_CLEANUP/PUSH_EXC_INFO are artificial; line event must
+        self.use_next_block(end) # fire at the first real statement of the finally body so that
+        self.emit_jump(_SETUP_CLEANUP, outer_cleanup)  # open outer scope; seeds forced_initial_depth
+        self.emit_op(ops.PUSH_EXC_INFO)
         self.push_frame_block(F_FINALLY_END, end)
         self._visit_body(finalbody)
         self.pop_frame_block(F_FINALLY_END, end)
+        # RERAISE 0 pops exc and reraises; caught by outer_cleanup scope.
+        # Keep current line (last line of finally body) -- matches CPython.
+        self.emit_op_arg(ops.RERAISE, 0)
+        self.emit_op(_POP_BLOCK)  # close outer_cleanup scope
 
-        # the RERAISE will be duplicated by duplicate_exits_without_lineno
-        self.no_position_info()
-        self.emit_op(ops.RERAISE)
+        # outer_cleanup: re-entry with [prev, lasti, exc]; COPY 3 duplicates prev,
+        # POP_EXCEPT restores sys.exc_info, RERAISE 1 reads lasti and reraises.
+        # Any enclosing with-statement's SETUP_WITH scope naturally covers this.
+        # Keep current line so _marklines finds the finally-body end line here,
+        # allowing fset_f_lineno to detect this as an exception-handler target.
+        self.use_next_block(outer_cleanup)
+        self.emit_op_arg(ops.COPY, 3)
+        self.emit_op(ops.POP_EXCEPT)
+        self.emit_op_arg(ops.RERAISE, 1)
         self.use_next_block(exit)
+        # Restore depth counter: try/finally is stack-neutral.
+        self._stack_depth = saved_depth
 
 
     def visit_Try(self, tr):
+        self.update_position(tr)
+        self.emit_op(ops.NOP)
         if tr.finalbody:
             return self._visit_try_finally(
-                    tr, tr.handlers is not None, tr.body, tr.finalbody)
+                    tr, bool(tr.handlers), tr.body, tr.finalbody)
         else:
             return self._visit_try_except(tr)
 
     def visit_TryStar(self, tr):
+        self.update_position(tr)
+        self.emit_op(ops.NOP)
         if tr.finalbody:
             return self._visit_try_finally(
-                    tr, tr.handlers is not None, tr.body, tr.finalbody)
+                    tr, bool(tr.handlers), tr.body, tr.finalbody)
         else:
             return self._visit_try_except_star(tr)
 
     def _visit_try_except_star(self, tr):
+        # copies cpython compiler_try_star_except
         """
         Code generated for "try: S except* E1 as V1: S1 except* E2 as V2: S2 ...":
         (The contents of the value stack is shown in [], with the top
@@ -1187,119 +1264,127 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         []                               L0:       <next statement>
         """
         body = self.new_block()
-        exc = self.new_block() # L1 in comment above
-        otherwise = self.new_block() # L0 in comment above
+        exc = self.new_block()
+        orelse = self.new_block()
         end = self.new_block()
-        self.emit_jump(ops.SETUP_EXCEPT, exc)
+        cleanup = self.new_block()
+        reraise_star = self.new_block()
+
+        saved_depth = self._stack_depth
         body = self.use_next_block(body)
+        self.emit_jump(_SETUP_FINALLY, exc)
         self.push_frame_block(F_TRY_EXCEPT, body)
         self._visit_body(tr.body)
         self.pop_frame_block(F_TRY_EXCEPT, body)
         self.no_position_info()
-        self.emit_op(ops.POP_BLOCK)
-        self.emit_jump(ops.JUMP_FORWARD, otherwise)
+        self.emit_op(_POP_BLOCK)
+        self.emit_jump(ops.JUMP_FORWARD, orelse)
+
         self.use_next_block(exc)
+        self.no_position_info()
+        self.emit_jump(_SETUP_CLEANUP, cleanup)
+        self.emit_op(ops.PUSH_EXC_INFO)
         self.push_frame_block(F_EXCEPTION_GROUP_HANDLER, None)
-        handler = None
+
+        n = len(tr.handlers)
         for i, handler in enumerate(tr.handlers):
             assert isinstance(handler, ast.ExceptHandler)
             self.update_position(handler)
-            pop_next_except = self.new_block() # C1 in comment above
-            next_except = self.new_block() # LE2 in comment above
-            next_except_with_nop = self.new_block() # L2 in comment above
+
+            except_block = self.new_block()       # NOP block (holds propagated lineno)
+            except_with_error = self.new_block()  # merge point
+            no_match = self.new_block()
+
             assert handler.type is not None
             if i == 0:
-                self.emit_op(ops.DUP_TOP)
+                self.emit_op_arg(ops.COPY, 1)
                 self.emit_op(ops.BUILD_LIST)
-                self.emit_op(ops.ROT_TWO)
+                self.emit_op_arg(ops.SWAP, 2)
+
             handler.type.walkabout(self)
             self.emit_op(ops.CHECK_EG_MATCH)
-            self.emit_op(ops.DUP_TOP)
-            self.load_const(self.space.w_None)
-            self.emit_op(ops.IS_OP)
-            self.emit_jump(ops.POP_JUMP_IF_TRUE, pop_next_except)
+            self.emit_op_arg(ops.COPY, 1)
+            self.emit_jump(ops.POP_JUMP_FORWARD_IF_NONE, no_match)
 
-            exception_in_exc_body = self.new_block() # R1 in comment above
+            cleanup_end = self.new_block()
             cleanup_body = self.new_block()
+
             if handler.name is not None:
                 self.name_op(handler.name, ast.Store, handler)
             else:
                 self.emit_op(ops.POP_TOP)
-            ## generate the equivalent of:
-            ##
-            ## try:
-            ##     < body >
-            ## except* type as name:
-            ##     try:
-            ##         < body >
-            ##         name = None
-            ##         del name
-            ##     except:
-            ##         name = None
-            ##         del name
-            ##         continue with except* handling
-            #
-            self.emit_jump(ops.SETUP_EXCEPT, exception_in_exc_body)
+
+            cleanup_body = self.use_next_block(cleanup_body)
+            self.emit_jump(_SETUP_CLEANUP, cleanup_end)
+            if handler.name:
+                self.push_frame_block(F_HANDLER_CLEANUP, cleanup_body, None, handler)
+            else:
+                self.push_frame_block(F_HANDLER_CLEANUP, cleanup_body)
             self._visit_body(handler.body)
-            self.emit_op(ops.POP_BLOCK) # XXX missing in CPython comment
+            self.pop_frame_block(F_HANDLER_CLEANUP, cleanup_body)
+            self.no_position_info()
+            self.emit_op(_POP_BLOCK)
             if handler.name:
                 self.load_const(self.space.w_None)
                 self.name_op(handler.name, ast.Store, handler)
                 self.name_op(handler.name, ast.Del, handler)
-            self.emit_jump(ops.JUMP_FORWARD, next_except_with_nop)
+            self.emit_jump(ops.JUMP_FORWARD, except_block)
 
-            self.use_next_block(exception_in_exc_body)
+            self.use_next_block(cleanup_end)
+            self.no_position_info()
             if handler.name:
                 self.load_const(self.space.w_None)
                 self.name_op(handler.name, ast.Store, handler)
                 self.name_op(handler.name, ast.Del, handler)
-
             self.emit_op_arg(ops.LIST_APPEND, 3)
-            self.emit_op(ops.POP_TOP)
-            self.emit_jump(ops.JUMP_FORWARD, next_except)
+            self.emit_op(ops.POP_TOP)  # lasti
+            self.emit_jump(ops.JUMP_FORWARD, except_with_error)
 
-            self.use_next_block(next_except_with_nop)
-            self.emit_line_tracing_nop() # XXX which line though?
-            self.emit_jump(ops.JUMP_FORWARD, next_except)
+            self.use_next_block(except_block)
+            self.emit_op(ops.NOP)
+            self.emit_jump(ops.JUMP_FORWARD, except_with_error)
 
-            self.use_next_block(pop_next_except)
-            # this POP_TOP belongs to the `except*` clause that did not match
-            self.update_position(handler)
-            self.emit_op(ops.POP_TOP)
+            self.use_next_block(no_match)
+            self.emit_op(ops.POP_TOP)  # match (None)
 
-            self.use_next_block(next_except)
-        # The reraise-star tail is bookkeeping the user never wrote, so it
-        # gets no position at all, as CPython's does.  Giving it the handler's
-        # line made the tracer replay the `except*` line, and the handler body
-        # line with it, for an exception that matched no handler.
+            self.use_next_block(except_with_error)
+
+            if i == n - 1:
+                self.emit_op_arg(ops.LIST_APPEND, 1)
+                self.emit_jump(ops.JUMP_FORWARD, reraise_star)
+
         self.no_position_info()
-        self.emit_op_arg(ops.LIST_APPEND, 1)
+        self.pop_frame_block(F_EXCEPTION_GROUP_HANDLER, None)
+
+        reraise = self.new_block()
+
+        self.use_next_block(reraise_star)
         self.emit_op(ops.PREP_RERAISE_STAR)
-        self.emit_op(ops.DUP_TOP)
-        self.load_const(self.space.w_None)
-        self.emit_op(ops.IS_OP)
-        reraise_block = self.new_block() # RER in comment above
-        self.emit_jump(ops.POP_JUMP_IF_FALSE, reraise_block)
+        self.emit_op_arg(ops.COPY, 1)
+        self.emit_jump(ops.POP_JUMP_FORWARD_IF_NOT_NONE, reraise)
+
         self.emit_op(ops.POP_TOP)
+        self.emit_op(_POP_BLOCK)
         self.emit_op(ops.POP_EXCEPT)
-        self.emit_op(ops.POP_TOP) # pypy difference: get rid of unroller
         self.emit_jump(ops.JUMP_FORWARD, end)
 
-        self.use_next_block(reraise_block)
-        self.pop_frame_block(F_EXCEPTION_GROUP_HANDLER, None)
-        # pypy difference: get rid of exception
-        self.emit_op(ops.ROT_TWO)
-        self.emit_op(ops.POP_TOP)
+        self.use_next_block(reraise)
+        self.emit_op(_POP_BLOCK)
+        self.emit_op_arg(ops.SWAP, 2)
+        self.emit_op(ops.POP_EXCEPT)
         self.emit_op(ops.RERAISE)
-        self.use_next_block(otherwise)
+
+        self.use_next_block(cleanup)
+        self.no_position_info()
+        self.emit_op_arg(ops.COPY, 3)
+        self.emit_op(ops.POP_EXCEPT)
+        self.emit_op_arg(ops.RERAISE, 1)
+
+        self.use_next_block(orelse)
+        self._stack_depth = saved_depth
         self._visit_body(tr.orelse)
         self.use_next_block(end)
-        # Leave the join block without a position, as CPython does: a
-        # function whose last statement is a try/except* returns with
-        # f_lineno None, which is what pdb prints for it (gh-101517).  Only
-        # except* behaves this way -- plain except and finally both leave the
-        # handler's line in place, and anything following sets its own.
-        self.no_position_info()
+        self._stack_depth = saved_depth
 
     def _import_as(self, alias, imp):
         # in CPython this is roughly compile_import_as
@@ -1354,27 +1439,23 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         first = imp.names[0]
         assert isinstance(first, ast.alias)
         star_import = len(imp.names) == 1 and first.name == "*"
-        # Various error checking for future imports.  Level 0 only: a
-        # relative 'from .__future__ import x' is just an import.
-        if imp.module == "__future__" and imp.level == 0:
+        # Various error checking for future imports.
+        if imp.module == "__future__":
             last_line, last_offset = self.compile_info.last_future_import
             if imp.lineno > last_line or \
                     imp.lineno == last_line and imp.col_offset > last_offset:
                 self.error("__future__ statements must appear at beginning "
                                "of file", imp)
-            # These three point at the offending name, not at the statement,
-            # the way CPython's future_check_features does (test_future_stmt
-            # checks the exact offsets).
             if star_import:
-                self.error("* not valid in __future__ imports", first)
+                self.error("* not valid in __future__ imports", imp)
             compiler = space.createcompiler()
             for alias in imp.names:
                 assert isinstance(alias, ast.alias)
                 if alias.name not in compiler.future_flags.compiler_features:
                     if alias.name == "braces":
-                        self.error("not a chance", alias)
+                        self.error("not a chance", imp)
                     self.error("future feature %s is not defined" %
-                               (alias.name,), alias)
+                               (alias.name,), imp)
         self.load_const(space.newint(imp.level))
         names_w = [None]*len(imp.names)
         for i in range(len(imp.names)):
@@ -1527,24 +1608,20 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         witem = wih.items[pos]
         assert isinstance(witem, ast.withitem)
         witem.context_expr.walkabout(self)
-        # PEP 657: every instruction belonging to *this* context manager --
-        # the __enter__ call, both __exit__ calls, the cleanup handler --
-        # carries the position of the context manager expression, not that of
-        # the whole `with` statement, whose span covers the body too.  Same as
-        # compiler_with()/compiler_async_with() in CPython's compile.c.
-        self.update_position(witem.context_expr)
         if not is_async:
-            self.emit_jump(ops.SETUP_WITH, cleanup)
+            self.emit_op(ops.BEFORE_WITH)
+            self.emit_jump(_SETUP_WITH, cleanup)
             fblock_kind = F_WITH
         else:
             self.emit_op(ops.BEFORE_ASYNC_WITH)
             self.emit_op_arg(ops.GET_AWAITABLE, 1)
             self.load_const(self.space.w_None)
             self.emit_op(ops.YIELD_FROM)
-            self.emit_jump(ops.SETUP_ASYNC_WITH, cleanup)
+            self.emit_jump(_SETUP_WITH, cleanup)
             fblock_kind = F_ASYNC_WITH
 
-        self.use_next_block(body_block)
+        normal_exit = self.new_block()
+        body_block = self.use_next_block(body_block)
         self.push_frame_block(fblock_kind, body_block, cleanup, witem)
         if witem.optional_vars:
             witem.optional_vars.walkabout(self)
@@ -1556,10 +1633,19 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
             self.handle_withitem(wih, pos + 1, is_async=is_async)
 
         self.no_position_info()
-        self.emit_op(ops.POP_BLOCK)
         self.pop_frame_block(fblock_kind, body_block)
+        # Always emit _POP_BLOCK to close the _SETUP_WITH scope on the
+        # fall-through (normal exit) path.  When the body contains an early
+        # return/break/continue, unwind_fblock already emitted _POP_BLOCK on
+        # that code path; this _POP_BLOCK closes the scope on the fall-through
+        # path.  The two _POP_BLOCKs are on separate control-flow paths, so
+        # they do not double-close.  If the fall-through is dead code (every
+        # body path exits early), emit_op is a no-op on a dead block, and
+        # use_next_block below creates an unreachable block that is removed.
+        self.emit_op(_POP_BLOCK)
+        self.use_next_block(normal_exit)
 
-        self.update_position(witem.context_expr)
+        self.update_position(wih)
         # end of body, successful outcome, start cleanup
         self.call_exit_with_nones()
         if is_async:
@@ -1570,20 +1656,45 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         exit = self.new_block()
         self.emit_jump(ops.JUMP_ABSOLUTE, exit)
 
-        # exceptional outcome
-        self.use_next_block(cleanup)
-        self.update_position(witem.context_expr)
+        # exceptional outcome: _SETUP_WITH opened lasti=True scope, so on
+        # exception the stack on entry to `cleanup` is [..., __exit__, lasti, exc].
+        # After PUSH_EXC_INFO: [..., __exit__, lasti, prev_exc, exc].
+        # WITH_EXCEPT_START peeks __exit__ at depth 3 and pushes __exit__'s
+        # return value.  If truthy: consume exc/prev/lasti/__exit__ and restore
+        # exc_info.  If falsy: RERAISE 2 propagates.
+        with_cleanup = self.new_block()
+        self.use_next_block(cleanup)   # resets _stack_depth to cleanup.forced_initial_depth
+        self.update_position(wih)
+        # Open inner scope for PUSH_EXC_INFO..RERAISE 2; seeds with_cleanup.forced_initial_depth.
+        self.emit_jump(_SETUP_CLEANUP, with_cleanup)
+        self.emit_op(ops.PUSH_EXC_INFO)
         self.emit_op(ops.WITH_EXCEPT_START)
         if is_async:
             self.emit_op_arg(ops.GET_AWAITABLE, 2)
             self.load_const(self.space.w_None)
             self.emit_op(ops.YIELD_FROM)
+        rest_of_handler = self.new_block()
+        self.use_next_block(rest_of_handler)
         exit2 = self.new_block()
         self.emit_jump(ops.POP_JUMP_IF_TRUE, exit2)
+        # __exit__ returned false: propagate original exception.
+        self.emit_op_arg(ops.RERAISE, 2)
+        self.emit_op(_POP_BLOCK)  # close SETUP_CLEANUP scope
+        # with_cleanup: [__exit__, lasti, prev, lasti_new, exc_new]; COPY 3
+        # duplicates prev, POP_EXCEPT restores sys.exc_info, RERAISE 1 reraises.
+        # Any enclosing SETUP_WITH scope naturally covers this block.
+        self.use_next_block(with_cleanup)
+        self.emit_op_arg(ops.COPY, 3)
+        self.emit_op(ops.POP_EXCEPT)
         self.emit_op_arg(ops.RERAISE, 1)
         self.use_next_block(exit2)
-        self.emit_op(ops.POP_TOP)
-        self.emit_op(ops.POP_EXCEPT)
+        self.emit_op(ops.POP_TOP)    # pop exc
+        self.emit_op(_POP_BLOCK)     # close SETUP_CLEANUP scope (matches CPython POP_BLOCK)
+        exit2_rest = self.new_block()
+        self.use_next_block(exit2_rest)
+        self.emit_op(ops.POP_EXCEPT) # pop prev_exc, restore sys.exc_info
+        self.emit_op(ops.POP_TOP)    # pop lasti
+        self.emit_op(ops.POP_TOP)    # pop __exit__
         self.use_next_block(exit)
 
     def visit_AsyncWith(self, wih):
@@ -1707,11 +1818,13 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         self.emit_compare(last_op)
         if ops_count > 1:
             end = self.new_block()
+            saved_depth = self._stack_depth  # result at D+1; cleanup path also leaves D+1
             self.emit_jump(ops.JUMP_FORWARD, end)
             self.use_next_block(cleanup)
             self.emit_op(ops.ROT_TWO)
             self.emit_op(ops.POP_TOP)
             self.use_next_block(end)
+            self._stack_depth = saved_depth  # restore: result is on stack
 
     def _is_literal(self, node):
         # to-do(isidentical): maybe include list, dict, sets?
@@ -1739,20 +1852,10 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
                     operator, replacement = "is", "=="
                 else:
                     operator, replacement = "is not", "!="
-                # Name the literal's type, as CPython does.  When both sides
-                # are literals it reports the left one.
-                if self._is_literal(left):
-                    literal = left
-                else:
-                    literal = right
-                # _is_literal only says yes for ast.Constant, but the
-                # annotator cannot see that through the call.
-                assert isinstance(literal, ast.Constant)
-                typename = self.space.type(literal.value).name
                 misc.syntax_warning(
                     self.space,
-                    '"%s" with \'%s\' literal. Did you mean "%s"?'
-                    % (operator, typename, replacement),
+                    '"%s" with a literal. Did you mean "%s"?'
+                    % (operator, replacement),
                     self.compile_info.filename,
                     node.lineno,
                     node.col_offset
@@ -1795,9 +1898,11 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         end = self.new_block()
         otherwise = self.new_block()
         ifexp.test.accept_jump_if(self, False, otherwise)
+        saved_depth = self._stack_depth
         ifexp.body.walkabout(self)
-        self.emit_jump(ops.JUMP_FORWARD, end)
+        self.emit_jump_noline(ops.JUMP_FORWARD, end)
         self.use_next_block(otherwise)
+        self._stack_depth = saved_depth  # restore: otherwise entered before then-branch
         ifexp.orelse.walkabout(self)
         self.use_next_block(end)
 
@@ -1871,7 +1976,7 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
 
     def visit_Starred(self, star):
         if star.ctx != ast.Store:
-            self.error("cannot use starred expression here",
+            self.error("can't use starred expression here",
                        star)
         self.error("starred assignment target must be in a list or tuple", star)
 
@@ -2031,6 +2136,8 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         attr_lookup = call.func
         assert isinstance(attr_lookup, ast.Attribute)
         attr_lookup.value.walkabout(self)
+        attr_col = attr_lookup.end_col_offset - len(attr_lookup.attr)
+        self.update_position((attr_lookup.end_lineno, attr_lookup.end_lineno, attr_col, attr_lookup.end_col_offset))
         self.emit_op_name(ops.LOAD_METHOD, self.names, attr_lookup.attr)
         self.visit_sequence(call.args)
         if not call.keywords:
@@ -2098,7 +2205,9 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
     def _comp_async_generator(self, node, generators, gen_index, built_object_stackdepth):
         b_start = self.new_block()
         b_except = self.new_block()
+        b_reraise = self.new_block()
         b_if_cleanup = self.new_block()
+        b_end = self.new_block()
         gen = generators[gen_index]
         assert isinstance(gen, ast.comprehension)
         if gen_index > 0:
@@ -2107,11 +2216,17 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
 
         self.use_next_block(b_start)
 
-        self.emit_jump(ops.SETUP_EXCEPT, b_except)
+        b_anext = self.use_next_block()
+        b_after_yield = self.new_block()
+        # Narrow SETUP_FINALLY/POP_BLOCK pair covering only GET_ANEXT/YIELD_FROM.
+        # The inner scope overrides any enclosing SETUP_WITH/SETUP_ASYNC_WITH,
+        # routing StopAsyncIteration to b_except.
+        self.emit_jump(_SETUP_FINALLY, b_except)
         self.emit_op(ops.GET_ANEXT)
         self.load_const(self.space.w_None)
         self.emit_op(ops.YIELD_FROM)
-        self.emit_op(ops.POP_BLOCK)
+        self.emit_op(_POP_BLOCK)
+        self.use_next_block(b_after_yield)
         gen.target.walkabout(self)
 
         if gen.ifs:
@@ -2124,160 +2239,14 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         if gen_index < len(generators):
             self._comp_generator(node, generators, gen_index, built_object_stackdepth)
         else:
-            # NB: built_object_stackdepth, not gen_index.  The two agree
-            # unless a 'for t in [expr]' assignment-idiom clause precedes
-            # an async innermost clause; then gen_index overshoots and
-            # LIST_APPEND/SET_ADD/MAP_ADD peeked past the container --
-            # a segfault via the old separate-code-object path, an
-            # enclosing-frame stack read when inlined.
-            node.accept_comp_iteration(self, built_object_stackdepth)
+            node.accept_comp_iteration(self, gen_index)
 
         self.use_next_block(b_if_cleanup)
         self.emit_jump(ops.JUMP_ABSOLUTE, b_start)
 
-        self.use_next_block(b_except)
-        self.emit_op(ops.END_ASYNC_FOR)
-
-    def comprehension_load_iter(self):
-        # Only called while emitting a comprehension body.  In a separate
-        # comprehension code object this is overridden to load the '.0'
-        # argument; for a PEP 709 inlined comprehension the iterator lives
-        # in a hidden fast local of the enclosing function.
-        name = self._inlined_iter_names[-1]
-        self.emit_op_arg(ops.LOAD_FAST, self.add_name(self.var_names, name))
-
-    def _emit_fast(self, op, name):
-        self.emit_op_arg(op, self.add_name(self.var_names, name))
-
-    def _inline_comp_bound_names(self, node, comp_scope):
-        """The sorted names an inlinable comprehension binds, else None.
-
-        PEP 709, deliberately narrower than CPython: only list/set/dict
-        comprehensions in optimized function scopes whose bound names are
-        plain locals on both sides; async comprehensions (and sync ones
-        containing await) inline only where the enclosing function can
-        await, and their async-for machinery then runs directly on the
-        enclosing coroutine frame.  Everything else -- class and module
-        bodies, iteration variables closed over by a nested scope or
-        shared with a parent cell/free variable, walrus targets escaping
-        the comprehension -- keeps the separate code object, whose
-        semantics are already right.
-        """
-        if isinstance(node, ast.GeneratorExp):
-            return None
-        assert isinstance(comp_scope, symtable.FunctionScope)
-        if comp_scope.is_generator:
-            return None
-        if comp_scope.is_coroutine and not self._check_async_function():
-            # async comprehension (or await inside one) in a scope that
-            # cannot await: the old path owns the error message
-            return None
-        if not isinstance(self.scope, symtable.FunctionScope):
-            return None
-        names = []
-        for name, role in comp_scope.roles.iteritems():
-            if name.startswith('.'):
-                continue          # the '.0' argument of the unused old scheme
-            if role & (symtable.SYM_GLOBAL | symtable.SYM_NONLOCAL):
-                return None       # a walrus target escaping the comprehension
-            if role & symtable.SYM_BOUND:
-                if comp_scope.lookup(name) != symtable.SCOPE_LOCAL:
-                    return None   # closed over by something in the body
-                parent_scope = self.scope.lookup(name)
-                if (parent_scope == symtable.SCOPE_CELL or
-                        parent_scope == symtable.SCOPE_FREE):
-                    return None   # sharing would need cell save/restore
-                names.append(name)
-        # deterministic emission order: never iterate a dict for codegen
-        # (untranslated py2 dict order differs from translated).  NB:
-        # list.sort() is not RPython; string_sort is the tree's timsort for
-        # interp-level string lists, same as assemble.py uses.
-        string_sort(names)
-        return names
-
-    def _emit_inlined_comp_restore(self, counter, names, iter_name):
-        for i in range(len(names)):
-            name = names[i]
-            self._emit_fast(ops.LOAD_FAST_AND_CLEAR,
-                            '.%d.save.%s' % (counter, name))
-            self._emit_fast(ops.STORE_FAST_MAYBE_NULL, name)
-        # the iterator slot is never unbound here, so a plain POP_TOP is
-        # safe after the maybe-None push
-        self._emit_fast(ops.LOAD_FAST_AND_CLEAR, iter_name)
-        self.emit_op(ops.POP_TOP)
-
-    def _compile_inlined_comprehension(self, node, names):
-        # PEP 709: emit the comprehension loop directly into this code
-        # object.  The iterator and the saved values of the names the
-        # comprehension binds all live in hidden fast locals, so nothing
-        # possibly-unbound ever travels through generic stack shuffles,
-        # and the restore sequence is identical on the normal path and in
-        # the exception handler.
-        self.update_position(node)
-        first_comp = node.get_generators()[0]
-        assert isinstance(first_comp, ast.comprehension)
-        first_comp.iter.walkabout(self)
-        # PEP 657: the loop machinery is attributed to the outermost
-        # iterable expression, matching the separate-code-object path
-        self.update_position(first_comp.iter)
-        if first_comp.is_async:
-            self.emit_op(ops.GET_AITER)
-        else:
-            self.emit_op(ops.GET_ITER)
-        counter = self._inlined_comp_counter
-        self._inlined_comp_counter += 1
-        iter_name = '.%d.iter' % counter
-        self._emit_fast(ops.STORE_FAST, iter_name)
-        for i in range(len(names)):
-            name = names[i]
-            self._emit_fast(ops.LOAD_FAST_AND_CLEAR, name)
-            self._emit_fast(ops.STORE_FAST_MAYBE_NULL,
-                            '.%d.save.%s' % (counter, name))
-        handler = self.new_block()
-        end = self.new_block()
-        self.emit_jump(ops.SETUP_EXCEPT, handler)
-        self.use_next_block()
-        self._inlined_iter_names.append(iter_name)
-        self._inlined_comp_scopes.append(
-            self.symbols.find_scope(node))
-        for i in range(len(names)):
-            name = names[i]
-            count = self._active_inlined_names.get(name, 0)
-            self._active_inlined_names[name] = count + 1
-        node.build_container_and_load_iter(self)
-        self._comp_generator(node, node.get_generators())
-        self._inlined_iter_names.pop()
-        self._inlined_comp_scopes.pop()
-        for i in range(len(names)):
-            name = names[i]
-            count = self._active_inlined_names[name] - 1
-            if count == 0:
-                del self._active_inlined_names[name]
-            else:
-                self._active_inlined_names[name] = count
-        # the restores are artificial instructions: they must not add line
-        # events, or the merged trace count PEP 709 promises is off again
-        self.no_position_info()
-        self.emit_op(ops.POP_BLOCK)
-        self._emit_inlined_comp_restore(counter, names, iter_name)
-        self.emit_jump(ops.JUMP_FORWARD, end)
-        self.use_next_block(handler)
-        # entered with [unroller, w_value]; both restore pairs and the
-        # iterator pop are TOS-neutral, then discard the exception value
-        # and re-raise via the unroller, exactly like an unmatched except
-        self.no_position_info()
-        self._emit_inlined_comp_restore(counter, names, iter_name)
-        self.emit_op(ops.POP_TOP)
-        self.emit_op(ops.RERAISE)
-        self.use_next_block(end)
+        self._emit_async_for_handler(b_except, b_reraise, b_end)
 
     def _compile_comprehension(self, node, name, sub_scope):
-        comp_scope = self.symbols.find_scope(node)
-        if not isinstance(node, ast.GeneratorExp):
-            inline_names = self._inline_comp_bound_names(node, comp_scope)
-            if inline_names is not None:
-                self._compile_inlined_comprehension(node, inline_names)
-                return
         is_async_function = self.scope.is_coroutine
         code, qualname = self.sub_scope(sub_scope, name, node, node.lineno)
         is_async_comprehension = self.symbols.find_scope(node).is_coroutine
@@ -2293,13 +2262,6 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         first_comp = node.get_generators()[0]
         assert isinstance(first_comp, ast.comprehension)
         first_comp.iter.walkabout(self)
-        # PEP 657: getting the iterator and running the comprehension are
-        # attributed to the outermost iterable expression, not to the whole
-        # comprehension, so a BrokenIter raising from __iter__ or __next__
-        # underlines just the iterable (test_listcomps/test_dictcomps/
-        # test_setcomps test_exception_locations).  walkabout above restores
-        # position_info to the comprehension node, so set it again here.
-        self.update_position(first_comp.iter)
         if first_comp.is_async:
             self.emit_op(ops.GET_AITER)
         else:
@@ -2340,16 +2302,15 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         names = self.names
         ctx = attr.ctx
         attr.value.walkabout(self)
-        # the name has no complete position, give a line number at least
+        attr_col = attr.end_col_offset - len(attr.attr)
+        self.update_position((attr.end_lineno, attr.end_lineno, attr_col, attr.end_col_offset))
         if ctx == ast.Load:
             self.emit_op_name(ops.LOAD_ATTR, names, attr.attr)
             return
         self.check_forbidden_name(attr.attr, attr, ctx)
         if ctx == ast.Store:
-            self.update_position((attr.end_lineno, -1, -1, -1))
             self.emit_op_name(ops.STORE_ATTR, names, attr.attr)
         elif ctx == ast.Del:
-            self.update_position((attr.end_lineno, -1, -1, -1))
             self.emit_op_name(ops.DELETE_ATTR, names, attr.attr)
         else:
             raise AssertionError("unknown context")
@@ -2570,7 +2531,7 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
 
         # rotate this below any items we need to preserve
         targetpos = match_context.on_top + len(match_context.names_stored)
-        self.emit_rot_n(targetpos)
+        self.emit_swaps(targetpos)
 
     def visit_MatchAs(self, match_as):
         match_context = self.match_context
@@ -2700,30 +2661,16 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
     def visit_MatchMapping(self, match_mapping):
         match_context = self.match_context
 
-        # subject = {'x': 42, 'y': 13}
-        # pattern = {'x': 42, 'y': 13, **rest}
-        # stack = [{'x': 42, 'y': 13}]
         self.emit_op(ops.MATCH_MAPPING)
         match_context.on_top += 1
-        # stack = [{'x': 42, 'y': 13}, True]
-
         match_context.emit_fail_jump(ops.POP_JUMP_IF_FALSE)
-        # stack = [{'x': 42, 'y': 13}]
 
         if match_mapping.keys:
             length = len(match_mapping.keys)
-            w_length = self.space.newint(length)
             self.emit_op(ops.GET_LEN)
-            # stack = [{'x': 42, 'y': 13}, 2]
-
-            self.load_const(w_length)
-            # stack = [{'x': 42, 'y': 13}, 2, 2]
-
+            self.load_const(self.space.newint(length))
             self.emit_compare(ast.GtE)
-            # stack = [{'x': 42, 'y': 13}, True]
-
             match_context.emit_fail_jump(ops.POP_JUMP_IF_FALSE)
-            # stack = [{'x': 42, 'y': 13}]
 
             # check for duplicates and wrong kinds of nodes
             w_seen = self.space.newset()
@@ -2736,8 +2683,6 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
                 elif not isinstance(key, ast.Attribute):
                     self.error("mapping pattern keys may only match literals and attribute lookups", key)
 
-            # mostly it's all constants, but not always, can be an Attribute
-            # too
             w_keys = self._tuple_of_consts(match_mapping.keys)
             if w_keys is not None:
                 self.load_const(w_keys)
@@ -2745,64 +2690,47 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
                 for key in match_mapping.keys:
                     key.walkabout(self)
                 self.emit_op_arg(ops.BUILD_TUPLE, len(match_mapping.keys))
-            # stack = [{'x': 42, 'y': 13}, ('x', 'y')]
         else:
             length = 0
-            w_keys = self.space.newtuple([])
-            self.load_const(w_keys)
+            self.load_const(self.space.newtuple([]))
 
+        # stack: [subject, keys_tuple]
         self.emit_op(ops.MATCH_KEYS)
-        # stack = [{'x': 42, 'y': 13}, ('x', 'y'), (42, 13), True]
+        # stack: [subject, keys_tuple, values_or_None]
+        match_context.on_top += 2  # keys_tuple and values_or_None above subject
 
-        match_context.on_top += 2 # extra tuple and keys on top
+        # COPY 1 + LOAD_CONST None + IS_OP 1 mirrors CPython's compile.c pattern;
+        # the peephole optimizer folds this into POP_JUMP_FORWARD_IF_NONE in CPython.
+        self.emit_op_arg(ops.COPY, 1)
+        self.load_const(self.space.w_None)
+        self.emit_op_arg(ops.IS_OP, 1)  # True if values_copy is not None
         match_context.emit_fail_jump(ops.POP_JUMP_IF_FALSE)
-        # stack = [{'x': 42, 'y': 13}, ('x', 'y'), (42, 13)]
+        # stack (success): [subject, keys_tuple, values_tuple]
 
-        if not length:
-            # drop values if there are no patterns to match against
+        if length:
+            self.emit_op_arg(ops.UNPACK_SEQUENCE, length)
+            # stack: [subject, keys_tuple, v_{n-1}, ..., v_0]
+            match_context.on_top += length - 1  # values_tuple replaced by length values
+
+            with self.sub_pattern_context():
+                for i in range(length):
+                    match_context.on_top -= 1
+                    match_mapping.patterns[i].walkabout(self)
+        else:
+            # empty {}: values_or_None is an empty tuple; discard it
             self.emit_op(ops.POP_TOP)
             match_context.on_top -= 1
-            # stack = [{'x': 42, 'y': 13}, ('x', 'y')]
 
-        with self.sub_pattern_context():
-            for i in range(length):
-                is_last = i == length - 1
-                if not is_last:
-                    self.emit_op(ops.DUP_TOP)
-                    # i=0: [{'x': 42, 'y': 13}, ('x', 'y'), (42, 13), (42, 13)]
-                    # i=1: [{'x': 42, 'y': 13}, ('x', 'y'), (42, 13)]
-                else:
-                    match_context.on_top -= 1
-
-                self.load_const(self.space.newint(i))
-                # i=0: [{'x': 42, 'y': 13}, ('x', 'y'), (42, 13), (42, 13), 0]
-                # i=1: [{'x': 42, 'y': 13}, ('x', 'y'), (42, 13), 1]
-
-                self.emit_op(ops.BINARY_SUBSCR)
-                # i=0: [{'x': 42, 'y': 13}, ('x', 'y'), (42, 13), 42]
-                # i=1: [{'x': 42, 'y': 13}, ('x', 'y'), 13]
-
-                match_mapping.patterns[i].walkabout(self)
-
-                # i=0: [{'x': 42, 'y': 13}, ('x', 'y'), (42, 13)]
-                # i=1: [{'x': 42, 'y': 13}, ('x', 'y')]
-
-            if match_mapping.rest:
-                self.emit_op(ops.COPY_DICT_WITHOUT_KEYS)
-                # i=1: [{'x': 42, 'y': 13}, {}]
-
-                self.name_op(match_mapping.rest, ast.Store, match_mapping)
-                # i=1: [{'x': 42, 'y': 13}]
-            else:
-                self.emit_op(ops.POP_TOP)
-                # i=1: [{'x': 42, 'y': 13}]
-            match_context.on_top -= 1
-
-        # expected stack at merge = [{'x': 42, 'y': 13}]
-
-        self.emit_op(ops.POP_TOP)
+        # stack: [subject, keys_tuple]
+        if match_mapping.rest:
+            self.emit_op(ops.COPY_DICT_WITHOUT_KEYS)
+            self.name_op(match_mapping.rest, ast.Store, match_mapping)
+        else:
+            self.emit_op(ops.POP_TOP)  # discard keys_tuple
         match_context.on_top -= 1
-        # stack = []
+
+        self.emit_op(ops.POP_TOP)  # discard subject
+        match_context.on_top -= 1
 
     def visit_MatchOr(self, match_or):
         end = self.new_block()
@@ -2842,7 +2770,7 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
                     permutation.reverse()
                     rots = compute_reordering(permutation)
                     for rot in rots:
-                        self.emit_rot_n(rot)
+                        self.emit_swaps(rot)
                 self.emit_jump(ops.JUMP_FORWARD, end)
                 match_context.next_case()
 
@@ -2857,7 +2785,7 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
         nstores = len(control_list)
         nrots = nstores + 1 + outer_match_context.on_top + len(outer_match_context.names_stored)
         for i, name in enumerate(control_list):
-            self.emit_rot_n(nrots)
+            self.emit_swaps(nrots)
             outer_match_context.add_name(name, control_origins[i], self)
 
         # pop the copy of the subject
@@ -2878,29 +2806,33 @@ class PythonCodeGenerator(assemble.PythonCodeMaker):
 
         nargs = len(match_class.patterns) if match_class.patterns else 0
         nattrs = len(kwd_attrs_w)
+        n = nargs + nattrs
 
         match_class.cls.walkabout(self)
         self.load_const(self.space.newtuple(kwd_attrs_w))
         self.emit_op_arg(ops.MATCH_CLASS, nargs)
-        match_context.on_top += 1 # preserve the tuple
+        match_context.on_top += 1  # preserve the tuple (or None)
 
         match_context.emit_fail_jump(ops.POP_JUMP_IF_FALSE)
 
-        with self.sub_pattern_context():
-            for i in range(nargs + nattrs):
-                if i < nargs:
-                    pattern = match_class.patterns[i]
-                else:
-                    pattern = match_class.kwd_patterns[i - nargs]
+        if n:
+            self.emit_op_arg(ops.UNPACK_SEQUENCE, n)
+            # stack: [v_{n-1}, ..., v_0]
+            match_context.on_top += n - 1  # tuple replaced by n values
 
-                # TODO: skip if pattern is a wildcard
-                self.emit_op(ops.DUP_TOP)
-                self.load_const(self.space.newint(i))
-                self.emit_op(ops.BINARY_SUBSCR)
-                pattern.walkabout(self)
-
-        match_context.on_top -= 1 # pop the tuple
-        self.emit_op(ops.POP_TOP)
+            with self.sub_pattern_context():
+                for i in range(n):
+                    match_context.on_top -= 1
+                    if i < nargs:
+                        pattern = match_class.patterns[i]
+                    else:
+                        pattern = match_class.kwd_patterns[i - nargs]
+                    pattern.walkabout(self)
+            # tuple already consumed by UNPACK_SEQUENCE
+        else:
+            # no sub-patterns: discard the empty tuple
+            match_context.on_top -= 1
+            self.emit_op(ops.POP_TOP)
 
     # PEP 695 type parameter support
 
@@ -3032,18 +2964,7 @@ class TopLevelCodeGenerator(PythonCodeGenerator):
 
     def _compile(self, tree):
         if isinstance(tree, ast.Module):
-            if tree.body:
-                self.first_lineno = 1
-            else:
-                # A module with no statements at all has only the implicit
-                # `return None`, and CPython puts the module prologue on line
-                # 0, so an empty file reports line 0 -- pdb prints
-                # "main.py(0)".  We have no prologue instruction to hang that
-                # on, and encode_single_position() cannot represent a line
-                # below co_firstlineno, so start the code object at 0 instead.
-                # The deviation is that co_firstlineno is 0 rather than
-                # CPython's 1, and only for a module with an empty body.
-                self.first_lineno = 0
+            self.first_lineno = 1
 
         self._maybe_setup_annotations()
         tree.walkabout(self)
@@ -3342,15 +3263,11 @@ class GenericClassTypeParamsCodeGenerator(AnnotationScopeCodeGenerator):
         self.emit_op_arg(ops.BUILD_TUPLE, len(type_param_names))
 
         # 3. Create Generic[T, ...] base (mirrors CPython's INTRINSIC_SUBSCRIPT_GENERIC)
-        # This goes through the _subscript_generic helper rather than
-        # subscripting Generic directly, because a TypeVarTuple has to be
-        # unpacked in the Generic subscript (Generic[Unpack[Ts]]) while
-        # __type_params__ keeps the bare TypeVarTuple.
         # Stack: [type_params_tuple]
         self.emit_op(ops.DUP_TOP)                       # [tuple, tuple]
-        self._load_pypy_typing_attr('_subscript_generic')  # [tuple, tuple, fn]
-        self.emit_op(ops.ROT_TWO)                       # [tuple, fn, tuple]
-        self.emit_op_arg(ops.CALL_FUNCTION, 1)          # [tuple, Generic[T, ...]]
+        self._load_pypy_typing_attr('Generic')          # [tuple, tuple, Generic]
+        self.emit_op(ops.ROT_TWO)                       # [tuple, Generic, tuple]
+        self.emit_op(ops.BINARY_SUBSCR)                 # [tuple, Generic[T, ...]]
         self.name_op('.generic_base', ast.Store, cls)   # [tuple]
 
         # 4. Create the inner class with .generic_base appended to bases
@@ -3386,13 +3303,6 @@ class ComprehensionCodeGenerator(AbstractFunctionCodeGenerator):
         self._end_comp()
 
     def comprehension_load_iter(self):
-        if self._inlined_iter_names:
-            # a PEP 709 inlined comprehension is being emitted INTO this
-            # (non-inlined) comprehension's code object; its iterator lives
-            # in a hidden fast slot, not in the '.0' argument.  Without this
-            # the inner loop consumed the outer comprehension's iterator.
-            PythonCodeGenerator.comprehension_load_iter(self)
-            return
         self.emit_op_arg(ops.LOAD_FAST, 0)
 
     def _end_comp(self):
@@ -3443,15 +3353,6 @@ class ClassCodeGenerator(PythonCodeGenerator):
         self._handle_body(cls.body)
 
         self.no_position_info()
-        # Hand the __classdict__ cell to type.__new__ so it can rebind it to
-        # the finished class's dict.  Until then it holds the mapping
-        # LOAD_LOCALS returned at the top of the body, which stops being the
-        # class namespace the moment the class exists -- so a lazily
-        # evaluated type-param bound read a frozen snapshot.
-        classdict_scope = self.scope.lookup("__classdict__")
-        if classdict_scope == symtable.SCOPE_CELL:
-            self.emit_op_arg(ops.LOAD_CLOSURE, self.cell_vars["__classdict__"])
-            self.name_op("__classdictcell__", ast.Store, None)
         # return the (empty) __class__ cell
         scope = self.scope.lookup("__class__")
         if scope == symtable.SCOPE_CELL_CLASS:
@@ -3686,7 +3587,7 @@ def view(startblock):
         color = "black"
 
         for j, instr in enumerate(block.instructions):
-            str_instr = "%5s: %s" % (instr.position_info[0], ops.opname[instr.opcode])
+            str_instr = "%5s: %s" % (instr.position_info[0], instr.opname())
             if instr.opcode >= ops.HAVE_ARGUMENT and instr.jump is None:
                 str_instr += " %s" % (instr.arg, )
             if instr._stack_depth_after != -99:
@@ -3707,7 +3608,7 @@ def view(startblock):
         if block.next_block is not None:
             if (not block.instructions or block.instructions[-1].opcode not in
                     (ops.JUMP_FORWARD, ops.JUMP_ABSOLUTE, ops.RETURN_VALUE,
-                        ops.RERAISE, ops.RAISE_VARARGS)):
+                        ops.RETURN_CONST, ops.RERAISE, ops.RAISE_VARARGS)):
                 color = "black"
             else:
                 color = "grey"

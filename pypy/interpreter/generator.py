@@ -15,12 +15,6 @@ from rpython.rlib.rarithmetic import r_uint
 class GeneratorOrCoroutine(W_Root):
     _immutable_fields_ = ['pycode']
 
-    # _pickle_support.generator_new() builds one of these with instantiate(),
-    # bypassing __init__ entirely, and gi_running/cr_running is a bare
-    # interp_attrproperty read.  Without this default it reported an
-    # unpickled-but-not-yet-__setstate__'d generator as running at random.
-    running = False
-
     def __init__(self, frame, name=None, qualname=None):
         self.space = frame.space
         self.frame = frame     # turned into None when frame_finished_execution
@@ -186,15 +180,6 @@ return next yielded value or raise StopIteration."""
     def descr_throw(self, w_type, w_val=None, w_tb=None):
         """throw(typ[,val[,tb]]) -> raise exception in generator/coroutine,
 return next yielded value or raise StopIteration."""
-        if w_val is not None or w_tb is not None:
-            # 3.12 deprecated the (type, exc, tb) signature.  It lives here,
-            # on the public method, and not in throw() below, so that the
-            # internal callers -- an async generator's athrow(), which has
-            # already warned in its own name -- do not warn twice.
-            self.space.warn(self.space.newtext(
-                "the (type, exc, tb) signature of throw() is deprecated, "
-                "use the single-arg signature instead."),
-                self.space.w_DeprecationWarning)
         return self.throw(w_type, w_val, w_tb)
 
     def throw(self, w_type, w_val, w_tb):
@@ -210,35 +195,24 @@ return next yielded value or raise StopIteration."""
         else:
             tb = check_traceback(space, w_tb, msg)
 
-        # gen.throw() has its own wording for this error, distinct from the
-        # raise statement's "exceptions must derive from BaseException"
-        # (CPython genobject.c _gen_throw)
-        if not (space.exception_is_valid_obj_as_class_w(w_type) or
-                space.isinstance_w(w_type, space.w_BaseException)):
+        if (not space.exception_is_valid_obj_as_class_w(w_type) and
+                not space.isinstance_w(w_type, space.w_BaseException)):
             raise oefmt(space.w_TypeError,
-                        "exceptions must be classes or instances deriving "
-                        "from BaseException, not %T", w_type)
-
-        # Like the pre-check above, argument-SHAPE errors raise at the call
-        # site with the generator untouched (CPython validates this in
-        # gen_throw itself, before _PyErr_SetObject); only failures
-        # *instantiating* an exception class are delivered into the frame.
+                "exceptions must be classes or instances deriving from "
+                "BaseException, not %N", space.type(w_type))
+        # Raise directly to caller (not into the generator) when an exception
+        # instance is thrown together with a separate value -- this is a usage
+        # error in the throw() call itself, not an exception to be delivered.
         if (not space.exception_is_valid_obj_as_class_w(w_type) and
                 not space.is_w(w_val, space.w_None)):
             raise oefmt(space.w_TypeError,
-                        "instance exception may not have a separate value")
-
+                "instance exception may not have a separate value")
         operr = OperationError(w_type, w_val, tb)
         try:
             w_value = operr.normalize_exception(space)
         except OperationError as e:
-            # CPython delivers a failure to *instantiate* the exception
-            # (e.g. a broken __new__) into the generator frame instead of
-            # raising it at the throw() call site: an unstarted generator
-            # is closed by it, a suspended one sees it at the yield point.
-            # (The invalid-type pre-check above still raises here directly,
-            # matching CPython, whose gen doctests rely on the generator
-            # surviving those.)
+            # Normalization failed (e.g. __new__ returned non-instance).
+            # Deliver the error into the generator rather than killing it.
             return self.send_error(e)
 
         # note: _w_yielded_from is always None if 'self.running'
@@ -452,20 +426,6 @@ class Coroutine(GeneratorOrCoroutine):
     def descr__await__(self, space):
         return CoroutineWrapper(self)
 
-    def descr_send(self, w_arg):
-        """send(arg) -> send 'arg' into coroutine,
-return next iterated value or raise StopIteration."""
-        return GeneratorOrCoroutine.descr_send(self, w_arg)
-
-    def descr_throw(self, w_type, w_val=None, w_tb=None):
-        """throw(typ[,val[,tb]]) -> raise exception in coroutine,
-return next iterated value or raise StopIteration."""
-        return GeneratorOrCoroutine.descr_throw(self, w_type, w_val, w_tb)
-
-    def descr_close(self):
-        """close() -> raise GeneratorExit inside coroutine."""
-        return GeneratorOrCoroutine.descr_close(self)
-
     def descr_gicr_frame(self, space):
         if self.frame is not None and not self.frame.frame_finished_execution:
             return self.frame
@@ -532,7 +492,7 @@ class CoroutineWrapper(W_Root):
     descr_send.__doc__ = Coroutine.descr_send.__doc__
 
     def descr_throw(self, w_type, w_val=None, w_tb=None):
-        return self.coroutine.descr_throw(w_type, w_val, w_tb)
+        return self.coroutine.throw(w_type, w_val, w_tb)
     descr_throw.__doc__ = Coroutine.descr_throw.__doc__
 
     def descr_close(self):
@@ -729,13 +689,6 @@ class AsyncGenerator(GeneratorOrCoroutine):
         return AsyncGenASend(self, w_arg)
 
     def descr_athrow(self, w_type, w_val=None, w_tb=None):
-        if w_val is not None or w_tb is not None:
-            # 3.12 deprecated the (type, exc, tb) signature here too, with
-            # its own wording (test_asyncgen)
-            self.space.warn(self.space.newtext(
-                "the (type, exc, tb) signature of athrow() is deprecated, "
-                "use the single-arg signature instead."),
-                self.space.w_DeprecationWarning)
         self.init_hooks()
         return AsyncGenAThrow(self, w_type, w_val, w_tb)
 
@@ -758,6 +711,7 @@ AsyncGenerator.typedef = TypeDef("async_generator",
     __anext__  = interp2app(AsyncGenerator.descr__anext__,
                             descrmismatch='__anext__'),
     ag_running = interp_attrproperty('ag_running', cls=AsyncGenerator, wrapfn="newbool"),
+    ag_suspended = GetSetProperty(AsyncGenerator.descr_get_suspended),
     ag_frame   = GetSetProperty(AsyncGenerator.descr_gicr_frame),
     ag_code    = interp_attrproperty_w('pycode', cls=AsyncGenerator),
     ag_await=GetSetProperty(AsyncGenerator.descr_delegate),
